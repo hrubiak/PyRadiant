@@ -38,19 +38,19 @@ class MainWidget(QtWidgets.QWidget):
         self._main_layout.setSpacing(0)
         self.navigation_widget = NavigationWidget(self)
         self.temperature_widget = TemperatureWidget(self)
-        self.ruby_widget = RubyWidget(self)
-        self.diamond_widget = DiamondWidget(self)
-        self.raman_widget = RamanWidget(self)
+        #self.ruby_widget = RubyWidget(self)
+        '''self.diamond_widget = DiamondWidget(self)
+        self.raman_widget = RamanWidget(self)'''
 
         self._main_layout.addWidget(self.navigation_widget)
         self._main_layout.addWidget(self.temperature_widget)
-        self._main_layout.addWidget(self.ruby_widget)
-        self._main_layout.addWidget(self.diamond_widget)
-        self._main_layout.addWidget(self.raman_widget)
+        #self._main_layout.addWidget(self.ruby_widget)
+        '''self._main_layout.addWidget(self.diamond_widget)
+        self._main_layout.addWidget(self.raman_widget)'''
 
-        self.ruby_widget.hide()
-        self.diamond_widget.hide()
-        self.raman_widget.hide()
+        #self.ruby_widget.hide()
+        '''self.diamond_widget.hide()
+        self.raman_widget.hide()'''
 
         self.load_stylesheet()
         self.setLayout(self._main_layout)
@@ -58,21 +58,19 @@ class MainWidget(QtWidgets.QWidget):
         self.setWindowIcon(QtGui.QIcon(os.path.join(icons_path, 't_rax.ico')))
 
     def load_stylesheet(self):
-        main_stylesheet_file = open(os.path.join(style_path, "TRaxStyle.qss"), 'r')
+        main_stylesheet_file = open(os.path.join(style_path, "stylesheet.qss"), 'r')
         main_stylesheet_str = main_stylesheet_file.read()
         main_stylesheet_file.close()
-        navigation_stylesheet_file = open(os.path.join(style_path, "NavigationStyle.qss"), 'r')
-        navigation_stylesheet_str = navigation_stylesheet_file.read()
-        navigation_stylesheet_file.close()
-        self.setStyleSheet(main_stylesheet_str + '\n' + navigation_stylesheet_str)
+        
+        self.setStyleSheet(main_stylesheet_str )
 
 
 class NavigationWidget(QtWidgets.QFrame):
     colors = {
         'temperature': 'rgba(221, 124, 40, 180)',
-        'ruby': 'rgba(197, 0, 3, 255)',
-        'diamond': 'rgba(27, 0, 134, 255)',
-        'raman': 'rgba(21, 134, 31, 255)'
+        #'ruby': 'rgba(197, 0, 3, 255)',
+        #'diamond': 'rgba(27, 0, 134, 255)',
+        #'raman': 'rgba(21, 134, 31, 255)'
     }
 
     def __init__(self, *args, **kwargs):
@@ -82,25 +80,25 @@ class NavigationWidget(QtWidgets.QFrame):
         self._layout = QtWidgets.QHBoxLayout()
 
         self.temperature_btn = QtWidgets.QPushButton('Temperature')
-        self.ruby_btn = QtWidgets.QPushButton('Ruby')
-        self.diamond_btn = QtWidgets.QPushButton('Diamond')
-        self.raman_btn = QtWidgets.QPushButton('Raman')
+        #self.ruby_btn = QtWidgets.QPushButton('Ruby')
+        '''self.diamond_btn = QtWidgets.QPushButton('Diamond')
+        self.raman_btn = QtWidgets.QPushButton('Raman')'''
 
         # setting object names for stylesheet access
         self.temperature_btn.setObjectName('temperature_btn')
-        self.ruby_btn.setObjectName('ruby_btn')
-        self.diamond_btn.setObjectName('diamond_btn')
-        self.raman_btn.setObjectName('raman_btn')
+        #self.ruby_btn.setObjectName('ruby_btn')
+        '''self.diamond_btn.setObjectName('diamond_btn')
+        self.raman_btn.setObjectName('raman_btn')'''
 
-        self.copyright_lbl = QtWidgets.QLabel('written by Clemens Prescher, GSECARS, UofC')
-        self.copyright_lbl.setObjectName('copyright_label')
+        #self.copyright_lbl = QtWidgets.QLabel('written by Clemens Prescher, GSECARS, UofC')
+        #self.copyright_lbl.setObjectName('copyright_label')
         self._layout.addWidget(self.temperature_btn)
-        self._layout.addWidget(self.ruby_btn)
-        self._layout.addWidget(self.diamond_btn)
-        self._layout.addWidget(self.raman_btn)
+        #self._layout.addWidget(self.ruby_btn)
+        '''self._layout.addWidget(self.diamond_btn)
+        self._layout.addWidget(self.raman_btn)'''
         self._layout.addSpacerItem(QtWidgets.QSpacerItem(10, 10, QtWidgets.QSizePolicy.Expanding,
                                                          QtWidgets.QSizePolicy.Fixed))
-        self._layout.addWidget(self.copyright_lbl)
+        #self._layout.addWidget(self.copyright_lbl)
         self.setLayout(self._layout)
 
         self.setup_color_change()
@@ -109,15 +107,15 @@ class NavigationWidget(QtWidgets.QFrame):
         self.temperature_btn.clicked.connect(partial(self.update_colors,
                                                      self.colors['temperature'],
                                                      self.temperature_btn))
-        self.ruby_btn.clicked.connect(partial(self.update_colors,
+        '''self.ruby_btn.clicked.connect(partial(self.update_colors,
                                               self.colors['ruby'],
-                                              self.ruby_btn))
-        self.diamond_btn.clicked.connect(partial(self.update_colors,
+                                              self.ruby_btn))'''
+        '''self.diamond_btn.clicked.connect(partial(self.update_colors,
                                                  self.colors['diamond'],
                                                  self.diamond_btn))
         self.raman_btn.clicked.connect(partial(self.update_colors,
                                                self.colors['raman'],
-                                               self.raman_btn))
+                                               self.raman_btn))'''
 
     def connect_click_function(self, emitter, function):
         self.control_widget.connect(emitter, QtCore.SIGNAL('clicked()'), function)
