@@ -1,7 +1,7 @@
-﻿# T-View - GUI program for analysis of spectroscopy data during
-# diamond anvil cell experiments
+﻿# T-View - GUI program for analysis of thermal spectra during
+# laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
-# Institute for Geology and Mineralogy, University of Cologne
+# High Pressure Collaborative Access Team, Argonne National Laboratory
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by

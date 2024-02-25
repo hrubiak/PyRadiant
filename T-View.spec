@@ -48,10 +48,10 @@ elif _platform == "darwin":
     platform = "Mac64"
     name = "run_t_view"
 
-# getting the current version of Dioptas
+# getting the current version of T-view
 # __version__ file for executable has prevalence over versioneer output
 try:
-    with open(os.path.join('dioptas', '__version__'), 'r') as fp:
+    with open(os.path.join('t-view', '__version__'), 'r') as fp:
         __version__ = fp.readline()
 except FileNotFoundError:
     from t_view import __version__

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-# T-View - GUI program for analysis of spectroscopy data during
-# diamond anvil cell experiments
+# T-View - GUI program for analysis of thermal spectra during
+# laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
-# Institute for Geology and Mineralogy, University of Cologne
+# High Pressure Collaborative Access Team, Argonne National Laboratory
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -90,7 +90,7 @@ class MainWidget(QtWidgets.QWidget):
         self.diamond_btn.setObjectName('diamond_btn')
         self.raman_btn.setObjectName('raman_btn')
 
-        #self.copyright_lbl = QtWidgets.QLabel('written by Clemens Prescher, GSECARS, UofC')
+        #self.copyright_lbl = QtWidgets.QLabel('written by Ross Hrubiak, GSECARS, UofC')
         #self.copyright_lbl.setObjectName('copyright_label')
         self._layout.addWidget(self.temperature_btn)
         #self._layout.addWidget(self.ruby_btn)

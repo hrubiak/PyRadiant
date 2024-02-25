@@ -1,11 +1,9 @@
 T-View
 ===
 
-A python GUI program for fast visual analysis of spectroscopic data collected mostly during high pressure diamond anvil 
+A python GUI program for fast visual analysis of thermal spectra collected mostly during high pressure diamond anvil 
 cell experiments.
 
-I includes separate modules for temperature fitting, pressure estimation using ruby peak or the diamond edge and a 
-general module for Raman spectroscopy.
  
 Currently, the only input files allowed are Princeton Instruments \*.spe file saved either from WinSpec (File Version 2) 
 or Lightfield (File Version 3).
@@ -13,8 +11,9 @@ or Lightfield (File Version 3).
 Maintainer
 ===
 
-Clemens Prescher (clemens.prescher@gmail.com)  
-Center for Advanced Radiation Sources, University of Chicago
+
+Ross Hrubiak (hrubiak@anl.gov)  
+High Pressue Collaborative Access Team, Argonne National Laboratory
 
 
 Requirements
