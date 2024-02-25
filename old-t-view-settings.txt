@@ -1,0 +1,76 @@
+[i]
+Start row DN = 3
+bin DN = 20
+Start row UP = 116
+bin UP = 40
+Start row dc = 41
+bin dc = 30
+side choice = 2
+Start row DN 2 = 129    
+Start row UP 2 = 379
+Start row dc 2 = 259
+bin DN 2 = 8
+bin UP 2 = 8
+bin dc 2 = 8
+side choice 2 = 2
+bin dc 2 b = 30
+Start row dc b = 41
+bin dc b = 30
+Start row dc b 2 = 259
+bin dc b 2 = 8
+
+[d]
+Exposure time (sec) = 0.030000
+Temperature Up = 2645.000000
+Temperature Dn = 2645.000000
+Start Wavelength (nm) = 600.000000
+End Wavelength (nm) = 800.000000
+threshold = 100.000000
+scalar background = 0.000000
+Temperature Dn 2 = 2644.000000
+Temperature Up 2 = 2644.000000
+Start Wavelength (nm) 2 = 600.000000
+End Wavelength (nm) 2 = 800.000000
+threshold 2 = 150.000000
+scalar background 2 = 992.000000
+R1_0 = 694.500000
+R1_0_up = 695.580000
+R1_0_dn = 694.260000
+up offset = 1.370000
+dn offset = 0.050000
+R1 @ 0GPa = 694.210000
+Start Wavelength (nm) 3 = 675.000000
+End Wavelength (nm) 3 = 760.000000
+
+[s]
+trigger pv = "16idb:us_las_trig.VAL"
+Upstream temperature pv = "16idb:us_las_temp.VAL"
+Downstream temperatue pv = "16idb:ds_las_temp.VAL"
+Detector saturation warning pv = "16idb:thermalWarning"
+Temperature file name pv = "16idb:Temperature_FileName.VAL"
+Exposure time pv = "16idb:ccd_exposure_time.VAL"
+PIXIS exp name = "PIXIS Setup1"
+PI-MAX 4 exp name = "PIXIS Setup1"
+file name convention = "T %d.SPE"
+file name formatting = "T  %d.SPE"
+
+[b]
+EPICS ON = FALSE
+use scalar background = FALSE
+Full range? = FALSE
+x pixel binning = TRUE
+Detector selection = TRUE
+Aquisition software = FALSE
+use scalar background 2 = TRUE
+x pixel binning 2 = TRUE
+Full range? 2 = TRUE
+WL correct = FALSE
+EPICS out ON = FALSE
+
+[p]
+Downstream side calibration file = "/C/Users/Ross/Desktop/2019 June 12-6.5A-2993K-50um-no pinhole-nist.spe"
+Upstream side calibration file = "/C/Users/Ross/Desktop/2019 June 12-6.5A-2993K-50um-no pinhole-nist.spe"
+Downstream side calibration file 2 = "/C/Users/hrubiak/Desktop/Ex089/temperature/Dec21_2015/UP Gain1.spe"
+Upstream side calibration file 2 = "/C/Users/hrubiak/Desktop/Ex089/temperature/Dec21_2015/DN Gain1.spe"
+Upstream side calibration file 3 = "/C/Users/Ross/Documents/T 37.OO_Spec"
+Downstream side calibration file 3 = "/C/Users/Ross/Documents/T 37.OO_Spec"
