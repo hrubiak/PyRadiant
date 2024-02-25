@@ -19,7 +19,7 @@ High Pressue Collaborative Access Team, Argonne National Laboratory
 Requirements
 ===
 
-- Python 2.7
+- Python 3
 - qtpy
 - numpy
 - scipy
