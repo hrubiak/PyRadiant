@@ -24,7 +24,7 @@ jobs:
       uses: actions/cache@v1
       with:
         path: ~\AppData\Local\pip\Cache
-        key: ${{ runner.os }}-pip-${{ hashFiles('T-Rax.spec') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('T-View.spec') }}
         restore-keys: |
           ${{ runner.os }}-pip-
         
@@ -33,22 +33,22 @@ jobs:
         pip install scipy python-dateutil pytest pyqt5 h5py qtpy lmfit mock pyshortcuts pyinstaller
         pip install --pre pyqtgraph
 
-    - name: Run T-Rax from source to test and create version file
-      run: python run_t_rax.py test
+    - name: Run T-View from source to test and create version file
+      run: python run_t_view.py test
 
     - name: Run PyInstaller
       shell: cmd
-      run: pyinstaller T-Rax.spec
+      run: pyinstaller T-View.spec
 
-    - name: Run T-Rax Executable
+    - name: Run T-View Executable
       shell: cmd
       run: |
-        cd dist\T-Rax*
-        T-Rax.exe test
+        cd dist\T-View*
+        T-View.exe test
 
     - name: Compress App
       run: |
-        cd dist\T-Rax*
+        cd dist\T-View*
         $folderName = pwd | Select-Object | %{$_.ProviderPath.Split("\")[-1]}
         cd ..
         $zipName = $folderName + '.zip'
@@ -61,6 +61,6 @@ jobs:
       run: |
         pip install dropbox
         cd dist
-        $zipFile = Resolve-Path ".\T-Rax*.zip" | Select-Object | %{$_.ProviderPath.Split("\")[-1]}
+        $zipFile = Resolve-Path ".\T-View*.zip" | Select-Object | %{$_.ProviderPath.Split("\")[-1]}
         $targetFile = '/develop/windows/' + $zipFile
         python ..\scripts\dropbox_upload.py $zipFile $targetFile

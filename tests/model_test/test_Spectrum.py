@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# T-Rax - GUI program for analysis of spectroscopy data during
+# T-View - GUI program for analysis of spectroscopy data during
 # diamond anvil cell experiments
 # Copyright (C) 2016 Clemens Prescher (clemens.prescher@gmail.com)
 # Institute for Geology and Mineralogy, University of Cologne
@@ -24,7 +24,7 @@ from tests.utility import QtTest
 
 import numpy as np
 
-from t_rax.model.Spectrum import Spectrum, BkgNotInRangeError
+from t_view.model.Spectrum import Spectrum, BkgNotInRangeError
 
 
 class SpectrumTest(QtTest):

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# T-Rax - GUI program for analysis of spectroscopy data during
+# T-View - GUI program for analysis of spectroscopy data during
 # diamond anvil cell experiments
 # Copyright (C) 2016 Clemens Prescher (clemens.prescher@gmail.com)
 # Institute for Geology and Mineralogy, University of Cologne
@@ -26,9 +26,9 @@ from qtpy.QtTest import QTest
 
 from tests.utility import QtTest
 
-from t_rax.model.RubyModel import RubyModel
-from t_rax.widget.RubyWidget import RubyWidget
-from t_rax.controller.RubyController import RubyController
+from t_view.model.RubyModel import RubyModel
+from t_view.widget.RubyWidget import RubyWidget
+from t_view.controller.RubyController import RubyController
 
 unittest_path = os.path.dirname(__file__)
 unittest_files_path = os.path.join(unittest_path, '..', 'test_files')

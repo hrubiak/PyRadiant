@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# T-Rax - GUI program for analysis of spectroscopy data during
+# T-View - GUI program for analysis of spectroscopy data during
 # diamond anvil cell experiments
 # Copyright (C) 2016 Clemens Prescher (clemens.prescher@gmail.com)
 # Institute for Geology and Mineralogy, University of Cologne
@@ -22,7 +22,7 @@ import unittest
 import numpy as np
 from qtpy import QtWidgets
 
-from t_rax.widget.RoiWidget import RoiWidget
+from t_view.widget.RoiWidget import RoiWidget
 from tests.utility import QtTest
 
 

@@ -1,4 +1,4 @@
-{% set name = "T-Rax" %}
+{% set name = "T-View" %}
 {% set version = "1.2" %}
 
 package:
@@ -40,7 +40,7 @@ requirements:
     - pyshortcuts
 
 about:
-  home: http://github.com/CPrescher/T-Rax
+  home: http://github.com/CPrescher/T-View
   license: GPLv3
   license_family: GPL
   license_file: license.txt

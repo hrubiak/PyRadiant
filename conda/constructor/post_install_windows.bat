@@ -1,4 +1,4 @@
 ;;  post install for windows
 
 
-%PREFIX%\Scripts\run_t_rax -m
+%PREFIX%\Scripts\run_t_view -m

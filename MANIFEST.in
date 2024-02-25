@@ -1,2 +1,2 @@
 include versioneer.py
-include t_rax/_version.py
+include t_view/_version.py

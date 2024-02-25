@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# T-Rax - GUI program for analysis of spectroscopy data during
+# T-View - GUI program for analysis of spectroscopy data during
 # diamond anvil cell experiments
 # Copyright (C) 2016 Clemens Prescher (clemens.prescher@gmail.com)
 # Institute for Geology and Mineralogy, University of Cologne
@@ -23,9 +23,9 @@ from tests.utility import QtTest
 
 import numpy as np
 
-from t_rax.model.TemperatureModel import SingleTemperatureModel
-from t_rax.model.RoiData import RoiDataManager
-from t_rax.model.SpeFile import SpeFile
+from t_view.model.TemperatureModel import SingleTemperatureModel
+from t_view.model.RoiData import RoiDataManager
+from t_view.model.SpeFile import SpeFile
 
 unittest_path = os.path.dirname(__file__)
 unittest_files_path = os.path.join(unittest_path, '..', 'test_files')

@@ -1,3 +1,3 @@
 #/bin/bash
 
-$PREFIX/bin/run_t_rax -m
+$PREFIX/bin/run_t_view -m

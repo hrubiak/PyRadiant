@@ -1,4 +1,4 @@
-T-Rax
+T-View
 ===
 
 A python GUI program for fast visual analysis of spectroscopic data collected mostly during high pressure diamond anvil 
@@ -41,9 +41,9 @@ Using the minimum anaconda distribution, you have to only type the following two
     conda install pyqt numpy scipy h5py qtpy pyqtgraph
     pip install dateutils lmfit pyshortcuts
     
-The program itself can then be run by going into the "t-rax" directory and type:
+The program itself can then be run by going into the "t-view" directory and type:
     
-    python run_t-rax.py
+    python run_t-view.py
 
 
 

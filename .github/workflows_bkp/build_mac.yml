@@ -24,7 +24,7 @@ jobs:
       uses: actions/cache@v1
       with:
         path: ~/Library/Caches/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('T-Rax.spec') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('T-View.spec') }}
         restore-keys: |
           ${{ runner.os }}-pip-
         
@@ -33,28 +33,28 @@ jobs:
         pip install scipy python-dateutil pytest pyqt5 h5py qtpy lmfit mock pyshortcuts pyinstaller
         pip install --pre pyqtgraph
 
-    - name: Run T-Rax from source to test and create version file
-      run: python run_t_rax.py test
+    - name: Run T-View from source to test and create version file
+      run: python run_t_view.py test
 
     - name: Run PyInstaller
-      run: pyinstaller T-Rax.spec
+      run: pyinstaller T-View.spec
 
     - name: Clean Up Executable Folder
       run: |
-        cd dist/T-Rax*
+        cd dist/T-View*
         cd Contents/MacOS
         rm QtQuick QtQml QtQmlmodels QtNetwork QtWebSockets libcrypto.1.0.0.dylib
 
-    - name: Run T-Rax Executable
+    - name: Run T-View Executable
       run: |
-        cd dist/T-Rax*
+        cd dist/T-View*
         cd Contents/MacOS
-        ./run_t_rax test
+        ./run_t_view test
 
     - name: Compress App
       run: |
         cd dist
-        export folderName=$(ls | grep T-Rax*.app)
+        export folderName=$(ls | grep T-View*.app)
         echo $folderName
         zip -r $folderName.zip $folderName
         du -sh $folderName.zip
