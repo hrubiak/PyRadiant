@@ -1,6 +1,6 @@
 ﻿# T-View - GUI program for analysis of spectroscopy data during
 # diamond anvil cell experiments
-# Copyright (C) 2016 Clemens Prescher (clemens.prescher@gmail.com)
+# Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
 # Institute for Geology and Mineralogy, University of Cologne
 #
 # This program is free software: you can redistribute it and/or modify
