@@ -19,7 +19,7 @@ High Pressue Collaborative Access Team, Argonne National Laboratory
 Requirements
 ===
 
-- Python 2.7
+- Python 3
 - qtpy
 - numpy
 - scipy
@@ -50,7 +50,7 @@ Some background
 
 This python version of T-View was originaly forked from T-Rax by Clemens Prescher https://github.com/CPrescher/T-Rax
 
-The original T-View (up to version 0.5.5) was based on LabVIEW. Versions 0.6 and higher are developed with python by combining existing code from T-Rax with ported code from the legacy LabVIEW version of T-View. 
+The original T-View (up to version 0.5.5) was based on LabVIEW. T-View versions 0.6 and higher are developed with python by combining existing code from T-Rax with ported code from the legacy LabVIEW version of T-View. 
 
 
 
