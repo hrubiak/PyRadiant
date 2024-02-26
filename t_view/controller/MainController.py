@@ -24,14 +24,10 @@ from qtpy import QtWidgets, QtCore
 
 from .. import __version__
 from ..model.TemperatureModel import TemperatureModel
-from ..model.RubyModel import RubyModel
-from ..model.DiamondModel import DiamondModel
-from ..model.RamanModel import RamanModel
+
 from ..widget.MainWidget import MainWidget
 from .TemperatureController import TemperatureController
-from .RubyController import RubyController
-from .DiamondController import DiamondController
-from .RamanController import RamanController
+
 
 
 class MainController(object):

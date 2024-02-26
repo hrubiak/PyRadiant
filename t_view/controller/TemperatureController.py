@@ -356,7 +356,7 @@ class TemperatureController(QtCore.QObject):
 
     def widget_rois_changed(self, roi_list):
         if self.model.has_data():
-            self.model.set_rois(roi_list[0], roi_list[1])
+            self.model.set_rois(roi_list[0], roi_list[1], roi_list[2], roi_list[3])
 
     def graph_mouse_moved(self, x, y):
         self.widget.graph_mouse_pos_lbl.setText("X: {:8.2f}  Y: {:8.2f}".format(x, y))

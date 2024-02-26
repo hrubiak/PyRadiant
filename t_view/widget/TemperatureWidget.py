@@ -42,8 +42,8 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.graph_widget = TemperatureSpectrumWidget()
         self.control_widget = TemperatureControlWidget()
         self.graph_status_bar = StatusBar()
-        self.roi_widget = RoiWidget(2, ['Downstream', 'Upstream'],
-                                    roi_colors=[(255, 255, 0), (255, 140, 0)])
+        self.roi_widget = RoiWidget(4, ['Downstream', 'Upstream', 'Downstream_bg', 'Upstream_bg'],
+                                    roi_colors=[(255, 255, 0), (255, 140, 0),(155, 155, 0), (155,  40, 0)])
 
         self._graph_control_layout.addWidget(self.graph_widget, 0, 0)
         self._graph_control_layout.addWidget(self.control_widget, 0, 1)

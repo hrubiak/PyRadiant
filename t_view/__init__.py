@@ -21,7 +21,7 @@ import os
 import sys
 from sys import platform
 from optparse import OptionParser
-from pyshortcuts import make_shortcut
+
 from qtpy import QtWidgets
 
 from .version import get_version
@@ -35,34 +35,11 @@ from .controller.MainController import MainController
 
 
 def run_t_view():
-    usage = 'Usage: run_t_view [options]'
-    vers = 'run_t_view %s' % __version__
 
-    parser = OptionParser(usage=usage, prog='pyshortcut', version=vers)
-
-    parser.add_option('-m', '--make_icon', dest='makeicon', action="store_true",
-                      default=False, help='make desktop shortcut')
-    (options, args) = parser.parse_args()
-    
-    if options.makeicon:
-        bindir = 'bin'
-        if os.name == 'nt':
-            bindir = 'Scripts'
-        script = os.path.join(sys.prefix, bindir, 'run_t_view')
-        _path, _fname = os.path.split(__file__)
-        iconfile = os.path.join(_path, 'resources', 'icons', 't_view.ico')
-        make_shortcut(script, name='T-View',icon=iconfile, terminal=True)
-        
-    else:
-        if len(sys.argv) == 1: # normal start
-            app = QtWidgets.QApplication(sys.argv)
-            if platform != "darwin":
-                app.setStyle('plastique')
-            controller = MainController()
-            controller.show_window()
-            app.exec_()
-        else: # with command line arguments
-            if sys.argv[1] == 'test':
-                app = QtWidgets.QApplication(sys.argv)
-                controller = MainController()
-                controller.show_window()
+   
+    app = QtWidgets.QApplication(sys.argv)
+    if platform != "darwin":
+        app.setStyle('plastique')
+    controller = MainController()
+    controller.show_window()
+    app.exec_()
