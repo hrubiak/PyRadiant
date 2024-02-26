@@ -1,3 +1,9 @@
+Some background
+===
+
+The python version of T-View was originaly forked from T-Rax by Clemens Prescher https://github.com/CPrescher/T-Rax
+The original T-View, up to version 0.5.5, was based on LabVIEW. T-View versions 0.6 and higher are developed with python by combining the code from T-Rax with ported code from the legacy LabVIEW version of T-View. 
+
 T-View
 ===
 
@@ -43,14 +49,6 @@ Using the minimum anaconda distribution, you have to only type the following two
 The program itself can then be run by going into the "t-view" directory and type:
     
     python run_t-view.py
-
-
-Some background
-===
-
-This python version of T-View was originaly forked from T-Rax by Clemens Prescher https://github.com/CPrescher/T-Rax
-
-The original T-View (up to version 0.5.5) was based on LabVIEW. T-View versions 0.6 and higher are developed with python by combining existing code from T-Rax with ported code from the legacy LabVIEW version of T-View. 
 
 
 
