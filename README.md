@@ -1,8 +1,7 @@
 Some background
 ===
 
-The python version of T-View was originaly forked from T-Rax by Clemens Prescher https://github.com/CPrescher/T-Rax
-The original T-View, up to version 0.5.5, was based on LabVIEW. T-View versions 0.6 and higher are developed with python by combining the code from T-Rax with ported code from the legacy LabVIEW version of T-View. 
+The original T-View, up to version 0.5.5, was based on LabVIEW. The T-View versions 0.6 and higher were originaly forked from T-Rax by Clemens Prescher https://github.com/CPrescher/T-Rax and combined with code ported from the legacy LabVIEW version of T-View. 
 
 T-View
 ===
