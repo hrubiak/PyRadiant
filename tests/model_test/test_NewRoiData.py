@@ -18,7 +18,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import unittest
-from qtpy import QtWidgets
+from PyQt5 import QtWidgets
 
 from tests.utility import QtTest
 

@@ -18,7 +18,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
-from qtpy import QtCore
+from PyQt5 import QtCore
 import numpy as np
 from scipy.optimize import curve_fit
 import h5py
@@ -34,9 +34,9 @@ LOG_HEADER = '# File\tPath\tT_DS\tT_US\tDetector\tExposure Time [sec]\n'
 
 
 class TemperatureModel(QtCore.QObject):
-    data_changed = QtCore.Signal()
-    ds_calculations_changed = QtCore.Signal()
-    us_calculations_changed = QtCore.Signal()
+    data_changed = QtCore.pyqtSignal()
+    ds_calculations_changed = QtCore.pyqtSignal()
+    us_calculations_changed = QtCore.pyqtSignal()
 
     def __init__(self):
         super(TemperatureModel, self).__init__()
@@ -522,7 +522,7 @@ class TemperatureModel(QtCore.QObject):
 
 
 class SingleTemperatureModel(QtCore.QObject):
-    data_changed = QtCore.Signal()
+    data_changed = QtCore.pyqtSignal()
 
     def __init__(self, ind, roi_data_manager):
         super(SingleTemperatureModel, self).__init__()
@@ -645,7 +645,7 @@ class SingleTemperatureModel(QtCore.QObject):
             self.calibration_spectrum.data = calibration_x, calibration_y - calibration_bg
 
     def _update_corrected_spectrum(self):
-        if len(self.data_spectrum) is 0:
+        if len(self.data_spectrum) == 0:
             self.corrected_spectrum = Spectrum([], [])
             return
 

@@ -17,7 +17,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from qtpy import QtCore, QtWidgets, QtGui
+from PyQt5 import QtCore, QtWidgets, QtGui
 import os
 from .TemperatureSpectrumWidget import TemperatureSpectrumWidget
 from .RoiWidget import RoiWidget
@@ -182,9 +182,7 @@ class SettingsGroupBox(QtWidgets.QGroupBox):
         self.load_setting_btn.setFlat(True)
         self.save_setting_btn.setFlat(True)
 
-        cleanlooks = QtWidgets.QStyleFactory.create('plastique')
-        self.settings_cb.setStyle(cleanlooks)
-        self.settings_cb.view().setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        
 
 
 class TemperatureCalibrationTab(QtWidgets.QWidget):

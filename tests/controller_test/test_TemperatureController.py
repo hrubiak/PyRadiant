@@ -23,8 +23,8 @@ import os, shutil
 
 import numpy as np
 
-from qtpy import QtCore, QtWidgets
-from qtpy.QtTest import QTest
+from PyQt5 import QtCore, QtWidgets
+from PyQt5.QtTest import QTest
 
 from tests.utility import QtTest
 
@@ -256,7 +256,7 @@ class TestTemperatureController(QtTest):
         setting_filename = os.path.join(temperature_fitting_path, 'PiMax.trs')
         self.controller.load_setting_file(setting_filename)
 
-    @patch('qtpy.QtWidgets.QFileDialog.getSaveFileName')
+    @patch('PyQt5.QtWidgets.QFileDialog.getSaveFileName')
     def test_saving_data_as_txt(self, filedialog):
         self.load_single_frame_file_and_calibration()
         out_path = os.path.join(unittest_files_path, 'data.txt')
@@ -271,7 +271,7 @@ class TestTemperatureController(QtTest):
         os.remove(saved_filename_us)
         os.remove(saved_filename_ds)
 
-    @patch('qtpy.QtWidgets.QFileDialog.getSaveFileName')
+    @patch('PyQt5.QtWidgets.QFileDialog.getSaveFileName')
     def test_saving_graph_image(self, filedialog):
         self.load_single_frame_file_and_calibration()
 

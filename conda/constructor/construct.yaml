@@ -19,7 +19,7 @@ specs:
     - scipy
     - pyqt
     - pyqtgraph
-    - qtpy
+    - PyQt5
     - h5py
     - matplotlib
     - six

@@ -22,7 +22,7 @@ import sys
 from sys import platform
 from optparse import OptionParser
 
-from qtpy import QtWidgets
+from PyQt5 import QtWidgets
 
 from .version import get_version
 __version__ = get_version()

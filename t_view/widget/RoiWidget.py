@@ -21,11 +21,12 @@ from functools import partial
 
 import numpy as np
 
-from qtpy import QtCore, QtWidgets, QtGui
+from PyQt5 import QtCore, QtWidgets, QtGui
 import pyqtgraph as pg
 from pyqtgraph.graphicsItems.ROI import Handle
+from pyqtgraph import ColorMap, HistogramLUTItem
 
-from .HistogramLUTItem import HistogramLUTItem
+#from .HistogramLUTItem import HistogramLUTItem
 
 from .Widgets import StatusBar
 
@@ -37,7 +38,7 @@ pg.setConfigOption('antialias', True)
 
 
 class RoiWidget(QtWidgets.QWidget):
-    rois_changed = QtCore.Signal(list)
+    rois_changed = QtCore.pyqtSignal(list)
 
     def __init__(self, roi_num=1, roi_titles=('',), roi_colors=((255, 255, 0)), *args, **kwargs):
         super(RoiWidget, self).__init__(*args, **kwargs)
@@ -51,6 +52,7 @@ class RoiWidget(QtWidgets.QWidget):
         self.img_widget = RoiImageWidget(roi_num=roi_num, roi_colors=roi_colors)
 
         self._roi_gbs_layout = QtWidgets.QVBoxLayout()
+        self._roi_gbs_layout.setSpacing(2)
         self.roi_gbs = []
         self.create_roi_gbs()
         self._roi_gbs_layout.addSpacerItem(QtWidgets.QSpacerItem(20, 20,
@@ -113,7 +115,7 @@ class RoiWidget(QtWidgets.QWidget):
         self.img_widget.pg_viewbox.addItem(pg_item)
 
 class RoiGroupBox(QtWidgets.QGroupBox):
-    roi_txt_changed = QtCore.Signal(list)
+    roi_txt_changed = QtCore.pyqtSignal(list)
 
     def __init__(self, title, color):
         super(RoiGroupBox, self).__init__(title)
@@ -177,11 +179,11 @@ class IntegerTextField(QtWidgets.QLineEdit):
 
 
 class RoiImageWidget(QtWidgets.QWidget):
-    mouse_moved = QtCore.Signal(float, float)
-    mouse_left_clicked = QtCore.Signal(float, float)
-    mouse_left_double_clicked = QtCore.Signal(float, float)
+    mouse_moved = QtCore.pyqtSignal(float, float)
+    mouse_left_clicked = QtCore.pyqtSignal(float, float)
+    mouse_left_double_clicked = QtCore.pyqtSignal(float, float)
 
-    rois_changed = QtCore.Signal(list)
+    rois_changed = QtCore.pyqtSignal(list)
 
     def __init__(self, roi_num=1, roi_colors=((255, 255, 0)), *args, **kwargs):
         super(RoiImageWidget, self).__init__(*args, **kwargs)
@@ -203,8 +205,22 @@ class RoiImageWidget(QtWidgets.QWidget):
         self.pg_img_item = pg.ImageItem()
         self.pg_viewbox.addItem(self.pg_img_item)
 
+        # Define your custom colors
+        custom_colors = [(49, 52, 138),  
+                        (112, 186,234),  
+                        (207,223,96), 
+                        (222,131,46), 
+                        (119,31,28)]  
+        # Create a ColorMap using the custom colors
+        cmap = ColorMap(pos=[0, 0.25, 0.5, 0.75, 1], color=custom_colors)
+
         self.pg_hist_item = HistogramLUTItem(self.pg_img_item, orientation='vertical',
-                                             autoLevel=[0, 0.996])
+                                            )
+        self.pg_hist_item.axis.setStyle(showValues=False)
+        self.pg_hist_item.setFixedWidth(70)
+
+        self.pg_hist_item.gradient.setColorMap(cmap)
+
         self.pg_layout.addItem(self.pg_hist_item, 1, 2, 1, 3)
 
         self._layout = QtWidgets.QHBoxLayout()
@@ -241,6 +257,7 @@ class RoiImageWidget(QtWidgets.QWidget):
                                 roi_limits[3] - roi_limits[2]))
 
     def plot_image(self, data):
+        #log_data = np.log(data)
         self.pg_img_item.setImage(data)
         x_max, y_max = data.shape
         self.pg_viewbox.setLimits(xMin=0, xMax=x_max,

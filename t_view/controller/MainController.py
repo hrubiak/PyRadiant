@@ -20,7 +20,7 @@
 import sys
 import os
 
-from qtpy import QtWidgets, QtCore
+from PyQt5 import QtWidgets, QtCore
 
 from .. import __version__
 from ..model.TemperatureModel import TemperatureModel

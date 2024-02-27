@@ -1,8 +1,7 @@
 /*
-# T-View - GUI program for analysis of thermal spectra during
-# laser heated diamond anvil cell experiments
-Copyright (C) 2024  Ross Hrubiak (hrubiak@anl.gov)
-HPCAT, ANL
+Dioptas - GUI program for fast processing of 2D X-ray data
+Copyright (C) 2017  Clemens Prescher (clemens.prescher@gmail.com)
+GSECARS, University of Chicago
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
@@ -18,8 +17,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 /*
 
 Modifications:
-    February, 2024 Copied from SonicPy
-       
+    October 9, 2018 Ross Hrubiak
+        - added QMenu style
+        - added QMenuBar style
 
 */
 
@@ -221,14 +221,14 @@ QDoubleSpinBox::up-button {
     width: 14px;
 }
 
-QDoubleSpinBox::down-arrow {
-    image: url(um/resources/style/angle-down.png);
+DoubleSpinBoxAlignRight::down-arrow {
+    image: url(down_arrow_url);
     width: 12px;
     height: 12px;
 }
 
-QDoubleSpinBox::up-arrow {
-    image: url(um/resources/style/angle-up.png);
+DoubleSpinBoxAlignRight::up-arrow {
+    image: url(up_arrow_url);
     width: 12px;
     height: 12px;
 }
@@ -259,7 +259,7 @@ QComboBox:disabled {
 }
 
 QComboBox::down-arrow {
-    image: url(um/resources/style/angle-down.png);
+    image: url(t_view/resources/style/angle-down.png);
     width: 12px;
     height: 12px;
  
@@ -407,13 +407,13 @@ QScrollBar:vertical {
 QScrollBar:horizontal {
     border: 2px solid #52595F;
     background: qlineargradient(spread:pad, x1:0, y1:1, x2:0, y2:0, stop:0 #323232, stop:1 #505050);
-	height: 12 px;
+	height: 14 px;
     margin: 0px 0px 0px 0px;
 }
 
 QScrollBar::handle:horizontal {
     background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #969696, stop:1 #CACACA);
-   border-radius: 3px;
+   border-radius: 5px;
     min-width: 20px;
   padding: 15px;
 }
@@ -485,16 +485,30 @@ QFrame#main_frame {
     border-radius: 3px;
 }
 
-#scope_mode_btn, #afg_mode_btn, #scan_mode_btn {
-    font: normal 13px;
+
+
+#freq_btn, #freq_btn_first, #freq_btn_last {
+    font: normal 12px;
     border-radius: 1px;
 }
+#freq_btn_first, #p_wave_btn{
+    border-top-left-radius:8px;
+   border-bottom-left-radius: 8px;
+ }
+ #freq_btn_last, #s_wave_btn{
+    border-top-right-radius:8px;
+   border-bottom-right-radius: 8px;
+ }
 
-#scope_mode_btn {
-   border-top-right-radius:12px;
-   border-bottom-right-radius: 12px;
+#cond_btn, #cond_btn_first, #cond_btn_last, #p_wave_btn, #s_wave_btn {
+    font: normal 12px;
+    border-radius: 1px;
 }
-#scan_mode_btn {
-   border-top-left-radius:12px;
-   border-bottom-left-radius: 12px;
-}
+#cond_btn_first, #p_wave_btn{
+    border-top-left-radius:8px;
+   border-bottom-left-radius: 8px;
+ }
+ #cond_btn_last, #s_wave_btn{
+    border-top-right-radius:8px;
+   border-bottom-right-radius: 8px;
+ }

@@ -57,9 +57,9 @@ class HistogramLUTItem(GraphicsWidget):
     - Gradient editor to define color lookup table for single-channel images
     """
 
-    sigLookupTableChanged = QtCore.Signal(object)
-    sigLevelsChanged = QtCore.Signal(object)
-    sigLevelChangeFinished = QtCore.Signal(object)
+    sigLookupTableChanged = QtCore.pyqtSignal(object)
+    sigLevelsChanged = QtCore.pyqtSignal(object)
+    sigLevelChangeFinished = QtCore.pyqtSignal(object)
 
     def __init__(self, image=None, fillHistogram=False, orientation='horizontal', autoLevel=None):
         """
@@ -120,7 +120,7 @@ class HistogramLUTItem(GraphicsWidget):
         if self.orientation == 'horizontal':
             self.plot.setLogMode(yMode=True, xMode=False)
         elif self.orientation == 'vertical':
-            self.plot.setLogMode(yMode=False, xMode=True)
+            self.plot.setLogMode(False, True)
             self.vb.invertX(True)
         self.vb.autoRange()
         self.fillHistogram(fillHistogram)

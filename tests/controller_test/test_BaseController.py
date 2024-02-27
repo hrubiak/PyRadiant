@@ -24,8 +24,8 @@ import os
 import shutil
 from numpy import array_equal
 
-from qtpy import QtWidgets, QtCore
-from qtpy.QtTest import QTest
+from PyQt5 import QtWidgets, QtCore
+from PyQt5.QtTest import QTest
 
 from tests.utility import QtTest
 
@@ -86,7 +86,7 @@ class BaseControllerTest(QtTest):
         QTest.mouseClick(self.widget.save_data_btn, QtCore.Qt.LeftButton)
         self.assertTrue(os.path.exists(out_path))
 
-    @patch('qtpy.QtWidgets.QFileDialog.getSaveFileName')
+    @patch('PyQt5.QtWidgets.QFileDialog.getSaveFileName')
     def test_saving_graph(self, filedialog):
         # load a file:
         self.controller.load_file_btn_clicked()

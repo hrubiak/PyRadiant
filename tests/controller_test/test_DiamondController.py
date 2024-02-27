@@ -21,8 +21,8 @@ import unittest
 import os
 import numpy as np
 
-from qtpy import QtCore
-from qtpy.QtTest import QTest
+from PyQt5 import QtCore
+from PyQt5.QtTest import QTest
 from tests.utility import QtTest
 
 from t_view.model.DiamondModel import DiamondModel

@@ -17,11 +17,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from qtpy import QtWidgets, QtCore, QtGui
+from PyQt5 import QtWidgets, QtCore, QtGui
 import pyqtgraph as pg
 from pyqtgraph.exporters.ImageExporter import ImageExporter
 from pyqtgraph.exporters.SVGExporter import SVGExporter
-
+import numpy as np
 from .ModifiedPlotItem import ModifiedPlotItem
 
 pg.setConfigOption('useOpenGL', False)
@@ -46,7 +46,7 @@ export_colors = {
 
 
 class TemperatureSpectrumWidget(QtWidgets.QWidget):
-    mouse_moved = QtCore.Signal(float, float)
+    mouse_moved = QtCore.pyqtSignal(float, float)
 
     def __init__(self, *args, **kwargs):
         super(TemperatureSpectrumWidget, self).__init__(*args, **kwargs)
@@ -67,6 +67,8 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._pg_layout.layout.setVerticalSpacing(0)
 
         self._us_plot = ModifiedPlotItem(enableMouseInteraction=False)
+        self._us_view_box = self._us_plot.getViewBox()
+        
         self._us_plot.showAxis('top', show=True)
         self._us_plot.showAxis('right', show=True)
         self._us_plot.getAxis('top').setStyle(showValues=False)
@@ -77,6 +79,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._us_plot.setMinimumWidth(120)
 
         self._ds_plot = ModifiedPlotItem(False)
+        self._ds_view_box = self._ds_plot.getViewBox()
         self._ds_plot.showAxis('top', show=True)
         self._ds_plot.showAxis('right', show=True)
         self._ds_plot.getAxis('top').setStyle(showValues=False)
@@ -191,15 +194,21 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._time_lapse_plot.mouse_moved.connect(self.mouse_moved)
 
     def plot_ds_data(self, x, y):
+        
+        self._ds_view_box.setYRange(-1,np.amax(y)*1.1)
         self._ds_data_item.setData(x, y)
 
     def plot_us_data(self, x, y):
+      
+        self._us_view_box.setYRange(-1,np.amax(y)*1.1)
         self._us_data_item.setData(x, y)
 
     def plot_ds_fit(self, x, y):
+        
         self._ds_fit_item.setData(x, y)
 
     def plot_us_fit(self, x, y):
+        
         self._us_fit_item.setData(x, y)
 
     def plot_ds_time_lapse(self, x, y):

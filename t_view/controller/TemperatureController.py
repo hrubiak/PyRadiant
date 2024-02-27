@@ -19,7 +19,7 @@
 
 import os, importlib
 
-from qtpy import QtWidgets, QtCore
+from PyQt5 import QtWidgets, QtCore
 
 from ..widget.TemperatureWidget import TemperatureWidget, SetupEpicsDialog
 from ..widget.Widgets import open_file_dialog, open_files_dialog, save_file_dialog
@@ -36,7 +36,7 @@ except ImportError:
 
 class TemperatureController(QtCore.QObject):
 
-    temperature_folder_changed = QtCore.Signal()
+    temperature_folder_changed = QtCore.pyqtSignal()
 
     def __init__(self, temperature_widget, model):
         """
@@ -186,7 +186,8 @@ class TemperatureController(QtCore.QObject):
         if filename is not '':
             self._setting_working_dir = os.path.dirname(filename)
             self.model.load_setting(filename)
-            self.update_setting_combobox()
+            
+            self.update_setting_combobox(filename)
 
     def save_data_btn_clicked(self, filename=None):
         if filename is None or filename is False:
@@ -213,16 +214,20 @@ class TemperatureController(QtCore.QObject):
         if filename is not '':
             self.widget.graph_widget.save_graph(filename)
 
-    def update_setting_combobox(self):
+    def update_setting_combobox(self, filename):
+        folder = os.path.split(filename)[0]
         self._settings_files_list = []
         self._settings_file_names_list = []
         try:
-            for file in os.listdir(self._setting_working_dir):
+            for file in os.listdir(folder):
                 if file.endswith('.trs'):
                     self._settings_files_list.append(file)
                     self._settings_file_names_list.append(file.split('.')[:-1][0])
         except:
             pass
+        if not len(self._settings_files_list):
+            self._settings_files_list.append(filename)
+            self._settings_file_names_list.append(filename.split('.')[:-1][0])
         self.widget.settings_cb.blockSignals(True)
         self.widget.settings_cb.clear()
         self.widget.settings_cb.addItems(self._settings_file_names_list)

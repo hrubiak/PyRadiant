@@ -18,8 +18,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
-from qtpy import QtCore, QtWidgets, QtGui
+from PyQt5 import QtCore, QtWidgets, QtGui
 from functools import partial
+
 
 from .TemperatureWidget import TemperatureWidget
 
@@ -28,9 +29,10 @@ from .. import style_path
 from .. import icons_path
 
 
-class MainWidget(QtWidgets.QWidget):
+class MainWidget(QtWidgets.QMainWindow):
     def __init__(self, *args, **kwargs):
-        super(MainWidget, self).__init__(*args, **kwargs)
+        super().__init__()
+        self._centeral_widget = QtWidgets.QWidget()
         self._main_layout = QtWidgets.QVBoxLayout()
         self._main_layout.setContentsMargins(0, 0, 0, 0)
         self._main_layout.setSpacing(0)
@@ -38,9 +40,10 @@ class MainWidget(QtWidgets.QWidget):
         self.temperature_widget = TemperatureWidget(self)
         self._main_layout.addWidget(self.temperature_widget)
         self.load_stylesheet()
-        self.setLayout(self._main_layout)
+        self._centeral_widget.setLayout(self._main_layout)
+        self.setCentralWidget(self._centeral_widget)
 
-        self.setWindowIcon(QtGui.QIcon(os.path.join(icons_path, 't_view.ico')))
+        #self.setWindowIcon(QtGui.QIcon(os.path.join(icons_path, 't_view.ico')))
 
     def load_stylesheet(self):
         main_stylesheet_file = open(os.path.join(style_path, "stylesheet.qss"), 'r')

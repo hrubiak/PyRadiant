@@ -21,7 +21,7 @@ requirements:
     - six>=1.10
     - h5py
     - matplotlib
-    - qtpy
+    - PyQt5
     - pyqtgraph
     - lmfit
     - pyshortcuts
@@ -34,7 +34,7 @@ requirements:
     - six>=1.10
     - h5py
     - matplotlib
-    - qtpy
+    - PyQt5
     - pyqtgraph
     - lmfit
     - pyshortcuts

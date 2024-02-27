@@ -19,7 +19,7 @@
 
 import unittest
 import os
-from qtpy import QtWidgets
+from PyQt5 import QtWidgets
 
 import numpy as np
 

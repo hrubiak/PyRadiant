@@ -25,7 +25,7 @@ Requirements
 ===
 
 - Python 3
-- qtpy
+- PyQt5
 - numpy
 - scipy
 - pyqtgraph
@@ -36,13 +36,13 @@ Requirements
 Installation
 ===
 
-Except for qtpy, all of those packages can be easily installed using "pip" as python package manager. If you are on
-Windows or Mac, please try to install qtpy by using a precompiled python distribution such as anaconda, enthought,
+Except for PyQt5, all of those packages can be easily installed using "pip" as python package manager. If you are on
+Windows or Mac, please try to install PyQt5 by using a precompiled python distribution such as anaconda, enthought,
 winpython or Python(x,y). On Linux PyQt usually can be easily installed using the packagemanager.
 
 Using the minimum anaconda distribution, you have to only type the following two commands:
 
-    conda install pyqt numpy scipy h5py qtpy pyqtgraph
+    conda install pyqt numpy scipy h5py PyQt5 pyqtgraph
     pip install dateutils lmfit pyshortcuts
     
 The program itself can then be run by going into the "t-view" directory and type:
