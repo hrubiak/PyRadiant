@@ -202,6 +202,11 @@ class TemperatureModel(QtCore.QObject):
             ds_group['image'] = self.ds_calibration_img_file.img
             ds_group['image'].attrs['filename'] = self.ds_calibration_img_file.filename
             ds_group['image'].attrs['x_calibration'] = self.ds_calibration_img_file.x_calibration
+        else:
+            if self.ds_temperature_model.calibration_img is not None:
+                ds_group['image'] = self.ds_temperature_model.calibration_img
+                ds_group['image'].attrs['filename'] = self.ds_calibration_filename
+                ds_group['image'].attrs['x_calibration'] = self.ds_temperature_model._data_img_x_calibration
         ds_group['roi'] = self.ds_roi.as_list()
         ds_group['roi_bg'] = self.ds_roi_bg.as_list()
         ds_group['modus'] = self.ds_temperature_model.calibration_parameter.modus
@@ -216,6 +221,11 @@ class TemperatureModel(QtCore.QObject):
             us_group['image'] = self.us_calibration_img_file.img
             us_group['image'].attrs['filename'] = self.us_calibration_img_file.filename
             us_group['image'].attrs['x_calibration'] = self.us_calibration_img_file.x_calibration
+        else:
+            if self.us_temperature_model.calibration_img is not None:
+                us_group['image'] = self.us_temperature_model.calibration_img
+                us_group['image'].attrs['filename'] = self.us_calibration_filename
+                us_group['image'].attrs['x_calibration'] = self.us_temperature_model._data_img_x_calibration
         us_group['roi'] = self.us_roi.as_list()
         us_group['roi_bg'] = self.us_roi_bg.as_list()
         us_group['modus'] = self.us_temperature_model.calibration_parameter.modus
@@ -233,8 +243,12 @@ class TemperatureModel(QtCore.QObject):
             ds_img = ds_group['image'][...]
             
             self.ds_calibration_filename = ds_group['image'].attrs['filename']
-            img_dimension = (ds_img.shape[1],
-                             ds_img.shape[0])
+            if len(ds_img.shape) == 2:
+                img_dimension = (ds_img.shape[1],
+                                ds_img.shape[0])
+            elif len(ds_img.shape) == 3:
+                img_dimension = (ds_img.shape[2],
+                                ds_img.shape[1])
             ds_group_roi = ds_group['roi'][...]
             ds_group_roi_bg = ds_group['roi_bg'][...]
             self.roi_data_manager.set_roi(0, img_dimension, ds_group_roi)
@@ -268,8 +282,12 @@ class TemperatureModel(QtCore.QObject):
             us_img = us_group['image'][...]
             
             self.us_calibration_filename = us_group['image'].attrs['filename']
-            img_dimension = (us_img.shape[1],
-                             us_img.shape[0])
+            if len(us_img.shape) == 2:
+                img_dimension = (us_img.shape[1],
+                                us_img.shape[0])
+            elif len(us_img.shape) == 3:
+                img_dimension = (us_img.shape[2],
+                                us_img.shape[1])
 
             us_group_roi = us_group['roi'][...]
             us_group_roi_bg = us_group['roi_bg'][...]
@@ -569,9 +587,18 @@ class SingleTemperatureModel(QtCore.QObject):
         return self._calibration_img
 
     def set_calibration_data(self, img_data, x_calibration):
-        self._calibration_img = img_data
+        
         self._calibration_img_x_calibration = x_calibration
-        self._calibration_img_dimension = (img_data.shape[1], img_data.shape[0])
+        if type(img_data) == list:
+            self._calibration_img = img_data[0]
+        else:
+            if len(img_data.shape) == 3:
+                self._calibration_img = img_data[0]
+            else:
+                self._calibration_img = img_data    
+
+        self._calibration_img_dimension = (self._calibration_img.shape[1], self._calibration_img.shape[0])
+       
 
         self._update_calibration_spectrum()
         self._update_corrected_spectrum()
@@ -619,16 +646,18 @@ class SingleTemperatureModel(QtCore.QObject):
 
     def _update_data_spectrum(self):
         if self._data_img is not None:
+            _data_img_as_array = np.asarray(self._data_img)
             roi = self.roi_data_manager.get_roi(self.ind, self._data_img_dimension)
             roi_bg = self.roi_data_manager.get_roi(self.ind+2, self._data_img_dimension)
             roi_bg.x_max = roi.x_max
             roi_bg.x_min = roi.x_min
 
-            data_x = self._data_img_x_calibration[int(roi.x_min):int(roi.x_max) + 1]
-            data_y = get_roi_sum(self.data_img, roi)
-            data_y_bg = get_roi_sum(self.data_img, roi_bg)
 
-            self.data_roi_max = get_roi_max(self.data_img, roi)
+            data_x = self._data_img_x_calibration[int(roi.x_min):int(roi.x_max) + 1]
+            data_y = get_roi_sum(_data_img_as_array, roi)
+            data_y_bg = get_roi_sum(_data_img_as_array, roi_bg)
+
+            self.data_roi_max = get_roi_max(_data_img_as_array, roi)
             self.data_spectrum.data = data_x, data_y - data_y_bg
 
     def _update_calibration_spectrum(self):

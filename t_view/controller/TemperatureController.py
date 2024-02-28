@@ -118,7 +118,7 @@ class TemperatureController(QtCore.QObject):
                                           directory=self._exp_working_dir)
 
         for filename in filenames:
-            if filename is not '':
+            if filename != '':
                 self._exp_working_dir = os.path.dirname(str(filename))
                 self.model.load_data_image(str(filename))
                 self._directory_watcher.path = self._exp_working_dir
@@ -129,7 +129,7 @@ class TemperatureController(QtCore.QObject):
             filename = open_file_dialog(self.widget, caption="Load Downstream Calibration SPE",
                                         directory=self._exp_working_dir)
 
-        if filename is not '':
+        if filename != '':
             self._exp_working_dir = os.path.dirname(filename)
             self.model.load_ds_calibration_image(filename)
 
@@ -138,7 +138,7 @@ class TemperatureController(QtCore.QObject):
             filename = open_file_dialog(self.widget, caption="Load Upstream Calibration SPE",
                                         directory=self._exp_working_dir)
 
-        if filename is not '':
+        if filename != '':
             self._exp_working_dir = os.path.dirname(filename)
             self.model.load_us_calibration_image(filename)
 
@@ -155,7 +155,7 @@ class TemperatureController(QtCore.QObject):
             filename = open_file_dialog(self.widget, caption="Load Downstream Standard Spectrum",
                                         directory=self._exp_working_dir)
 
-        if filename is not '':
+        if filename != '':
             self._exp_working_dir = os.path.dirname(filename)
             self.model.load_ds_standard_spectrum(filename)
 
@@ -164,7 +164,7 @@ class TemperatureController(QtCore.QObject):
             filename = open_file_dialog(self.widget, caption="Load Upstream Standard Spectrum",
                                         directory=self._exp_working_dir)
 
-        if filename is not '':
+        if filename != '':
             self._exp_working_dir = os.path.dirname(filename)
             self.model.load_us_standard_spectrum(filename)
 
@@ -173,17 +173,17 @@ class TemperatureController(QtCore.QObject):
             filename = save_file_dialog(self.widget, caption="Save setting file",
                                         directory=self._setting_working_dir)
 
-        if filename is not '':
+        if filename != '':
             self._setting_working_dir = os.path.dirname(filename)
             self.model.save_setting(filename)
-            self.update_setting_combobox()
+            self.update_setting_combobox(filename)
 
     def load_setting_file(self, filename=None):
         if filename is None or filename is False:
             filename = open_file_dialog(self.widget, caption="Load setting file",
                                         directory=self._setting_working_dir)
 
-        if filename is not '':
+        if filename != '':
             self._setting_working_dir = os.path.dirname(filename)
             self.model.load_setting(filename)
             
@@ -197,7 +197,7 @@ class TemperatureController(QtCore.QObject):
                 directory=os.path.join(self._exp_working_dir,
                                        '.'.join(self.model.data_img_file.filename.split(".")[:-1]) + ".txt")
             )
-        if filename is not '':
+        if filename != '':
             self.model.save_txt(filename)
 
     def save_graph_btn_clicked(self, filename=None):
@@ -211,7 +211,7 @@ class TemperatureController(QtCore.QObject):
             )
         filename = str(filename)
 
-        if filename is not '':
+        if filename != '':
             self.widget.graph_widget.save_graph(filename)
 
     def update_setting_combobox(self, filename):
@@ -222,15 +222,22 @@ class TemperatureController(QtCore.QObject):
             for file in os.listdir(folder):
                 if file.endswith('.trs'):
                     self._settings_files_list.append(file)
-                    self._settings_file_names_list.append(file.split('.')[:-1][0])
+                    name_for_list = file.split('.')[:-1][0]
+                    self._settings_file_names_list.append(name_for_list)
         except:
             pass
         if not len(self._settings_files_list):
             self._settings_files_list.append(filename)
-            self._settings_file_names_list.append(filename.split('.')[:-1][0])
+            name_for_list = filename.split('.')[:-1][0]
+            self._settings_file_names_list.append(name_for_list)
+        
         self.widget.settings_cb.blockSignals(True)
         self.widget.settings_cb.clear()
         self.widget.settings_cb.addItems(self._settings_file_names_list)
+
+        selected_name = os.path.split(filename)[1].split('.')[:-1][0]
+        ind = self._settings_file_names_list.index(selected_name)
+        self.widget.settings_cb.setCurrentIndex(ind)
         self.widget.settings_cb.blockSignals(False)
 
     def settings_cb_changed(self):
@@ -421,7 +428,7 @@ class TemperatureController(QtCore.QObject):
 
     def setup_temperature_file_folder_monitor(self):
         if epics is not None and eps.epics_settings['T_folder'] is not None \
-                and eps.epics_settings['T_folder'] is not 'None':
+                and eps.epics_settings['T_folder'] != 'None':
             # epics.camonitor_clear(eps.epics_settings['T_folder'])
             epics.camonitor(eps.epics_settings['T_folder'], callback=self.temperature_file_folder_changed)
 
