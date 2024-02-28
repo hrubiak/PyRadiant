@@ -73,10 +73,10 @@ class SpeFile(object):
             # file
             self._read_parameter_from_header()
         else:
-            try:
-                self._read_parameter_from_dom()
-            except: # if fails for any reason, try reading from the header
-                self._read_parameter_from_header()
+            
+            self._read_parameter_from_dom()
+            '''except: # if fails for any reason, try reading from the header
+                self._read_parameter_from_header()'''
 
     def _read_size(self):
         """reads the dimensions of the Model from the header into the object
@@ -124,11 +124,11 @@ class SpeFile(object):
         
         '''import locale
         locale.setlocale(locale.LC_TIME, 'en_US.utf8')'''
-    
-        self.date_time = datetime.datetime.strptime(str(strdate), "%d%b%Y%H%M%S")
-        
-        '''print('WARNING: could note read datetime from SPE_FILE')
-        self.date_time = datetime.datetime.now()'''
+        try:
+            self.date_time = datetime.datetime.strptime(str(strdate), "%d%b%Y%H%M%S")
+        except:
+            '''print('WARNING: could note read datetime from SPE_FILE')'''
+            self.date_time = datetime.datetime.now()
 
 
     def _read_calibration_from_header(self):
@@ -201,22 +201,22 @@ class SpeFile(object):
         if len(self.dom.getElementsByTagName('Experiment')) != 1:  # check if it is a real v3.0 file
             if len(self.dom.getElementsByTagName('ShutterTiming')) == 1:  #check if it is a pixis detector
                 self._exposure_time = self.dom.getElementsByTagName('ExposureTime')[0].childNodes[0]
-                self.exposure_time = np.float(self._exposure_time.toxml()) / 1000.0
+                self.exposure_time = np.float32(self._exposure_time.toxml()) / 1000.0
             else:
                 # self._exposure_time = self.dom.getElementsByTagName('ReadoutControl')[0]. \
                 #     getElementsByTagName('Time')[0].childNodes[0].nodeValue
-                # self._exposure_time = np.float(self._exposure_time)/1000000000
+                # self._exposure_time = np.float32(self._exposure_time)/1000000000
                 self._exposure_time = self.dom.getElementsByTagName('Gating')[0]. \
                     getElementsByTagName('RepetitiveGate')[0].getElementsByTagName('Pulse')[0].getAttribute('width')
-                self._exposure_time = np.float(self._exposure_time)/1000000000
+                self._exposure_time = np.float32(self._exposure_time)/1000000000
                 self._accumulations = self.dom.getElementsByTagName('Accumulations')[0].childNodes[0].nodeValue
-                self.exposure_time = np.float(self._exposure_time) * np.float(self._accumulations)
+                self.exposure_time = np.float32(self._exposure_time) * np.float32(self._accumulations)
         else:  # this is searching for legacy experiment:
             self._exposure_time = self.dom.getElementsByTagName('LegacyExperiment')[0]. \
                 getElementsByTagName('Experiment')[0]. \
                 getElementsByTagName('CollectionParameters')[0]. \
                 getElementsByTagName('Exposure')[0].attributes["value"].value
-            self.exposure_time = np.float(self._exposure_time.split()[0])
+            self.exposure_time = np.float32(self._exposure_time.split()[0])
 
     def _read_detector_from_dom(self):
         """Reads the detector information from the dom object"""

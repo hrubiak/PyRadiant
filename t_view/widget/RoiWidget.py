@@ -121,6 +121,8 @@ class RoiGroupBox(QtWidgets.QGroupBox):
         super(RoiGroupBox, self).__init__(title)
         self.color = color
         self._grid_layout = QtWidgets.QGridLayout()
+        self._grid_layout.setSpacing(2)
+        
 
         self.x_min_txt = IntegerTextField('0')
         self.x_max_txt = IntegerTextField('0')
