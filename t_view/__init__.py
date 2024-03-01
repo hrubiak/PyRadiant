@@ -20,7 +20,7 @@
 import os
 import sys
 from sys import platform
-from optparse import OptionParser
+#from optparse import OptionParser
 
 from PyQt5 import QtWidgets
 

@@ -18,33 +18,44 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from PyQt5 import QtWidgets, QtCore, QtGui
+from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem
 
 
-class FileGroupBox(QtWidgets.QGroupBox, object):
+class FileGroupBox(QtWidgets.QGroupBox):
     def __init__(self, *args):
-        super(FileGroupBox, self).__init__(*args)
+        super().__init__()
         self.setTitle('File')
         self._main_layout = QtWidgets.QVBoxLayout()
         self._main_layout.setContentsMargins(8, 8, 8, 8)
         self._main_layout.setSpacing(8)
 
         self.create_file_control_widget()
-        self.create_frame_control_widget()
-
-        self.style_widgets()
 
         self._main_layout.addWidget(self.file_control_widget)
-        self._main_layout.addWidget(self.frame_control_widget)
+        
+        self._second_row_widget = QtWidgets.QWidget()
+        self._second_row_widget_layout = QtWidgets.QHBoxLayout(self._second_row_widget)
+        self._second_row_widget_layout.setContentsMargins(0, 0, 0, 0)
+        self._second_row_widget_layout.setSpacing(5)
+        self._second_row_widget_layout.addWidget(self.dirname_lbl)
+        self._second_row_widget_layout.addWidget(QtWidgets.QLabel('/'))
+        self._second_row_widget_layout.addWidget(self.filename_lbl)
+        self._second_row_widget_layout.addSpacerItem(HorizontalSpacerItem())
+        
+        self._second_row_widget_layout.addWidget(self.frame_control_widget)
+        self._main_layout.addWidget(self._second_row_widget)
+        
         self.frame_control_widget.hide()
+        
         self.setLayout(self._main_layout)
 
     def create_file_control_widget(self):
         self.file_control_widget = QtWidgets.QWidget()
 
-        self._file_control_layout = QtWidgets.QGridLayout()
+        self._file_control_layout = QtWidgets.QHBoxLayout()
         self._file_control_layout.setContentsMargins(0, 0, 0, 0)
-        self._file_control_layout.setHorizontalSpacing(5)
-        self._file_control_layout.setVerticalSpacing(8)
+        
+        
 
         self.load_file_btn = QtWidgets.QPushButton('Load')
         self.load_next_file_btn = QtWidgets.QPushButton('>')
@@ -55,58 +66,48 @@ class FileGroupBox(QtWidgets.QGroupBox, object):
         self.autoprocess_cb = QtWidgets.QCheckBox('auto')
         self.filename_lbl = QtWidgets.QLabel('file')
         self.dirname_lbl = QtWidgets.QLabel('folder')
+        
 
-        self._file_control_layout.addWidget(self.load_file_btn, 0, 0, 1, 2)
-        self._file_control_layout.addWidget(self.load_previous_file_btn, 1, 0)
-        self._file_control_layout.addWidget(self.load_next_file_btn, 1, 1)
-        self._file_control_layout.addWidget(self.browse_by_name_rb, 1, 2)
-        self._file_control_layout.addWidget(self.browse_by_time_rb, 1, 3)
-        self._file_control_layout.addWidget(self.autoprocess_cb, 0, 2)
-        self._file_control_layout.addWidget(self.filename_lbl, 2, 0, 1, 4)
-        self._file_control_layout.addWidget(self.dirname_lbl, 3, 0, 1, 4)
-        self.file_control_widget.setLayout(self._file_control_layout)
-
-    def create_frame_control_widget(self):
+        self._file_control_layout.addWidget(self.load_file_btn)
+        self._file_control_layout.addWidget(self.load_previous_file_btn)
+        self._file_control_layout.addWidget(self.load_next_file_btn)
+        self._file_control_layout.addWidget(self.browse_by_name_rb)
+        self._file_control_layout.addWidget(self.browse_by_time_rb)
+        self._file_control_layout.addWidget(self.autoprocess_cb)
+        
+        self._file_control_layout.addSpacerItem(HorizontalSpacerItem())
+        
+        
+        
+        
         self.frame_control_widget = QtWidgets.QWidget()
 
         self._frame_control_layout = QtWidgets.QHBoxLayout()
         self._frame_control_layout.setContentsMargins(0, 0, 0, 0)
         self._frame_control_layout.setSpacing(5)
-
+        
+    
         self.load_previous_frame_btn = QtWidgets.QPushButton('<')
         self.load_next_frame_btn = QtWidgets.QPushButton('>')
         self.frame_txt = QtWidgets.QLineEdit('100')
+        self.frame_txt.setMaximumWidth(50)
 
         self._frame_control_layout.addWidget(self.load_previous_frame_btn)
         self._frame_control_layout.addWidget(self.frame_txt)
         self._frame_control_layout.addWidget(self.load_next_frame_btn)
-        self._frame_control_layout.addSpacerItem(QtWidgets.QSpacerItem(QtWidgets.QSpacerItem(10, 10,
-                                                                                     QtWidgets.QSizePolicy.Expanding,
-                                                                                     QtWidgets.QSizePolicy.Fixed)))
+       
         self.frame_control_widget.setLayout(self._frame_control_layout)
-
-    def style_widgets(self):
-        self.frame_txt.setMaximumWidth(50)
-
-        self.load_previous_file_btn.setFlat(True)
-        self.load_next_file_btn.setFlat(True)
-        self.load_previous_frame_btn.setFlat(True)
-        self.load_next_frame_btn.setFlat(True)
-        self.load_file_btn.setFlat(True)
-
-        self.frame_txt.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignRight)
-        self.frame_txt.setValidator(QtGui.QIntValidator())
-
-
-class TemperatureFileGroupBox(FileGroupBox):
-    def __init__(self, *args, **kwargs):
-        super(TemperatureFileGroupBox, self).__init__()
+        
         self.timelapse_btn = QtWidgets.QPushButton('Time Lapse')
-        self.timelapse_btn.setFlat(True)
         self._frame_control_layout.addWidget(self.timelapse_btn)
+        self._frame_control_layout.addSpacerItem(HorizontalSpacerItem())
 
         self.load_previous_frame_btn.setMaximumWidth(25)
         self.load_next_frame_btn.setMaximumWidth(25)
+        
+        self.file_control_widget.setLayout(self._file_control_layout)
+
+
 
 
 class OutputGroupBox(QtWidgets.QGroupBox, object):
@@ -140,6 +141,7 @@ class StatusBar(QtWidgets.QWidget):
         self.create_widgets()
         self.create_layout()
         self.style_widgets()
+        #self.setMaximumHeight(25)
 
     def create_widgets(self):
         self.left_lbl = QtWidgets.QLabel()
@@ -147,21 +149,19 @@ class StatusBar(QtWidgets.QWidget):
         self.bottom_lbl = QtWidgets.QLabel()
 
     def create_layout(self):
-        self._layout = QtWidgets.QVBoxLayout()
+        
         self._top_status_layout = QtWidgets.QHBoxLayout()
         self._top_status_layout.addWidget(self.left_lbl)
-        self._top_status_layout.addSpacerItem(QtWidgets.QSpacerItem(QtWidgets.QSpacerItem(10, 10,
-                                                                       QtWidgets.QSizePolicy.Expanding,
-                                                                       QtWidgets.QSizePolicy.Fixed)))
+        self._top_status_layout.addSpacerItem(HorizontalSpacerItem())
         self._top_status_layout.addWidget(self.right_lbl)
 
-        self._layout.addLayout(self._top_status_layout)
-        self._layout.addWidget(self.bottom_lbl)
+        #self._layout.addLayout(self._top_status_layout)
+        #self._layout.addWidget(self.bottom_lbl)
 
-        self.setLayout(self._layout)
+        self.setLayout(self._top_status_layout)
 
     def style_widgets(self):
-        self._layout.setContentsMargins(8, 0, 8, 0)
+        
         self.bottom_lbl.setStyleSheet("color: #00C503")
 
 

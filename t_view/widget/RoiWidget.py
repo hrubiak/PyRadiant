@@ -25,7 +25,7 @@ from PyQt5 import QtCore, QtWidgets, QtGui
 import pyqtgraph as pg
 from pyqtgraph.graphicsItems.ROI import Handle
 from pyqtgraph import ColorMap, HistogramLUTItem
-
+from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem
 #from .HistogramLUTItem import HistogramLUTItem
 
 from .Widgets import StatusBar
@@ -55,21 +55,21 @@ class RoiWidget(QtWidgets.QWidget):
         self._roi_gbs_layout.setSpacing(2)
         self.roi_gbs = []
         self.create_roi_gbs()
-        self._roi_gbs_layout.addSpacerItem(QtWidgets.QSpacerItem(20, 20,
-                                                             QtWidgets.QSizePolicy.Expanding,
-                                                             QtWidgets.QSizePolicy.Expanding))
+        self._roi_gbs_layout.addSpacerItem(VerticalSpacerItem())
 
         self._horizontal_layout.addWidget(self.img_widget)
         self._horizontal_layout.addLayout(self._roi_gbs_layout)
 
-        self._horizontal_layout.setStretch(0, 1)
-        self._horizontal_layout.setStretch(1, 0)
+        '''self._horizontal_layout.setStretch(0, 1)
+        self._horizontal_layout.setStretch(1, 0)'''
 
         self.status_bar = StatusBar()
         self.pos_lbl = self.status_bar.left_lbl
         self._main_vertical_layout.addLayout(self._horizontal_layout)
-        self._main_vertical_layout.addWidget(self.status_bar)
-        self._main_vertical_layout.setContentsMargins(0, 0, 0, 8)
+        #self._main_vertical_layout.addWidget(self.status_bar)
+        self._main_vertical_layout.setContentsMargins(0, 0, 0, 0)
+        self._main_vertical_layout.setSpacing(5)
+        #self._main_vertical_layout.addSpacerItem(VerticalSpacerItem())
 
         self.setLayout(self._main_vertical_layout)
 
@@ -140,7 +140,8 @@ class RoiGroupBox(QtWidgets.QGroupBox):
         self.setLayout(self._grid_layout)
         style_str = "color: rgb{0}; border: 1px solid rgb{0};".format(self.color)
         self.setStyleSheet('QGroupBox {' + style_str + '}')
-        self.setMaximumWidth(230)
+        self.setMaximumWidth(150)
+        self.setMinimumWidth(150)
         self.create_signals()
 
     def create_signals(self):
