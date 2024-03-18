@@ -28,10 +28,12 @@ from ..model import epics_settings as eps
 from .NewFileInDirectoryWatcher import NewFileInDirectoryWatcher
 import numpy as np
 
-try:
+epics = None
+'''try:
     import epics
 except ImportError:
-    epics = None
+    epics = None'''
+
 
 
 class TemperatureController(QtCore.QObject):

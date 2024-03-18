@@ -1,5 +1,5 @@
 {
     "restructuredtext.confPath": "",
     "restructuredtext.languageServer.disabled": true,
-    "python.pythonPath": "/Users/hrubiak/opt/anaconda3/bin/python"
+    "python.pythonPath": "/Users/hrubiak/anaconda3/bin/python"
 }

@@ -217,8 +217,8 @@ class RoiImageWidget(QtWidgets.QWidget):
         # Create a ColorMap using the custom colors
         cmap = ColorMap(pos=[0, 0.25, 0.5, 0.75, 1], color=custom_colors)
 
-        self.pg_hist_item = HistogramLUTItem(self.pg_img_item, orientation='vertical',
-                                            )
+        self.pg_hist_item = HistogramLUTItem(self.pg_img_item)#, orientation='vertical',
+                                            #)
         self.pg_hist_item.axis.setStyle(showValues=False)
         self.pg_hist_item.setFixedWidth(70)
 
