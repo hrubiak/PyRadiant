@@ -357,16 +357,23 @@ class TemperatureController(QtCore.QObject):
         self.widget.graph_widget.plot_ds_time_lapse(range(0, len(ds_temperature)), ds_temperature)
         self.widget.graph_widget.plot_us_time_lapse(range(0, len(us_temperature)), us_temperature)
 
-        self.widget.graph_widget.update_time_lapse_ds_temperature_txt(np.mean(ds_temperature),
-                                                                      np.std(ds_temperature))
+        if len(ds_temperature):
+            out = np.mean(ds_temperature), np.std(ds_temperature)
+        else:
+            out = np.nan, np.nan
+        self.widget.graph_widget.update_time_lapse_ds_temperature_txt(*out)
+            
+        if len(us_temperature):
+            out = np.mean(us_temperature), np.std(us_temperature)
+        else:
+            out = np.nan, np.nan
+        self.widget.graph_widget.update_time_lapse_us_temperature_txt(*out)
 
-        self.widget.graph_widget.update_time_lapse_us_temperature_txt(np.mean(us_temperature),
-                                                                      np.std(us_temperature))
-
-        self.widget.graph_widget.update_time_lapse_combined_temperature_txt(
-            np.mean(ds_temperature + us_temperature),
-            np.std(ds_temperature + us_temperature)
-        )
+        if len(us_temperature) and len(ds_temperature):
+            out = np.mean(ds_temperature + us_temperature), np.std(ds_temperature + us_temperature)
+        else:
+            out = np.nan, np.nan
+        self.widget.graph_widget.update_time_lapse_combined_temperature_txt(*out )
 
     def widget_rois_changed(self, roi_list):
         if self.model.has_data():
@@ -379,7 +386,9 @@ class TemperatureController(QtCore.QObject):
         x = int(np.floor(x))
         y = int(np.floor(y))
         try:
-            self.widget.roi_widget.pos_lbl.setText("X: {:5.0f}  Y: {:5.0f}    Int: {:6.0f}    lambda: {:5.2f} nm".
+            s = self.model.data_img.shape
+            if int(y)< s[0] and int(x)< s[1] and int(x) >= 0 and int(y) >= 0:
+                self.widget.roi_widget.pos_lbl.setText("X: {:5.0f}  Y: {:5.0f}    Int: {:6.0f}    lambda: {:5.2f} nm".
                                                    format(x, y,
                                                           self.model.data_img[int(y), int(x)],
                                                           self.model.data_img_file.x_calibration[int(x)]))

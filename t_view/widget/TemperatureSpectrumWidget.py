@@ -18,6 +18,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5.QtGui import QColor
 import pyqtgraph as pg
 from pyqtgraph.exporters.ImageExporter import ImageExporter
 from pyqtgraph.exporters.SVGExporter import SVGExporter
@@ -31,12 +32,12 @@ pg.setConfigOption('foreground', 'w')
 pg.setConfigOption('antialias', True)
 
 colors = {
-    'data_pen': '#ffffff',
-    'data_brush': '#FFF',
+    'data_pen': '#FFFFFF',
+    'data_brush': '#FFFFFF',
     'fit_pen': 'r',
-    'downstream': 'FFFF00',
-    'upstream': 'FF9900',
-    'combined': '66FFFF'
+    'downstream': '#FFFF00',
+    'upstream': '#FF9900',
+    'combined': '#66FFFF'
 }
 
 export_colors = {
@@ -74,7 +75,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._us_plot.getAxis('top').setStyle(showValues=False)
         self._us_plot.getAxis('right').setStyle(showValues=False)
         self._us_plot.getAxis('left').setStyle(showValues=False)
-        self._us_plot.setTitle("Upstream", color=colors['upstream'], size='20pt')
+        self._us_plot.setTitle("Upstream", color=QColor(colors['upstream']), size='20pt')
         self._us_plot.setLabel('bottom', '&lambda; (nm)')
         self._us_plot.setMinimumWidth(120)
 
@@ -85,7 +86,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._ds_plot.getAxis('top').setStyle(showValues=False)
         self._ds_plot.getAxis('right').setStyle(showValues=False)
         self._ds_plot.getAxis('left').setStyle(showValues=False)
-        self._ds_plot.setTitle("Downstream", color=colors['downstream'], size='20pt')
+        self._ds_plot.setTitle("Downstream", color=QColor(colors['downstream']), size='20pt')
         self._ds_plot.setLabel('bottom', '&lambda; (nm)')
         self._ds_plot.setMinimumWidth(120)
 
@@ -164,18 +165,18 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._ds_intensity_indicator.setParentItem(self._ds_plot)
 
         self._time_lapse_ds_data_item = pg.PlotDataItem(
-            pen=pg.mkPen(colors['downstream'], width=3),
-            brush=pg.mkBrush(colors['downstream']),
-            symbolPen=pg.mkPen(colors['downstream'], width=1),
-            symbolBrush=pg.mkBrush(colors['downstream']),
+            pen=pg.mkPen(QColor(colors['downstream']), width=3),
+            brush=pg.mkBrush(QColor(colors['downstream'])),
+            symbolPen=pg.mkPen(QColor(colors['downstream']), width=1),
+            symbolBrush=pg.mkBrush(QColor(colors['downstream'])),
             size=3,
             symbol='s'
         )
         self._time_lapse_us_data_item = pg.PlotDataItem(
-            pen=pg.mkPen(colors['upstream'], width=3),
-            brush=pg.mkBrush(colors['upstream']),
-            symbolPen=pg.mkPen(colors['upstream'], width=1),
-            symbolBrush=pg.mkBrush(colors['upstream']),
+            pen=pg.mkPen(QColor(colors['upstream']), width=3),
+            brush=pg.mkBrush(QColor(colors['upstream'])),
+            symbolPen=pg.mkPen(QColor(colors['upstream']), width=1),
+            symbolBrush=pg.mkBrush(QColor(colors['upstream'])),
             size=3,
             symbol='s'
         )
@@ -234,14 +235,14 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
     def update_us_roi_max_txt(self, roi_max, format_max=65536):
         self._us_roi_max_txt_item.setText('Max Int {0:.0f}'.format(roi_max),
                                           size='18pt',
-                                          color='33CC00',
+                                          color='#33CC00',
                                           justify='right')
         self._us_intensity_indicator.set_intensity(float(roi_max) / format_max)
 
     def update_ds_roi_max_txt(self, roi_max, format_max=65536):
         self._ds_roi_max_txt_item.setText('Max Int {0:.0f}'.format(roi_max),
                                           size='18pt',
-                                          color='33CC00',
+                                          color='#33CC00',
                                           justify='left')
         self._ds_intensity_indicator.set_intensity(float(roi_max) / format_max)
 

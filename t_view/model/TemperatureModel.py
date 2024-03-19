@@ -20,6 +20,9 @@
 import os
 from PyQt5 import QtCore
 import numpy as np
+np.seterr(all = 'ignore')
+import warnings
+warnings.simplefilter("error")
 from scipy.optimize import curve_fit
 import h5py
 import math
@@ -267,7 +270,7 @@ class TemperatureModel(QtCore.QObject):
 
         try:
             self.ds_temperature_model.calibration_parameter.standard_file_name = \
-                ds_group['standard_spectrum'].attrs['filename'].decode('utf-8')
+                ds_group['standard_spectrum'].attrs['filename']
         except AttributeError:
             self.ds_temperature_model.calibration_parameter.standard_file_name = \
                 ds_group['standard_spectrum'].attrs['filename']
@@ -306,7 +309,7 @@ class TemperatureModel(QtCore.QObject):
                                                                                      standard_data[1, :]))
         try:
             self.us_temperature_model.calibration_parameter.standard_file_name = \
-                us_group['standard_spectrum'].attrs['filename'].decode('utf-8')
+                us_group['standard_spectrum'].attrs['filename']
         except AttributeError:
             self.us_temperature_model.calibration_parameter.standard_file_name = \
                 us_group['standard_spectrum'].attrs['filename']
