@@ -49,6 +49,7 @@ class TemperatureController(QtCore.QObject):
         :return:
         """
         super(TemperatureController, self).__init__()
+        self.widget: TemperatureWidget
         self.widget = temperature_widget
         self.model: TemperatureModel
         self.model = model
