@@ -68,8 +68,7 @@ exe = EXE(pyz,
           debug=False,
           strip=None,
           upx=True,
-          console=False,
-          icon=os.path.join(icons_path, "t_view.ico"))
+          console=False))
 
 
 coll = COLLECT(exe,
@@ -82,5 +81,5 @@ coll = COLLECT(exe,
 
 if _platform == "darwin":
     app = BUNDLE(coll,
-                 name='T-View_{}.app'.format(__version__),
-                 icon=os.path.join(icons_path, "t_view.icns"))
+                 name='T-View_{}.app'.format(__version__)
+                 )
