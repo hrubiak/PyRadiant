@@ -31,6 +31,7 @@ from .Spectrum import Spectrum
 from .RoiData import RoiDataManager, Roi, get_roi_max, get_roi_sum
 from .SpeFile import SpeFile
 from .helper import FileNameIterator
+from .radiation import fit_linear, wien_pre_transform, m_to_T, m_b_wien
 
 T_LOG_FILE = 'T_log.txt'
 LOG_HEADER = '# File\tPath\tT_DS\tT_US\tDetector\tExposure Time [sec]\n'
@@ -699,8 +700,14 @@ class SingleTemperatureModel(QtCore.QObject):
     ##################################################################
     def fit_data(self):
         if len(self.corrected_spectrum):
+            '''temperature, temperature_error, self.fit_spectrum = \
+                fit_black_body_function_wien(self.corrected_spectrum)'''
             self.temperature, self.temperature_error, self.fit_spectrum = \
                 fit_black_body_function(self.corrected_spectrum)
+            '''d_T = temperature-self.temperature
+            d_Terr = temperature_error - self.temperature_error
+            print("d_T ",str(d_T))
+            print("d_Terr ",str(d_Terr))'''
         else:
             self.temperature = np.NaN
             self.temperature_error = np.NaN
@@ -728,7 +735,20 @@ def fit_black_body_function(spectrum):
         return T, T_err, Spectrum(spectrum._x, black_body_function(spectrum._x, param[0], param[1]))
     except (RuntimeError, TypeError, ValueError):
         return np.NaN, np.NaN, Spectrum([], [])
-
+    
+def fit_black_body_function_wien(spectrum):
+    
+    x, y = wien_pre_transform(spectrum._x * 1e-9, spectrum._y)
+    #av = np.average(y)
+    m, b, m_std_dev_res = fit_linear(x,y, True)
+    T, T_std_dev = m_to_T(m, m_std_dev_res)
+    
+    
+    wavelength, best_fit = m_b_wien(spectrum._x * 1e-9, m, b)
+    sp = Spectrum(wavelength *1e9, best_fit)
+    
+    return T, T_std_dev, sp
+    
 
 def black_body_function(wavelength, temp, scaling):
     wavelength = np.array(wavelength) * 1e-9
