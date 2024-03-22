@@ -277,7 +277,7 @@ class TemperatureController(QtCore.QObject):
             self.widget.frame_widget.setVisible(False)
             self.widget.graph_widget.show_time_lapse_plot(False)
 
-        epics_counter = True
+        '''epics_counter = True
         if eps.epics_settings['file_counter'] is None or eps.epics_settings['file_counter'] == '' or \
                         eps.epics_settings['file_counter'] == 'None' or not self.widget.connect_to_epics_cb.isChecked():
             epics_counter = None
@@ -285,7 +285,7 @@ class TemperatureController(QtCore.QObject):
             counter = (epics.caget(eps.epics_settings['file_counter'], as_string=True))
             if counter == '' or counter is None:
                 counter = '1'
-            epics.caput(eps.epics_settings['file_counter'], str(int(counter) + 1))
+            epics.caput(eps.epics_settings['file_counter'], str(int(counter) + 1))'''
 
         self.ds_calculations_changed()
         self.us_calculations_changed()
@@ -460,13 +460,13 @@ class TemperatureController(QtCore.QObject):
         self.setup_epics_dialog.temperature_file_folder_pv = eps.epics_settings['T_folder']
         self.setup_epics_dialog.exec_()
         if self.setup_epics_dialog.approved:
-            with open('model/epics_settings.py', 'w') as outfile:
+            '''with open('model/epics_settings.py', 'w') as outfile:
                 outfile.write('epics_settings = {\n')
                 outfile.write("    'us_last_temp': '" + self.setup_epics_dialog.us_temp_pv + "',\n")
                 outfile.write("    'ds_last_temp': '" + self.setup_epics_dialog.ds_temp_pv + "',\n")
               
                 outfile.write("    'T_folder': '" + self.setup_epics_dialog.temperature_file_folder_pv + ",\n")
-                outfile.write("}\n")
+                outfile.write("}\n")'''
             eps.epics_settings['us_last_temp'] = self.setup_epics_dialog.us_temp_pv
             eps.epics_settings['ds_last_temp'] = self.setup_epics_dialog.ds_temp_pv
 
