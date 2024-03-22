@@ -28,11 +28,11 @@ from ..model import epics_settings as eps
 from .NewFileInDirectoryWatcher import NewFileInDirectoryWatcher
 import numpy as np
 
-epics = None
-'''try:
+
+try:
     import epics
 except ImportError:
-    epics = None'''
+    epics = None
 
 
 
@@ -440,7 +440,7 @@ class TemperatureController(QtCore.QObject):
     def setup_temperature_file_folder_monitor(self):
         if epics is not None and eps.epics_settings['T_folder'] is not None \
                 and eps.epics_settings['T_folder'] != 'None':
-            # epics.camonitor_clear(eps.epics_settings['T_folder'])
+            epics.camonitor_clear(eps.epics_settings['T_folder'])
             epics.camonitor(eps.epics_settings['T_folder'], callback=self.temperature_file_folder_changed)
 
     def temperature_file_folder_changed(self, *args, **kwargs):
@@ -455,9 +455,7 @@ class TemperatureController(QtCore.QObject):
         self.setup_epics_dialog.ok_btn.setEnabled(True)
         self.setup_epics_dialog.us_temp_pv = eps.epics_settings['us_last_temp']
         self.setup_epics_dialog.ds_temp_pv = eps.epics_settings['ds_last_temp']
-        self.setup_epics_dialog.us_int_pv = eps.epics_settings['us_last_int']
-        self.setup_epics_dialog.ds_int_pv = eps.epics_settings['ds_last_int']
-        self.setup_epics_dialog.file_counter_pv = eps.epics_settings['file_counter']
+
         self.setup_epics_dialog.temperature_file_folder_pv = eps.epics_settings['T_folder']
         self.setup_epics_dialog.exec_()
         if self.setup_epics_dialog.approved:
@@ -465,14 +463,10 @@ class TemperatureController(QtCore.QObject):
                 outfile.write('epics_settings = {\n')
                 outfile.write("    'us_last_temp': '" + self.setup_epics_dialog.us_temp_pv + "',\n")
                 outfile.write("    'ds_last_temp': '" + self.setup_epics_dialog.ds_temp_pv + "',\n")
-                outfile.write("    'us_last_int': '" + self.setup_epics_dialog.us_int_pv + "',\n")
-                outfile.write("    'ds_last_int': '" + self.setup_epics_dialog.ds_int_pv + "',\n")
-                outfile.write("    'file_counter': '" + self.setup_epics_dialog.file_counter_pv + "',\n")
+              
                 outfile.write("    'T_folder': '" + self.setup_epics_dialog.temperature_file_folder_pv + ",\n")
                 outfile.write("}\n")
             eps.epics_settings['us_last_temp'] = self.setup_epics_dialog.us_temp_pv
             eps.epics_settings['ds_last_temp'] = self.setup_epics_dialog.ds_temp_pv
-            eps.epics_settings['us_last_int'] = self.setup_epics_dialog.us_int_pv
-            eps.epics_settings['ds_last_int'] = self.setup_epics_dialog.ds_int_pv
-            eps.epics_settings['file_counter'] = self.setup_epics_dialog.file_counter_pv
+
             eps.epics_settings['T_folder'] = self.setup_epics_dialog.temperature_file_folder_pv
