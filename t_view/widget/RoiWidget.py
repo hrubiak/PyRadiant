@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: utf8 -*-
 # T-View - GUI program for analysis of thermal spectra during
 # laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
@@ -30,10 +30,10 @@ from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem
 
 from .Widgets import StatusBar
 
-pg.setConfigOption('useOpenGL', False)
+#pg.setConfigOption('useOpenGL', False)
 pg.setConfigOption('leftButtonPan', False)
-pg.setConfigOption('background', (30, 30, 30))
-pg.setConfigOption('foreground', 'w')
+pg.setConfigOption('background', (20, 20, 20))
+#pg.setConfigOption('foreground', 'b')
 pg.setConfigOption('antialias', True)
 
 
@@ -47,30 +47,25 @@ class RoiWidget(QtWidgets.QWidget):
         self.roi_colors = roi_colors
 
         self._main_vertical_layout = QtWidgets.QVBoxLayout()
-        self._horizontal_layout = QtWidgets.QHBoxLayout()
+        self._main_vertical_layout.setContentsMargins(0, 0, 0, 0)
+        self._main_vertical_layout.setSpacing(5)
 
         self.img_widget = RoiImageWidget(roi_num=roi_num, roi_colors=roi_colors)
+        
+        self.status_bar = StatusBar()
 
-        self._roi_gbs_layout = QtWidgets.QVBoxLayout()
+        self._roi_gbs_layout = QtWidgets.QHBoxLayout()
         self._roi_gbs_layout.setSpacing(2)
         self.roi_gbs = []
         self.create_roi_gbs()
         self._roi_gbs_layout.addSpacerItem(VerticalSpacerItem())
 
-        self._horizontal_layout.addWidget(self.img_widget)
-        self._horizontal_layout.addLayout(self._roi_gbs_layout)
+        self._main_vertical_layout.addWidget(self.img_widget)
+        self._main_vertical_layout.addLayout(self._roi_gbs_layout)
+        self._main_vertical_layout.addWidget(self.status_bar)
 
-        '''self._horizontal_layout.setStretch(0, 1)
-        self._horizontal_layout.setStretch(1, 0)'''
-
-        self.status_bar = StatusBar()
         self.pos_lbl = self.status_bar.left_lbl
-        self._main_vertical_layout.addLayout(self._horizontal_layout)
-        #self._main_vertical_layout.addWidget(self.status_bar)
-        self._main_vertical_layout.setContentsMargins(0, 0, 0, 0)
-        self._main_vertical_layout.setSpacing(5)
-        #self._main_vertical_layout.addSpacerItem(VerticalSpacerItem())
-
+       
         self.setLayout(self._main_vertical_layout)
 
         self.create_signals()
@@ -310,7 +305,7 @@ class RoiImageWidget(QtWidgets.QWidget):
         dif = pos - lastPos
         dif *= -1
         ## Ignore axes if mouse is disabled
-        mouseEnabled = np.array(self.pg_viewbox.state['mouseEnabled'], dtype=np.float)
+        mouseEnabled = np.array(self.pg_viewbox.state['mouseEnabled'], dtype=np.float32)
         mask = mouseEnabled.copy()
         if axis is not None:
             mask[1 - axis] = 0.0

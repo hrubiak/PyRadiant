@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: utf8 -*-
 # T-View - GUI program for analysis of thermal spectra during
 # laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
@@ -140,29 +140,21 @@ class StatusBar(QtWidgets.QWidget):
 
         self.create_widgets()
         self.create_layout()
-        self.style_widgets()
-        #self.setMaximumHeight(25)
 
     def create_widgets(self):
         self.left_lbl = QtWidgets.QLabel()
         self.right_lbl = QtWidgets.QLabel()
-        self.bottom_lbl = QtWidgets.QLabel()
-
+ 
     def create_layout(self):
         
-        self._top_status_layout = QtWidgets.QHBoxLayout()
-        self._top_status_layout.addWidget(self.left_lbl)
-        self._top_status_layout.addSpacerItem(HorizontalSpacerItem())
-        self._top_status_layout.addWidget(self.right_lbl)
+        self._status_layout = QtWidgets.QHBoxLayout()
+        self._status_layout.setContentsMargins(0,0,0,0)
+        self._status_layout.setSpacing(0)
+        self._status_layout.addWidget(self.left_lbl)
+        self._status_layout.addSpacerItem(HorizontalSpacerItem())
+        self._status_layout.addWidget(self.right_lbl)
 
-        #self._layout.addLayout(self._top_status_layout)
-        #self._layout.addWidget(self.bottom_lbl)
-
-        self.setLayout(self._top_status_layout)
-
-    def style_widgets(self):
-        
-        self.bottom_lbl.setStyleSheet("color: #00C503")
+        self.setLayout(self._status_layout)
 
 
 def open_file_dialog(parent_widget, caption, directory, filter=None):

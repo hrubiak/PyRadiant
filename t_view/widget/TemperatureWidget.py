@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: utf8 -*-
 # T-View - GUI program for analysis of thermal spectra during
 # laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
@@ -40,25 +40,40 @@ class TemperatureWidget(QtWidgets.QWidget):
         
         self.tab_widget = QtWidgets.QTabWidget()
         
-        self.graph_widget = TemperatureSpectrumWidget()
+        self.graph_widget = QtWidgets.QWidget()
+        self._graph_widget_layout = QtWidgets.QVBoxLayout(self.graph_widget)
+        self.temperature_spectrum_widget = TemperatureSpectrumWidget()
+        self.graph_status_bar = StatusBar()
+        self._graph_widget_layout.addWidget(self.temperature_spectrum_widget)
+        self._graph_widget_layout.addWidget(self.graph_status_bar)
         
         self.settings_widget = QtWidgets.QWidget()
-        self._settings_widget_layout = QtWidgets.QVBoxLayout(self.settings_widget)
-        self._settings_widget_layout.setSpacing(2)
+        self._settings_widget_layout = QtWidgets.QHBoxLayout(self.settings_widget)
+        self._settings_widget_layout.setSpacing(0)
         self._settings_widget_layout.setContentsMargins(0, 0, 0, 0)
         
-        self.manual_settings_widget = QtWidgets.QWidget()
-        self._manual_settings_widget_layout = QtWidgets.QHBoxLayout(self.manual_settings_widget)
-        self.roi_widget = RoiWidget(4, ['Downstream', 'Upstream', 'Downstream_bg', 'Upstream_bg'],
+        self.roi_settings_widget = QtWidgets.QWidget()
+        self._roi_settings_widget_layout = QtWidgets.QVBoxLayout(self.roi_settings_widget)
+        self.roi_widget = RoiWidget(4, ['Downstream', 'Upstream', 'Downstream dark', 'Upstream dark'],
                                     roi_colors=[(255, 255, 0), (255, 140, 0),(155, 155, 0), (155,  90, 0)])
-        self._manual_settings_widget_layout.addWidget(self.roi_widget)
+        self._roi_settings_widget_layout.addWidget(self.roi_widget)
+        
+        
+        self.other_settings_widget = QtWidgets.QWidget()
+        self._other_settings_widget_layout = QtWidgets.QVBoxLayout(self.other_settings_widget)
+        
         self.calibration_section = TemperatureCalibrationSection()
-        self._manual_settings_widget_layout.addWidget(self.calibration_section)
         
-        self.load_setting_section = LoadSettingsSection()
         
-        self._settings_widget_layout.addWidget(self.manual_settings_widget)
-        self._settings_widget_layout.addWidget(self.load_setting_section)
+        self.settings_gb = SettingsGroupBox()
+        self.epics_gb = EPICSGroupBox()
+        self._other_settings_widget_layout.addWidget(self.settings_gb)
+        self._other_settings_widget_layout.addWidget(self.calibration_section)
+        self._other_settings_widget_layout.addWidget(self.epics_gb)
+        self._other_settings_widget_layout.addSpacerItem(VerticalSpacerItem())
+        
+        self._settings_widget_layout.addWidget(self.roi_settings_widget)
+        self._settings_widget_layout.addWidget(self.other_settings_widget)
         
         self.tab_widget.addTab(self.graph_widget, 'Temperature')
         self.tab_widget.addTab(self.settings_widget, 'Settings')
@@ -66,8 +81,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         
         self._main_layout.addWidget(self.tab_widget)
         
-        self.graph_status_bar = StatusBar()
-        #self._main_layout.addWidget(self.graph_status_bar)
+        
 
         self.setLayout(self._main_layout)
 
@@ -107,22 +121,22 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.ds_temperature_txt = self.calibration_section.downstream_gb.temperature_txt
         self.us_temperature_txt = self.calibration_section.upstream_gb.temperature_txt
 
-        self.load_setting_btn = self.load_setting_section.settings_gb.load_setting_btn
-        self.save_setting_btn = self.load_setting_section.settings_gb.save_setting_btn
+        self.load_setting_btn = self.settings_gb.load_setting_btn
+        self.save_setting_btn = self.settings_gb.save_setting_btn
 
         self.save_data_btn = self.control_widget.output_gb.save_data_btn
         self.save_graph_btn = self.control_widget.output_gb.save_graph_btn
 
-        self.settings_cb = self.load_setting_section.settings_gb.settings_cb
+        self.settings_cb = self.settings_gb.settings_cb
 
         self.roi_img_item = self.roi_widget.img_widget.pg_img_item
-        self.time_lapse_layout = self.graph_widget._pg_time_lapse_layout
+        self.time_lapse_layout = self.temperature_spectrum_widget._pg_time_lapse_layout
 
         self.graph_mouse_pos_lbl = self.graph_status_bar.left_lbl
         self.graph_info_lbl = self.graph_status_bar.right_lbl
 
-        self.setup_epics_pb = self.load_setting_section.setup_epics_pb
-        self.connect_to_epics_cb = self.load_setting_section.connect_to_epics_cb
+        self.setup_epics_pb = self.epics_gb. setup_epics_pb
+        self.connect_to_epics_cb = self.epics_gb. connect_to_epics_cb
 
 
 
@@ -147,28 +161,43 @@ class LoadSettingsSection(QtWidgets.QWidget):
         super().__init__()
         self._layout = QtWidgets.QHBoxLayout()
         
-        self.settings_gb = SettingsGroupBox()
-        self.setup_epics_pb = QtWidgets.QPushButton("Setup Epics")
-        self.connect_to_epics_cb = QtWidgets.QCheckBox("Connect to Epics")
-        self.connect_to_epics_cb.setLayoutDirection(QtCore.Qt.RightToLeft)
+        
+        
+        
 
         self._layout.addWidget(self.settings_gb)
-        self._layout.addWidget(self.setup_epics_pb)
-        self._layout.addWidget(self.connect_to_epics_cb)
+        self._layout.addWidget(self.epics_gb)
+        
         self._layout.addSpacerItem(HorizontalSpacerItem())
         
       
   
         self.setLayout(self._layout)
 
+class EPICSGroupBox(QtWidgets.QGroupBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__('EPICS')
+
+        self._layout = QtWidgets.QHBoxLayout()
+   
+        self.setup_epics_pb = QtWidgets.QPushButton("Setup Epics")
+        self.connect_to_epics_cb = QtWidgets.QCheckBox("Connect to Epics")
+        self.connect_to_epics_cb.setLayoutDirection(QtCore.Qt.RightToLeft)
+        self._layout.addWidget(self.setup_epics_pb)
+        self._layout.addWidget(self.connect_to_epics_cb)
+        
+        self.setLayout(self._layout)
+        
+
 
 class SettingsGroupBox(QtWidgets.QGroupBox):
     def __init__(self, *args, **kwargs):
-        super(SettingsGroupBox, self).__init__('Settings')
+        super().__init__('Settings save and restore')
 
         self._layout = QtWidgets.QHBoxLayout()
    
         self.settings_cb = QtWidgets.QComboBox()
+        self.settings_cb.setMinimumWidth(150)
         self.load_setting_btn = QtWidgets.QPushButton('Load')
         self.save_setting_btn = QtWidgets.QPushButton('Save')
 
@@ -181,9 +210,9 @@ class SettingsGroupBox(QtWidgets.QGroupBox):
         
 
 
-class TemperatureCalibrationSection(QtWidgets.QWidget):
+class TemperatureCalibrationSection(QtWidgets.QGroupBox):
     def __init__(self, *args, **kwargs):
-        super().__init__()
+        super().__init__('Intensity calibration')
         self._layout = QtWidgets.QVBoxLayout()
 
         self.downstream_gb = CalibrationGB('Downstream', 'rgba(255, 255, 0, 255)')
@@ -192,7 +221,7 @@ class TemperatureCalibrationSection(QtWidgets.QWidget):
         self._layout.addWidget(self.downstream_gb)
         self._layout.addWidget(self.upstream_gb)
 
-        self._layout.addSpacerItem(VerticalSpacerItem())
+        #self._layout.addSpacerItem(VerticalSpacerItem())
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
 
@@ -260,24 +289,20 @@ class SetupEpicsDialog(QtWidgets.QDialog):
 
     def _create_widgets(self):
         self.us_temp_lbl = QtWidgets.QLabel("US Temperature PV")
+        self.us_temp_lbl.setMinimumWidth(200)
         self.ds_temp_lbl = QtWidgets.QLabel("DS Temperature PV")
-        self.us_int_lbl = QtWidgets.QLabel("US Intensity PV")
-        self.ds_int_lbl = QtWidgets.QLabel("DS Intensity PV")
-        self.file_counter_lbl = QtWidgets.QLabel("File Counter PV")
+     
         self.temperature_file_directory_pv_lbl = QtWidgets.QLabel("T File Directory PV")
 
         self.us_temp_txt = QtWidgets.QLineEdit()
+        self.us_temp_txt.setMinimumWidth(200)
         self.ds_temp_txt = QtWidgets.QLineEdit()
-        self.us_int_txt = QtWidgets.QLineEdit()
-        self.ds_int_txt = QtWidgets.QLineEdit()
-        self.file_counter_txt = QtWidgets.QLineEdit()
+   
         self.temperature_file_directory_pv_txt = QtWidgets.QLineEdit()
 
         self.us_temp_txt.setToolTip("Enter the complete PV, or None")
         self.ds_temp_txt.setToolTip("Enter the complete PV, or None")
-        self.us_int_txt.setToolTip("Enter the complete PV, or None")
-        self.ds_int_txt.setToolTip("Enter the complete PV, or None")
-        self.file_counter_txt.setToolTip("Enter the complete PV, or None")
+     
         self.temperature_file_directory_pv_txt.setToolTip("Enter the PV which points to the T files folder, or None")
 
         self.ok_btn = QtWidgets.QPushButton("Done")
@@ -288,19 +313,15 @@ class SetupEpicsDialog(QtWidgets.QDialog):
 
         self._grid_layout.addWidget(self.us_temp_lbl, 0, 0)
         self._grid_layout.addWidget(self.ds_temp_lbl, 1, 0)
-        self._grid_layout.addWidget(self.us_int_lbl, 2, 0)
-        self._grid_layout.addWidget(self.ds_int_lbl, 3, 0)
-        self._grid_layout.addWidget(self.file_counter_lbl, 4, 0)
-        self._grid_layout.addWidget(self.temperature_file_directory_pv_lbl, 5, 0)
+
+        self._grid_layout.addWidget(self.temperature_file_directory_pv_lbl, 2, 0)
         self._grid_layout.addWidget(self.us_temp_txt, 0, 1)
         self._grid_layout.addWidget(self.ds_temp_txt, 1, 1)
-        self._grid_layout.addWidget(self.us_int_txt, 2, 1)
-        self._grid_layout.addWidget(self.ds_int_txt, 3, 1)
-        self._grid_layout.addWidget(self.file_counter_txt, 4, 1)
-        self._grid_layout.addWidget(self.temperature_file_directory_pv_txt, 5, 1)
 
-        self._grid_layout.addWidget(self.ok_btn, 6, 0)
-        self._grid_layout.addWidget(self.cancel_btn, 6, 1)
+        self._grid_layout.addWidget(self.temperature_file_directory_pv_txt, 2, 1)
+
+        self._grid_layout.addWidget(self.ok_btn, 3, 0)
+        self._grid_layout.addWidget(self.cancel_btn, 3, 1)
 
         self.setLayout(self._grid_layout)
 
@@ -343,30 +364,6 @@ class SetupEpicsDialog(QtWidgets.QDialog):
     @ds_temp_pv.setter
     def ds_temp_pv(self, pv):
         self.ds_temp_txt.setText(pv)
-
-    @property
-    def us_int_pv(self):
-        return str(self.us_int_txt.text())
-
-    @us_int_pv.setter
-    def us_int_pv(self, pv):
-        self.us_int_txt.setText(pv)
-
-    @property
-    def ds_int_pv(self):
-        return str(self.ds_int_txt.text())
-
-    @ds_int_pv.setter
-    def ds_int_pv(self, pv):
-        self.ds_int_txt.setText(pv)
-
-    @property
-    def file_counter_pv(self):
-        return str(self.file_counter_txt.text())
-
-    @file_counter_pv.setter
-    def file_counter_pv(self, pv):
-        self.file_counter_txt.setText(pv)
 
     @property
     def temperature_file_folder_pv(self):

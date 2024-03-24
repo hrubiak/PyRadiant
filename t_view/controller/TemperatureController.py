@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: utf8 -*-
 # T-View - GUI program for analysis of thermal spectra during
 # laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
@@ -107,11 +107,14 @@ class TemperatureController(QtCore.QObject):
         self.widget.roi_widget.rois_changed.connect(self.widget_rois_changed)
 
         # mouse moved signals
-        self.widget.graph_widget.mouse_moved.connect(self.graph_mouse_moved)
+        self.widget.temperature_spectrum_widget.mouse_moved.connect(self.graph_mouse_moved)
         self.widget.roi_widget.img_widget.mouse_moved.connect(self.roi_mouse_moved)
 
     def connect_click_function(self, emitter, function):
         emitter.clicked.connect(function)
+        
+    def close_log(self):
+        self.model.close_log()
 
     def load_data_file(self, filenames=None):
         if isinstance(filenames, str):
@@ -215,7 +218,7 @@ class TemperatureController(QtCore.QObject):
         filename = str(filename)
 
         if filename != '':
-            self.widget.graph_widget.save_graph(filename)
+            self.widget.temperature_spectrum_widget.save_graph(filename)
 
     def update_setting_combobox(self, filename):
         folder = os.path.split(filename)[0]
@@ -265,17 +268,17 @@ class TemperatureController(QtCore.QObject):
             self.widget.dirname_lbl.setText(dirname)
             if self.model.data_img_file.num_frames > 1:
                 self.widget.frame_widget.setVisible(True)
-                self.widget.graph_widget.show_time_lapse_plot(True)
+                self.widget.temperature_spectrum_widget.show_time_lapse_plot(True)
             else:
                 self.widget.frame_widget.setVisible(False)
-                self.widget.graph_widget.show_time_lapse_plot(False)
+                self.widget.temperature_spectrum_widget.show_time_lapse_plot(False)
             self.widget.frame_num_txt.setText(str(self.model.current_frame + 1))
             self.widget.graph_info_lbl.setText(self.model.file_info)
         else:
             self.widget.filename_lbl.setText('Select File...')
             self.widget.dirname_lbl.setText('')
             self.widget.frame_widget.setVisible(False)
-            self.widget.graph_widget.show_time_lapse_plot(False)
+            self.widget.temperature_spectrum_widget.show_time_lapse_plot(False)
 
         '''epics_counter = True
         if eps.epics_settings['file_counter'] is None or eps.epics_settings['file_counter'] == '' or \
@@ -307,21 +310,19 @@ class TemperatureController(QtCore.QObject):
         else:
             ds_plot_spectrum = self.model.ds_data_spectrum
 
-        self.widget.graph_widget.plot_ds_data(*ds_plot_spectrum.data)
-        self.widget.graph_widget.plot_ds_fit(*self.model.ds_fit_spectrum.data)
+        self.widget.temperature_spectrum_widget.plot_ds_data(*ds_plot_spectrum.data)
+        self.widget.temperature_spectrum_widget.plot_ds_fit(*self.model.ds_fit_spectrum.data)
 
-        self.widget.graph_widget.update_ds_temperature_txt(self.model.ds_temperature,
+        self.widget.temperature_spectrum_widget.update_ds_temperature_txt(self.model.ds_temperature,
                                                            self.model.ds_temperature_error)
-        self.widget.graph_widget.update_ds_roi_max_txt(self.model.ds_temperature_model.data_roi_max)
+        self.widget.temperature_spectrum_widget.update_ds_roi_max_txt(self.model.ds_temperature_model.data_roi_max)
 
         if self.widget.connect_to_epics_cb.isChecked():
             if epics is not None:
                 ds_temp_pv = eps.epics_settings['ds_last_temp']
                 if ds_temp_pv is not None and not ds_temp_pv == '' and not ds_temp_pv == 'None':
                     epics.caput(ds_temp_pv, self.model.ds_temperature)
-                ds_int_pv = eps.epics_settings['ds_last_int']
-                if ds_int_pv is not None and not ds_int_pv == '' and not ds_int_pv == 'None':
-                    epics.caput(ds_int_pv, str(self.model.ds_roi_max))
+                
 
     def us_calculations_changed(self):
         if self.model.us_calibration_filename is not None:
@@ -338,43 +339,41 @@ class TemperatureController(QtCore.QObject):
         else:
             us_plot_spectrum = self.model.us_data_spectrum
 
-        self.widget.graph_widget.plot_us_data(*us_plot_spectrum.data)
-        self.widget.graph_widget.plot_us_fit(*self.model.us_fit_spectrum.data)
-        self.widget.graph_widget.update_us_temperature_txt(self.model.us_temperature,
+        self.widget.temperature_spectrum_widget.plot_us_data(*us_plot_spectrum.data)
+        self.widget.temperature_spectrum_widget.plot_us_fit(*self.model.us_fit_spectrum.data)
+        self.widget.temperature_spectrum_widget.update_us_temperature_txt(self.model.us_temperature,
                                                            self.model.us_temperature_error)
-        self.widget.graph_widget.update_us_roi_max_txt(self.model.us_temperature_model.data_roi_max)
+        self.widget.temperature_spectrum_widget.update_us_roi_max_txt(self.model.us_temperature_model.data_roi_max)
 
         if self.widget.connect_to_epics_cb.isChecked():
             if epics is not None:
                 us_temp_pv = eps.epics_settings['us_last_temp']
                 if us_temp_pv is not None and not us_temp_pv =='' and not us_temp_pv == 'None':
                     epics.caput(us_temp_pv, self.model.us_temperature)
-                us_int_pv = eps.epics_settings['us_last_int']
-                if us_int_pv is not None and not us_int_pv == '' and not us_int_pv == 'None':
-                    epics.caput(us_int_pv, str(self.model.us_roi_max))
+                
 
     def update_time_lapse(self):
         us_temperature, us_temperature_error, ds_temperature, ds_temperature_error = self.model.fit_all_frames()
-        self.widget.graph_widget.plot_ds_time_lapse(range(0, len(ds_temperature)), ds_temperature)
-        self.widget.graph_widget.plot_us_time_lapse(range(0, len(us_temperature)), us_temperature)
+        self.widget.temperature_spectrum_widget.plot_ds_time_lapse(range(0, len(ds_temperature)), ds_temperature)
+        self.widget.temperature_spectrum_widget.plot_us_time_lapse(range(0, len(us_temperature)), us_temperature)
 
         if len(ds_temperature):
             out = np.mean(ds_temperature), np.std(ds_temperature)
         else:
             out = np.nan, np.nan
-        self.widget.graph_widget.update_time_lapse_ds_temperature_txt(*out)
+        self.widget.temperature_spectrum_widget.update_time_lapse_ds_temperature_txt(*out)
             
         if len(us_temperature):
             out = np.mean(us_temperature), np.std(us_temperature)
         else:
             out = np.nan, np.nan
-        self.widget.graph_widget.update_time_lapse_us_temperature_txt(*out)
+        self.widget.temperature_spectrum_widget.update_time_lapse_us_temperature_txt(*out)
 
         if len(us_temperature) and len(ds_temperature):
             out = np.mean(ds_temperature + us_temperature), np.std(ds_temperature + us_temperature)
         else:
             out = np.nan, np.nan
-        self.widget.graph_widget.update_time_lapse_combined_temperature_txt(*out )
+        self.widget.temperature_spectrum_widget.update_time_lapse_combined_temperature_txt(*out )
 
     def widget_rois_changed(self, roi_list):
         if self.model.has_data():

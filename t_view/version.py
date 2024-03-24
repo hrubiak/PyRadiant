@@ -11,15 +11,19 @@ def get_version():
     """
     version = _get_version()['version']
     dir_path = os.path.dirname(os.path.realpath(__file__))
+    ver_path = os.path.abspath(os.path.join(dir_path, '__version__'))
+    
     if version == "0+unknown":
-        try:
-            with open(os.path.join(dir_path, '__version__'), 'r') as fp:
-                version = fp.readline()
-        except ImportError:
-            version = "0.5.0"
+        if os.path.isfile(ver_path):
+            try:
+                
+                with open(ver_path, 'r') as fp:
+                    version = fp.readline()
+            except ImportError:
+                pass
     else:
         # trying to freeze the current version into a python file which gets loaded in case it is not accessible
-        with open(os.path.join(dir_path, '__version__'), 'w+') as fp:
+        with open(ver_path, 'w+') as fp:
             fp.write(version)
 
     return version

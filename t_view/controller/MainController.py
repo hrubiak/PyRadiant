@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: utf8 -*-
 # T-View - GUI program for analysis of thermal spectra during
 # laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
@@ -117,8 +117,9 @@ class MainController(object):
 
     def hide_module_widgets(self):
         self.main_widget.temperature_widget.hide()
-        #self.main_widget.ruby_widget.hide()
-        '''self.main_widget.diamond_widget.hide()
+        
+        '''self.main_widget.ruby_widget.hide()
+        self.main_widget.diamond_widget.hide()
         self.main_widget.raman_widget.hide()'''
 
     def closeEvent(self, event):
@@ -128,4 +129,5 @@ class MainController(object):
         except:
             pass
         self.main_widget.close()
+        self.temperature_controller.close_log()
         event.accept()

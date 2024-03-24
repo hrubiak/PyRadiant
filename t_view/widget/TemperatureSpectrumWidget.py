@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: utf8 -*-
 # T-View - GUI program for analysis of thermal spectra during
 # laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
@@ -51,7 +51,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
 
     def __init__(self, *args, **kwargs):
         super(TemperatureSpectrumWidget, self).__init__(*args, **kwargs)
-        self._layout = QtWidgets.QVBoxLayout()
+        self._layout = QtWidgets.QHBoxLayout()
         self._layout.setContentsMargins(0, 0, 0, 0)
 
         self.create_plot_items()

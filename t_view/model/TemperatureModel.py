@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: utf8 -*-
 # T-View - GUI program for analysis of thermal spectra during
 # laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
@@ -113,6 +113,10 @@ class TemperatureModel(QtCore.QObject):
             return self.log_file
         except PermissionError:
             return None
+        
+    def close_log(self):
+        if self.log_file != None:
+            self.log_file. close()
 
     def write_to_log_file(self):
         if not math.isnan(self.ds_temperature):
