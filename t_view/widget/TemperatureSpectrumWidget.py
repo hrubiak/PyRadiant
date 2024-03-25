@@ -68,7 +68,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._pg_layout.setContentsMargins(0, 0, 0, 0)
         self._pg_layout.layout.setVerticalSpacing(0)
 
-        self._us_plot = ModifiedPlotItem(enableMouseInteraction=False)
+        self._us_plot =pg.PlotItem()
         self._us_view_box = self._us_plot.getViewBox()
         
         self._us_plot.showAxis('top', show=True)
@@ -80,7 +80,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._us_plot.setLabel('bottom', '&lambda; (nm)')
         self._us_plot.setMinimumWidth(120)
 
-        self._ds_plot = ModifiedPlotItem(False)
+        self._ds_plot = pg.PlotItem()
         self._ds_view_box = self._ds_plot.getViewBox()
         self._ds_plot.showAxis('top', show=True)
         self._ds_plot.showAxis('right', show=True)
@@ -91,7 +91,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._ds_plot.setLabel('bottom', '&lambda; (nm)')
         self._ds_plot.setMinimumWidth(120)
 
-        self._time_lapse_plot = ModifiedPlotItem(False)
+        self._time_lapse_plot = pg.PlotItem()
         self._time_lapse_plot.showAxis('top', show=True)
         self._time_lapse_plot.showAxis('right', show=True)
         self._time_lapse_plot.getAxis('top').setStyle(showValues=False)
@@ -99,11 +99,14 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._time_lapse_plot.getAxis('bottom').setStyle(showValues=False)
         self._time_lapse_plot.setLabel('left', "T (K)")
 
+        # Set size policy for both plots
+        self._us_plot.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        self._ds_plot.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
 
-        for plot in [self._ds_plot,self. _us_plot]:
-            plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._pg_layout.addItem(self._ds_plot, 0, 0)
         self._pg_layout.addItem(self._us_plot, 0, 1)
+
+    
 
         self._pg_time_lapse_layout = pg.GraphicsLayout()
         self._pg_time_lapse_layout.setContentsMargins(0, 0, 0, 0)
@@ -189,14 +192,14 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._time_lapse_plot.addItem(self._time_lapse_us_data_item)
 
     def connect_mouse_signals(self):
-        self._ds_plot.connect_mouse_move_event()
-        self._us_plot.connect_mouse_move_event()
+        #self._ds_plot.connect_mouse_move_event()
+        #self._us_plot.connect_mouse_move_event()
         self._pg_layout.addItem(self._pg_time_lapse_layout, 2, 0, 1, 2)
-        self._time_lapse_plot.connect_mouse_move_event()
+        #self._time_lapse_plot.connect_mouse_move_event()
         self._pg_layout.removeItem(self._pg_time_lapse_layout)
-        self._ds_plot.mouse_moved.connect(self.mouse_moved)
-        self._us_plot.mouse_moved.connect(self.mouse_moved)
-        self._time_lapse_plot.mouse_moved.connect(self.mouse_moved)
+        #self._ds_plot.mouse_moved.connect(self.mouse_moved)
+        #self._us_plot.mouse_moved.connect(self.mouse_moved)
+        #self._time_lapse_plot.mouse_moved.connect(self.mouse_moved)
 
     def plot_ds_data(self, x, y):
         
