@@ -18,6 +18,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5.QtWidgets import QSizePolicy
 from PyQt5.QtGui import QColor
 import pyqtgraph as pg
 from pyqtgraph.exporters.ImageExporter import ImageExporter
@@ -98,6 +99,9 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._time_lapse_plot.getAxis('bottom').setStyle(showValues=False)
         self._time_lapse_plot.setLabel('left', "T (K)")
 
+
+        for plot in [self._ds_plot,self. _us_plot]:
+            plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._pg_layout.addItem(self._ds_plot, 0, 0)
         self._pg_layout.addItem(self._us_plot, 0, 1)
 
