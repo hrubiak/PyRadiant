@@ -37,6 +37,8 @@ x_calibration - wavelength information of x-axis
 
 the data will be automatically loaded and all important parameters and the data 
 can be requested from the object.
+
+RH: Updated March 25, 2024
 """
 
 import datetime
@@ -192,9 +194,18 @@ class SpeFile(object):
         spe_format = self.dom.childNodes[0]
         calibrations = spe_format.getElementsByTagName('Calibrations')[0]
         wavelengthmapping = calibrations.getElementsByTagName('WavelengthMapping')[0]
-        wavelengths = wavelengthmapping.getElementsByTagName('Wavelength')[0]
-        wavelength_values = wavelengths.childNodes[0]
-        self.x_calibration = np.array([float(i) for i in wavelength_values.toxml().split(',')])
+        
+        if len(wavelengthmapping.getElementsByTagName('Wavelength')[0]):
+            wavelengths = wavelengthmapping.getElementsByTagName('Wavelength')[0]
+            wavelength_values = wavelengths.childNodes[0]
+            self.x_calibration = np.array([float(i) for i in wavelength_values.toxml().split(',')])
+        elif len(wavelengthmapping.getElementsByTagName('WavelengthError')[0]):
+            wavelengths = wavelengthmapping.getElementsByTagName('WavelengthError')[0]
+            wavelength_values = wavelengths.childNodes[0]
+            x_calibration = [str(i) for i in wavelength_values.toxml().split(' ')]
+            self.x_calibration = np.array([float(i.split(',')[0]) for i in x_calibration])
+        else:
+            self.x_calibration = []
 
     def _read_exposure_from_dom(self):
         """Reads th exposure time of the experiment into the exposure_time field"""
