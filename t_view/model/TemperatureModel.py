@@ -26,6 +26,7 @@ warnings.simplefilter("error")
 from scipy.optimize import curve_fit
 import h5py
 import math
+import datetime
 
 from .Spectrum import Spectrum
 from .RoiData import RoiDataManager, Roi, get_roi_max, get_roi_sum
@@ -46,6 +47,7 @@ class TemperatureModel(QtCore.QObject):
         super(TemperatureModel, self).__init__()
 
         self.filename = None
+        self.mtime = None
         self.data_img_file = None
         self._data_img = None
         self.log_file = None
@@ -79,15 +81,25 @@ class TemperatureModel(QtCore.QObject):
             self._data_img = self.data_img_file.img
         self._update_temperature_models_data()
         self._filename_iterator.update_filename(filename)
+        self.mtime = self.get_last_modified_time(filename)
         self.data_changed.emit()
+    
+    def get_last_modified_time(self, file_path):
+        # Get the modification time in seconds since the epoch
+        modification_time = os.path.getmtime(file_path)
+        
+        # Convert the modification time to a readable format
+        modified_time = datetime.datetime.fromtimestamp(modification_time)
+        
+        return modified_time
 
-    def load_next_data_image(self):
-        new_filename = self._filename_iterator.get_next_filename()
+    def load_next_data_image(self, mode):
+        new_filename = self._filename_iterator.get_next_filename(mode)
         if new_filename is not None:
             self.load_data_image(new_filename)
 
-    def load_previous_data_image(self):
-        new_filename = self._filename_iterator.get_previous_filename()
+    def load_previous_data_image(self, mode):
+        new_filename = self._filename_iterator.get_previous_filename(mode)
         if new_filename is not None:
             self.load_data_image(new_filename)
 

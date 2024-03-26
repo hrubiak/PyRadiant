@@ -104,6 +104,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.autoprocess_cb = self.control_widget.file_gb.autoprocess_cb
         self.filename_lbl = self.control_widget.file_gb.filename_lbl
         self.dirname_lbl = self.control_widget.file_gb.dirname_lbl
+        self.mtime = self.control_widget.file_gb.mtime
 
         self.load_ds_calibration_file_btn = self.calibration_section.downstream_gb.load_file_btn
         self.load_us_calibration_file_btn = self.calibration_section.upstream_gb.load_file_btn
@@ -139,7 +140,10 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.connect_to_epics_cb = self.epics_gb. connect_to_epics_cb
 
 
-
+        self.browse_by_name_rb = self.control_widget.file_gb.browse_by_name_rb 
+        self.browse_by_time_rb = self.control_widget.file_gb.browse_by_time_rb 
+        
+    
 
 
 class TemperatureFileNavigation(QtWidgets.QWidget):

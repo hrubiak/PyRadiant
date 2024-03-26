@@ -65,8 +65,10 @@ class TemperatureController(QtCore.QObject):
     def create_signals(self):
         # File signals
         self.connect_click_function(self.widget.load_data_file_btn, self.load_data_file)
-        self.widget.load_next_data_file_btn.clicked.connect(self.model.load_next_data_image)
-        self.widget.load_previous_data_file_btn.clicked.connect(self.model.load_previous_data_image)
+        self.widget.load_next_data_file_btn.clicked.connect(self.load_next_data_image)
+        self.widget.load_previous_data_file_btn.clicked.connect(self.load_previous_data_image)
+        self.widget.browse_by_name_rb.clicked.connect(self.toggle_brouse_mode)
+        self.widget.browse_by_time_rb.clicked.connect(self.toggle_brouse_mode)
         self.widget.load_next_frame_btn.clicked.connect(self.model.load_next_img_frame)
         self.widget.load_previous_frame_btn.clicked.connect(self.model.load_previous_img_frame)
         self.widget.autoprocess_cb.toggled.connect(self.auto_process_cb_toggled)
@@ -129,6 +131,30 @@ class TemperatureController(QtCore.QObject):
                 self.model.load_data_image(str(filename))
                 self._directory_watcher.path = self._exp_working_dir
                 print('Loaded File: ', filename)
+                
+    def load_next_data_image(self):
+        
+        if self.widget.browse_by_name_rb.isChecked():
+            mode = 'name'
+        else:
+            mode = 'time'
+        self.model.load_next_data_image(mode)
+
+    def load_previous_data_image(self):
+        
+        if self.widget.browse_by_name_rb.isChecked():
+            mode = 'name'
+        else:
+            mode = 'time'
+        self.model.load_previous_data_image(mode)
+        
+    def toggle_brouse_mode(self):
+        
+        time_mode = self.widget.browse_by_time_rb.isChecked()
+        self.model._filename_iterator.create_timed_file_list = time_mode
+        if time_mode:
+            self.model._filename_iterator.update_file_list()
+        
 
     def load_ds_calibration_file(self, filename=None):
         if filename is None or filename is False:
@@ -258,7 +284,7 @@ class TemperatureController(QtCore.QObject):
     def data_changed(self):
         self.widget.roi_widget.plot_img(self.model.data_img)
         self.widget.roi_widget.set_rois(self.model.get_roi_data_list())
-
+        
         # update exp data widget
         #####################################
 
@@ -292,6 +318,10 @@ class TemperatureController(QtCore.QObject):
 
         self.ds_calculations_changed()
         self.us_calculations_changed()
+        
+        mtime = self.model.mtime
+        self.widget.mtime.setText('Timestamp: '+ str(mtime))
+        
         if self.model.log_file is not None:
             self.model.write_to_log_file()
 

@@ -58,7 +58,7 @@ class RoiWidget(QtWidgets.QWidget):
         self._roi_gbs_layout.setSpacing(2)
         self.roi_gbs = []
         self.create_roi_gbs()
-        self._roi_gbs_layout.addSpacerItem(VerticalSpacerItem())
+        self._roi_gbs_layout.addSpacerItem(HorizontalSpacerItem())
 
         self._main_vertical_layout.addWidget(self.img_widget)
         self._main_vertical_layout.addLayout(self._roi_gbs_layout)

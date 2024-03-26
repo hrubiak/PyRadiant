@@ -195,11 +195,11 @@ class SpeFile(object):
         calibrations = spe_format.getElementsByTagName('Calibrations')[0]
         wavelengthmapping = calibrations.getElementsByTagName('WavelengthMapping')[0]
         
-        if len(wavelengthmapping.getElementsByTagName('Wavelength')[0]):
+        if len(wavelengthmapping.getElementsByTagName('Wavelength')):
             wavelengths = wavelengthmapping.getElementsByTagName('Wavelength')[0]
             wavelength_values = wavelengths.childNodes[0]
             self.x_calibration = np.array([float(i) for i in wavelength_values.toxml().split(',')])
-        elif len(wavelengthmapping.getElementsByTagName('WavelengthError')[0]):
+        elif len(wavelengthmapping.getElementsByTagName('WavelengthError')):
             wavelengths = wavelengthmapping.getElementsByTagName('WavelengthError')[0]
             wavelength_values = wavelengths.childNodes[0]
             x_calibration = [str(i) for i in wavelength_values.toxml().split(' ')]

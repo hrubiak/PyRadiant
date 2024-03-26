@@ -36,13 +36,15 @@ class FileGroupBox(QtWidgets.QGroupBox):
         self._second_row_widget = QtWidgets.QWidget()
         self._second_row_widget_layout = QtWidgets.QHBoxLayout(self._second_row_widget)
         self._second_row_widget_layout.setContentsMargins(0, 0, 0, 0)
-        self._second_row_widget_layout.setSpacing(5)
+        self._second_row_widget_layout.setSpacing(0)
         self._second_row_widget_layout.addWidget(self.dirname_lbl)
         self._second_row_widget_layout.addWidget(QtWidgets.QLabel('/'))
         self._second_row_widget_layout.addWidget(self.filename_lbl)
         self._second_row_widget_layout.addSpacerItem(HorizontalSpacerItem())
-        
         self._second_row_widget_layout.addWidget(self.frame_control_widget)
+        self._second_row_widget_layout.addSpacerItem(HorizontalSpacerItem())
+        self.mtime = QtWidgets.QLabel('')
+        self._second_row_widget_layout.addWidget(self.mtime)
         self._main_layout.addWidget(self._second_row_widget)
         
         self.frame_control_widget.hide()

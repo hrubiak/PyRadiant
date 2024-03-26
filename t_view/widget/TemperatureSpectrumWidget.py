@@ -52,7 +52,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
 
     def __init__(self, *args, **kwargs):
         super(TemperatureSpectrumWidget, self).__init__(*args, **kwargs)
-        self._layout = QtWidgets.QHBoxLayout()
+        self._layout = QtWidgets.QVBoxLayout()
         self._layout.setContentsMargins(0, 0, 0, 0)
 
         self.create_plot_items()
@@ -63,11 +63,12 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self.connect_mouse_signals()
 
     def create_plot_items(self):
-        self._pg_layout_widget = pg.GraphicsLayoutWidget()
-        self._pg_layout = pg.GraphicsLayout()
-        self._pg_layout.setContentsMargins(0, 0, 0, 0)
-        self._pg_layout.layout.setVerticalSpacing(0)
-
+        
+        self._pg_us_layout_widget = pg.GraphicsLayoutWidget()
+        self._pg_us_layout = pg.GraphicsLayout()
+        self._pg_us_layout.setContentsMargins(0, 0, 0, 0)
+        self._pg_us_layout.layout.setVerticalSpacing(0)
+        
         self._us_plot =pg.PlotItem()
         self._us_view_box = self._us_plot.getViewBox()
         
@@ -79,6 +80,15 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._us_plot.setTitle("Upstream", color=QColor(colors['upstream']), size='20pt')
         self._us_plot.setLabel('bottom', '&lambda; (nm)')
         self._us_plot.setMinimumWidth(120)
+        
+        self._us_plot.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        self._pg_us_layout.addItem(self._us_plot)
+        self._pg_us_layout_widget.addItem(self._pg_us_layout)
+        
+        self._pg_ds_layout_widget = pg.GraphicsLayoutWidget()
+        self._pg_ds_layout = pg.GraphicsLayout()
+        self._pg_ds_layout.setContentsMargins(0, 0, 0, 0)
+        self._pg_ds_layout.layout.setVerticalSpacing(0)
 
         self._ds_plot = pg.PlotItem()
         self._ds_view_box = self._ds_plot.getViewBox()
@@ -90,7 +100,25 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._ds_plot.setTitle("Downstream", color=QColor(colors['downstream']), size='20pt')
         self._ds_plot.setLabel('bottom', '&lambda; (nm)')
         self._ds_plot.setMinimumWidth(120)
-
+        
+        self._ds_plot.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        self._pg_ds_layout.addItem(self._ds_plot)
+        self._pg_ds_layout_widget.addItem(self._pg_ds_layout)
+        
+        self.plots_widget = QtWidgets.QWidget()
+        self._plots_widget_layout = QtWidgets.QGridLayout(self.plots_widget)
+        self._plots_widget_layout.setSpacing(0)
+        self._plots_widget_layout.addWidget(self._pg_ds_layout_widget, 0, 0)
+        self._plots_widget_layout.addWidget(self._pg_us_layout_widget, 0, 1)
+        
+        self._layout.addWidget(self.plots_widget)
+        
+        
+        self.time_lapse_widget = pg.GraphicsLayoutWidget()
+        self._pg_layout = pg.GraphicsLayout()
+        self._pg_layout.setContentsMargins(0, 0, 0, 0)
+        self._pg_layout.layout.setVerticalSpacing(0)
+        
         self._time_lapse_plot = pg.PlotItem()
         self._time_lapse_plot.showAxis('top', show=True)
         self._time_lapse_plot.showAxis('right', show=True)
@@ -98,15 +126,6 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._time_lapse_plot.getAxis('right').setStyle(showValues=False)
         self._time_lapse_plot.getAxis('bottom').setStyle(showValues=False)
         self._time_lapse_plot.setLabel('left', "T (K)")
-
-        # Set size policy for both plots
-        self._us_plot.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        self._ds_plot.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-
-        self._pg_layout.addItem(self._ds_plot, 0, 0)
-        self._pg_layout.addItem(self._us_plot, 0, 1)
-
-    
 
         self._pg_time_lapse_layout = pg.GraphicsLayout()
         self._pg_time_lapse_layout.setContentsMargins(0, 0, 0, 0)
@@ -122,11 +141,8 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
 
         self._pg_time_lapse_layout.addItem(self._time_lapse_plot, 1, 0, 1, 3)
 
-        self._pg_layout.layout.setColumnStretchFactor(0, 1)
-        self._pg_layout.layout.setColumnStretchFactor(1, 1)
-
-        self._pg_layout_widget.addItem(self._pg_layout)
-        self._layout.addWidget(self._pg_layout_widget)
+        self.time_lapse_widget.addItem(self._pg_layout)
+  
 
     def create_data_items(self):
         # self._us_data_item = pg.ScatterPlotItem(pen=pg.mkPen(colors['data_pen'], width=1),
@@ -192,11 +208,12 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._time_lapse_plot.addItem(self._time_lapse_us_data_item)
 
     def connect_mouse_signals(self):
+        pass
         #self._ds_plot.connect_mouse_move_event()
         #self._us_plot.connect_mouse_move_event()
-        self._pg_layout.addItem(self._pg_time_lapse_layout, 2, 0, 1, 2)
+        #self._pg_layout.addItem(self._pg_time_lapse_layout)
         #self._time_lapse_plot.connect_mouse_move_event()
-        self._pg_layout.removeItem(self._pg_time_lapse_layout)
+        #self._pg_layout.removeItem(self._pg_time_lapse_layout)
         #self._ds_plot.mouse_moved.connect(self.mouse_moved)
         #self._us_plot.mouse_moved.connect(self.mouse_moved)
         #self._time_lapse_plot.mouse_moved.connect(self.mouse_moved)
@@ -256,12 +273,11 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
     def show_time_lapse_plot(self, bool):
         if bool:
             if self._pg_time_lapse_layout not in self._pg_layout.items:
-                self._pg_layout.addItem(self._pg_time_lapse_layout, 1, 0, 1, 2)
-                self._pg_layout.layout.setRowStretchFactor(0, 4)
-                self._pg_layout.layout.setRowStretchFactor(1, 3)
+                self._layout.addWidget(self.time_lapse_widget)
+      
         else:
             if self._pg_time_lapse_layout in self._pg_layout.items:
-                self._pg_layout.removeItem(self._pg_time_lapse_layout)
+                self._layout.removeWidget(self.time_lapse_widget)
 
     def update_time_lapse_ds_temperature_txt(self, temperature, temperature_error):
         self._time_lapse_ds_temperature_txt.setText('{0:.0f} K &plusmn; {1:.0f}'.format(temperature,

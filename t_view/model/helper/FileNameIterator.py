@@ -53,7 +53,7 @@ class FileNameIterator(QtCore.QObject):
             if self.is_correct_file_type(file):
                 files.append(file)
         paths = [os.path.join(self.directory, file) for file in files]
-        file_list = [(os.path.getctime(path), path) for path in paths]
+        file_list = [(os.path.getmtime(path), path) for path in paths]
         self.filename_list = paths
         print('Time needed  for getting files: {0}s.'.format(time.time() - t1))
         return file_list
@@ -81,7 +81,9 @@ class FileNameIterator(QtCore.QObject):
         if self.complete_path is None:
             return None
         if mode == 'time':
-            time_stat = os.path.getctime(self.complete_path)
+            time_stat = os.path.getmtime(self.complete_path)
+            if not len(self.ordered_file_list):
+                return None
             cur_ind = self.ordered_file_list.index((time_stat, self.complete_path))
             # cur_ind = self.ordered_file_list.index(self.complete_path)
             try:
@@ -91,7 +93,7 @@ class FileNameIterator(QtCore.QObject):
                 return None
         elif mode == 'number':
             directory, file_str = os.path.split(self.complete_path)
-            filename, file_type_str = file_str.split('.')
+            filename, file_type_str =  get_file_and_extension(file_str)
             file_number_str = FileNameIterator._get_ending_number(filename)
             try:
                 file_number = int(file_number_str)
@@ -121,7 +123,9 @@ class FileNameIterator(QtCore.QObject):
         if self.complete_path is None:
             return None
         if mode == 'time':
-            time_stat = os.path.getctime(self.complete_path)
+            time_stat = os.path.getmtime(self.complete_path)
+            if not len(self.ordered_file_list):
+                return None
             cur_ind = self.ordered_file_list.index((time_stat, self.complete_path))
             # cur_ind = self.ordered_file_list.index(self.complete_path)
             if cur_ind > 0:
@@ -132,7 +136,7 @@ class FileNameIterator(QtCore.QObject):
                     return None
         elif mode == 'number':
             directory, file_str = os.path.split(self.complete_path)
-            filename, file_type_str = file_str.split('.')
+            filename, file_type_str =  get_file_and_extension(file_str)
             file_number_str = FileNameIterator._get_ending_number(filename)
             try:
                 file_number = int(file_number_str)
@@ -207,3 +211,15 @@ class FileNameIterator(QtCore.QObject):
                 res += char
             else:
                 return res[::-1]
+
+def get_file_and_extension(file_str):
+    if '.' in file_str:
+        tokens = file_str.split('.')
+        file_type_str = tokens [-1]
+        filename = file_str[:-1*(len(file_type_str)+1)]
+    
+    else:
+        
+        filename= file_str
+        file_type_str = ''
+    return filename,file_type_str
