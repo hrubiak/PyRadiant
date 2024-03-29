@@ -198,16 +198,21 @@ class SettingsGroupBox(QtWidgets.QGroupBox):
     def __init__(self, *args, **kwargs):
         super().__init__('Settings save and restore')
 
-        self._layout = QtWidgets.QHBoxLayout()
+        self._layout = QtWidgets.QVBoxLayout()
    
         self.settings_cb = QtWidgets.QComboBox()
-        self.settings_cb.setMinimumWidth(150)
+        '''self.settings_cb.setMinimumWidth(250)
+        self.settings_cb.setMaximumWidth(250)'''
+        
+        self._btns_layout = QtWidgets.QHBoxLayout()
         self.load_setting_btn = QtWidgets.QPushButton('Load')
         self.save_setting_btn = QtWidgets.QPushButton('Save')
+        self._btns_layout.addWidget(self.load_setting_btn)
+        self._btns_layout.addWidget(self.save_setting_btn)
+        #self._btns_layout.addSpacerItem(HorizontalSpacerItem())
 
         self._layout.addWidget(self.settings_cb)
-        self._layout.addWidget(self.load_setting_btn)
-        self._layout.addWidget(self.save_setting_btn)
+        self._layout.addLayout(self._btns_layout)
 
 
         self.setLayout(self._layout)

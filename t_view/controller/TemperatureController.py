@@ -24,6 +24,7 @@ from PyQt5 import QtWidgets, QtCore
 from ..widget.TemperatureWidget import TemperatureWidget, SetupEpicsDialog
 from ..widget.Widgets import open_file_dialog, open_files_dialog, save_file_dialog
 from ..model.TemperatureModel import TemperatureModel
+from ..model.helper.FileNameIterator import get_file_and_extension
 from ..model import epics_settings as eps
 from .NewFileInDirectoryWatcher import NewFileInDirectoryWatcher
 import numpy as np
@@ -242,9 +243,12 @@ class TemperatureController(QtCore.QObject):
                 filter='Vector Graphics (*.svg);; Image (*.png)'
             )
         filename = str(filename)
+        base_filename, extension = get_file_and_extension(filename)
+        ds_filename = base_filename + "_ds." + extension
+        us_filename = base_filename + "_us." + extension
 
         if filename != '':
-            self.widget.temperature_spectrum_widget.save_graph(filename)
+            self.widget.temperature_spectrum_widget.save_graph(ds_filename, us_filename)
 
     def update_setting_combobox(self, filename):
         folder = os.path.split(filename)[0]

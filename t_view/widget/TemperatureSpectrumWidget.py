@@ -299,108 +299,19 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
                                                           size='30pt',
                                                           color=colors['combined'])
 
-    def save_graph(self, filename):
-        self._pg_layout.setContentsMargins(20, 20, 20, 20)
+    def save_graph(self, ds_filename, us_filename):
         QtWidgets.QApplication.processEvents()
-        if filename.endswith('.png'):
-            exporter = ImageExporter(self._pg_layout)
-            exporter.export(filename)
-        elif filename.endswith('.svg'):
-            self._prepare_svg_export()
-
-            exporter = SVGExporter(self._pg_layout)
-            exporter.export(filename)
-
-            self._finalize_svg_export()
-
-        self._pg_layout.setContentsMargins(0, 0, 0, 0)
+        if ds_filename.endswith('.png'):
+            exporter = ImageExporter(self._ds_plot)
+            exporter.export(ds_filename)
+            exporter = ImageExporter(self._us_plot)
+            exporter.export(us_filename)
+        elif ds_filename.endswith('.svg'):
+            exporter = SVGExporter(self._ds_plot)
+            exporter.export(ds_filename)
+            exporter = SVGExporter(self._us_plot)
+            exporter.export(us_filename)
         QtWidgets.QApplication.processEvents()
-
-    def _prepare_svg_export(self):
-        # since the svg will always have a transparent background we need to invert the colors of the original plot
-        self._invert_color()
-        # the pyqtgraph SVG Exporter cannot handle non ascii characters
-        self._convert_symbols_to_ascii()
-
-        # due to a strange bug in SVG export we are not going to use the symbols of the time lapse plot
-        self._time_lapse_ds_data_item.setSymbol(None)
-        self._time_lapse_us_data_item.setSymbol(None)
-
-    def _finalize_svg_export(self):
-        self._norm_color()
-        self._convert_symbols_to_unicode()
-        self._time_lapse_ds_data_item.setSymbol("s")
-        self._time_lapse_us_data_item.setSymbol("s")
-        QtWidgets.QApplication.processEvents()
-        QtWidgets.QApplication.processEvents()
-
-    def _convert_symbols_to_ascii(self):
-        self._us_plot.setLabel('bottom', 'wavelength (nm)')
-        self._ds_plot.setLabel('bottom', 'wavelength (nm)')
-
-        self._ds_temperature_txt_item.setText(self._ds_temperature_txt_item.text.replace("&plusmn;", '+-'))
-        self._us_temperature_txt_item.setText(self._us_temperature_txt_item.text.replace("&plusmn;", '+-'))
-        self._time_lapse_ds_temperature_txt.setText(self._time_lapse_ds_temperature_txt.text.replace("&plusmn;", '+-'))
-        self._time_lapse_us_temperature_txt.setText(self._time_lapse_us_temperature_txt.text.replace("&plusmn;", '+-'))
-        self._time_lapse_combined_temperature_txt.setText(self._time_lapse_combined_temperature_txt. \
-                                                          text.replace("&plusmn;", '+-'))
-
-    def _convert_symbols_to_unicode(self):
-        self._us_plot.setLabel('bottom', '&lambda; (nm)')
-        self._ds_plot.setLabel('bottom', '&lambda; (nm)')
-
-        self._ds_temperature_txt_item.setText(self._ds_temperature_txt_item.text.replace("+-", "&plusmn;"))
-        self._us_temperature_txt_item.setText(self._us_temperature_txt_item.text.replace("+-", "&plusmn;"))
-        self._time_lapse_ds_temperature_txt.setText(self._time_lapse_ds_temperature_txt.text.replace("+-", "&plusmn;"))
-        self._time_lapse_us_temperature_txt.setText(self._time_lapse_us_temperature_txt.text.replace("+-", "&plusmn;"))
-        self._time_lapse_combined_temperature_txt.setText(self._time_lapse_combined_temperature_txt. \
-                                                          text.replace('+-', "&plusmn;"))
-
-    def _set_plot_item_axis_color(self, plot_item, color):
-        plot_item.getAxis('bottom').setPen(color)
-        plot_item.getAxis('top').setPen(color)
-        plot_item.getAxis('left').setPen(color)
-        plot_item.getAxis('right').setPen(color)
-
-    def _invert_color(self):
-        self._set_plot_item_axis_color(self._ds_plot, 'k')
-        self._set_plot_item_axis_color(self._us_plot, 'k')
-        self._set_plot_item_axis_color(self._time_lapse_plot, 'k')
-
-        self._ds_data_item.setPen(pg.mkPen("#000", width=1))
-        self._ds_data_item.setBrush(pg.mkBrush("#000"))
-        self._us_data_item.setPen(pg.mkPen("#000", width=1))
-        self._us_data_item.setBrush(pg.mkBrush("#000"))
-
-        self._ds_intensity_indicator.outside_rect.setPen(pg.mkPen("k", width=1))
-        self._us_intensity_indicator.outside_rect.setPen(pg.mkPen("k", width=1))
-
-        self._ds_temperature_txt_item.opts['color'] = export_colors['downstream']
-        self._time_lapse_ds_temperature_txt.opts['color'] = export_colors['downstream']
-        self._ds_plot.setTitle("Downstream", color=export_colors['downstream'], size='20pt')
-        self._time_lapse_ds_data_item.setPen(pg.mkPen(export_colors['downstream'], width=3))
-
-        self._time_lapse_combined_temperature_txt.opts['color'] = export_colors['combined']
-
-    def _norm_color(self):
-        self._set_plot_item_axis_color(self._ds_plot, 'w')
-        self._set_plot_item_axis_color(self._us_plot, 'w')
-        self._set_plot_item_axis_color(self._time_lapse_plot, 'w')
-
-        self._ds_data_item.setPen(pg.mkPen('w', width=1))
-        self._ds_data_item.setBrush(pg.mkBrush('w'))
-        self._us_data_item.setPen(pg.mkPen('w', width=1))
-        self._us_data_item.setBrush(pg.mkBrush('w'))
-
-        self._ds_intensity_indicator.outside_rect.setPen(pg.mkPen("w", width=1))
-        self._us_intensity_indicator.outside_rect.setPen(pg.mkPen("w", width=1))
-
-        self._ds_temperature_txt_item.opts['color'] = colors['downstream']
-        self._time_lapse_ds_temperature_txt.opts['color'] = colors['downstream']
-        self._ds_plot.setTitle("Downstream", color=colors['downstream'], size='20pt')
-        self._time_lapse_ds_data_item.setPen(pg.mkPen(colors['downstream'], width=3))
-
-        self._time_lapse_combined_temperature_txt.opts['color'] = colors['combined']
 
 
 class IntensityIndicator(pg.GraphicsWidget):
@@ -458,24 +369,3 @@ class IntensityIndicator(pg.GraphicsWidget):
     def set_intensity(self, intensity):
         self._intensity_level = intensity
         self.__geometryChanged()
-
-
-if __name__ == '__main__':
-    import numpy as np
-
-    app = QtWidgets.QApplication([])
-    widget = TemperatureSpectrumWidget()
-    widget.show()
-    widget.raise_()
-    widget.update_us_temperature_txt(20, 3)
-    widget.update_ds_roi_max_txt(2000)
-    widget.update_time_lapse_ds_temperature_txt(2001, 23)
-    widget.update_time_lapse_us_temperature_txt(1998, 23)
-    widget.update_time_lapse_combined_temperature_txt(1999, 35)
-
-    x = np.arange(10, step=1)
-    widget.plot_ds_time_lapse(x, np.sin(x))
-    widget.plot_us_time_lapse(x, np.cos(x))
-
-    # widget._us_temperature_txt_item.setText('12415123')
-    app.exec_()
