@@ -72,6 +72,7 @@ class Roi():
 class RoiDataManager():
     def __init__(self, roi_num):
         self.roi_num = roi_num
+        self.x_calibration = []
         self._img_dimensions_list = []
         self._rois_list = []
         self._num = 0

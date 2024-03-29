@@ -58,6 +58,8 @@ class TemperatureModel(QtCore.QObject):
         self.ds_calibration_filename = None
         self.us_calibration_filename = None
 
+        self.x_calibration = None
+
         self._filename_iterator = FileNameIterator()
 
         self.roi_data_manager = RoiDataManager(4)
@@ -146,6 +148,7 @@ class TemperatureModel(QtCore.QObject):
         self.log_file.flush()
 
     def _update_temperature_models_data(self):
+        self.x_calibration = self.data_img_file.x_calibration
         self.ds_temperature_model.set_data(self._data_img,
                                            self.data_img_file.x_calibration)
         self.us_temperature_model.set_data(self._data_img,
@@ -175,6 +178,7 @@ class TemperatureModel(QtCore.QObject):
     #########################################################################
     def load_ds_calibration_image(self, filename):
         self.ds_calibration_img_file = SpeFile(filename)
+        
         self.ds_calibration_filename = filename
         self.ds_temperature_model.set_calibration_data(self.ds_calibration_img_file.img,
                                                        self.ds_calibration_img_file.x_calibration)
@@ -437,11 +441,11 @@ class TemperatureModel(QtCore.QObject):
         self.us_temperature_model.fit_data()
         self.us_calculations_changed.emit()
 
-    def set_rois(self, ds_limits, us_limits, ds_bg_limits, us_bg_limits):
-        self.us_roi = us_limits
-        self.ds_roi = ds_limits
-        self.us_roi_bg = us_bg_limits
-        self.ds_roi_bg = ds_bg_limits
+    def set_rois(self, limits):
+        self.us_roi = limits[0]
+        self.ds_roi = limits[1]
+        self.us_roi_bg = limits[2]
+        self.ds_roi_bg = limits[3]
 
     def get_roi_data_list(self):
         ds_roi = self.ds_roi.as_list()

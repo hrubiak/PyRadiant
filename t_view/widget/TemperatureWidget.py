@@ -143,7 +143,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.browse_by_name_rb = self.control_widget.file_gb.browse_by_name_rb 
         self.browse_by_time_rb = self.control_widget.file_gb.browse_by_time_rb 
         
-    
+     
 
 
 class TemperatureFileNavigation(QtWidgets.QWidget):

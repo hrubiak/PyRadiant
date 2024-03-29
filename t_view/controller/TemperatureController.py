@@ -28,11 +28,12 @@ from ..model.helper.FileNameIterator import get_file_and_extension
 from ..model import epics_settings as eps
 from .NewFileInDirectoryWatcher import NewFileInDirectoryWatcher
 import numpy as np
+from ..model.helper.HelperModule import get_partial_index , get_partial_value
 
 
 try:
     import epics
-except ImportError:
+except:
     epics = None
 
 
@@ -287,6 +288,15 @@ class TemperatureController(QtCore.QObject):
 
     def data_changed(self):
         self.widget.roi_widget.plot_img(self.model.data_img)
+        if self.model.x_calibration is not None:
+            wl_calibration = self.model.x_calibration
+            x_dim = self.model.data_img.shape[1]
+            x = wl_calibration[0]
+            y = 0
+            w = wl_calibration[-1]-wl_calibration[0]
+            h = self.model.data_img.shape[0]
+            
+            self.widget.roi_widget.img_widget.set_wavelength_calibration((x,y,w,h))
         self.widget.roi_widget.set_rois(self.model.get_roi_data_list())
         
         # update exp data widget
@@ -411,7 +421,9 @@ class TemperatureController(QtCore.QObject):
 
     def widget_rois_changed(self, roi_list):
         if self.model.has_data():
-            self.model.set_rois(roi_list[0], roi_list[1], roi_list[2], roi_list[3])
+            
+            
+            self.model.set_rois(roi_list)
 
     def graph_mouse_moved(self, x, y):
         self.widget.graph_mouse_pos_lbl.setText("X: {:8.2f}  Y: {:8.2f}".format(x, y))

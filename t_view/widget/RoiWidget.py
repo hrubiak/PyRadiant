@@ -69,6 +69,7 @@ class RoiWidget(QtWidgets.QWidget):
         self.setLayout(self._main_vertical_layout)
 
         self.create_signals()
+      
 
     def create_roi_gbs(self):
         for ind in range(self.roi_num):
@@ -187,14 +188,15 @@ class RoiImageWidget(QtWidgets.QWidget):
         super(RoiImageWidget, self).__init__(*args, **kwargs)
         self.roi_num = roi_num
         self.roi_colors = roi_colors
-
+        self.rect = None
         self.pg_widget = pg.GraphicsLayoutWidget()
         self.pg_layout = self.pg_widget.ci
         self.pg_layout.setContentsMargins(0, 10, 15, 0)
         self.pg_viewbox = self.pg_layout.addViewBox(1, 1, lockAspect=False)
         self.pg_viewbox.invertY(True)
 
-        self.bottom_axis = pg.AxisItem('bottom', linkView=self.pg_viewbox)
+        self.bottom_axis = pg.AxisItem('bottom',  linkView=self.pg_viewbox)
+        self.bottom_axis.setLabel('&lambda; (nm)')
         self.left_axis = pg.AxisItem('left', linkView=self.pg_viewbox)
 
         self.pg_layout.addItem(self.bottom_axis, 2, 1)
@@ -230,6 +232,14 @@ class RoiImageWidget(QtWidgets.QWidget):
 
         self.modify_mouse_behavior()
 
+    def set_wavelength_calibration(self, rect):
+        
+        
+        
+        if self.rect != rect :
+            self.rect = rect
+            self.pg_img_item.setRect(*rect)
+
     def add_rois(self):
         self.rois = []
         for ind in range(self.roi_num):
@@ -242,8 +252,21 @@ class RoiImageWidget(QtWidgets.QWidget):
     def get_roi_limits(self):
         roi_limits = []
         for roi in self.rois:
-            roi_limits.append([roi.pos()[0], roi.pos()[0] + roi.size()[0],
-                               roi.pos()[1], roi.pos()[1] + roi.size()[1]])
+            roi_pos_x = roi.pos()[0]
+            roi_size_x = roi.size()[0]
+            if self.rect != None:
+                roi_pos_x =   (roi_pos_x-self.rect[0]) *1340 /self.rect[2]
+               
+                roi_size_x = roi_size_x / self.rect[2]*1340
+           
+
+            limit = [roi_pos_x, roi_pos_x + roi_size_x,
+                               roi.pos()[1], roi.pos()[1] + roi.size()[1]]
+            
+            
+
+            roi_limits.append(limit)
+        
         return roi_limits
 
     def roi_changed(self, *args):
@@ -269,9 +292,17 @@ class RoiImageWidget(QtWidgets.QWidget):
         self.rois_changed.emit(self.get_roi_limits())
 
     def update_roi(self, ind, roi_limits):
-        self.rois[ind].setPos((roi_limits[0], roi_limits[2]))
-        self.rois[ind].setSize((roi_limits[1] - roi_limits[0],
-                                roi_limits[3] - roi_limits[2]))
+        pos = [roi_limits[0], roi_limits[2]]
+        size = [roi_limits[1] - roi_limits[0],
+                                roi_limits[3] - roi_limits[2]]
+        if self.rect != None:
+            pos[0] = self.rect[0] + pos[0] /1340 *self.rect[2]
+            #pos[1] = pos[1] + self.rect[1]
+            size[0] = size[0] * (self.rect[2]/1340)
+            #size[1] = size[1] * self.rect[3]
+        
+        self.rois[ind].setPos(pos)
+        self.rois[ind].setSize(size)
 
     def plot_image(self, data):
         #log_data = np.log(data)
@@ -309,6 +340,7 @@ class RoiImageWidget(QtWidgets.QWidget):
 
 
 class ImgROI(pg.ROI):
+
     def __init__(self, pos, size, pen, active_pen):
         super(ImgROI, self).__init__(pos, size, False, True)
 
