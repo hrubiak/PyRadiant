@@ -178,8 +178,8 @@ class IntegerTextField(QtWidgets.QLineEdit):
 
 class RoiImageWidget(QtWidgets.QWidget):
     mouse_moved = QtCore.pyqtSignal(float, float)
-    mouse_left_clicked = QtCore.pyqtSignal(float, float)
-    mouse_left_double_clicked = QtCore.pyqtSignal(float, float)
+    #mouse_left_clicked = QtCore.pyqtSignal(float, float)
+    #mouse_left_double_clicked = QtCore.pyqtSignal(float, float)
 
     rois_changed = QtCore.pyqtSignal(list)
 
@@ -246,7 +246,26 @@ class RoiImageWidget(QtWidgets.QWidget):
                                roi.pos()[1], roi.pos()[1] + roi.size()[1]])
         return roi_limits
 
-    def roi_changed(self):
+    def roi_changed(self, *args):
+        changed_roi = args[0]
+        i = self.rois.index(changed_roi)
+        #print(i)
+        changed_roi_x = [changed_roi.pos()[0], changed_roi.size()[0]]
+        roi: ImgROI
+        
+        for roi in self.rois:
+            roi.blockSignals(True)
+            roi_pos = roi.pos()
+            roi_size = roi.size()
+            if roi_pos[0] != changed_roi_x[0]:
+                roi_pos[0]=changed_roi_x[0]
+                roi.setPos(roi_pos)
+            if roi_size[0] != changed_roi_x[1]:
+                roi_size[0]=changed_roi_x[1]
+                roi.setSize(roi_size)
+            
+            roi.blockSignals(False)
+        
         self.rois_changed.emit(self.get_roi_limits())
 
     def update_roi(self, ind, roi_limits):
@@ -275,65 +294,18 @@ class RoiImageWidget(QtWidgets.QWidget):
 
         self.pg_layout.scene().sigMouseMoved.connect(self.mouseMoved)
         self.pg_viewbox.mouseClickEvent = self.myMouseClickEvent
-        self.pg_viewbox.mouseDragEvent = self.myMouseDragEvent
-        self.pg_viewbox.mouseDoubleClickEvent = self.myMouseDoubleClickEvent
+        #self.pg_viewbox.mouseDragEvent = self.myMouseDragEvent
+        #self.pg_viewbox.mouseDoubleClickEvent = self.myMouseDoubleClickEvent
 
     def myMouseClickEvent(self, ev):
         if ev.button() == QtCore.Qt.RightButton or \
                 (ev.button() == QtCore.Qt.LeftButton and
                          ev.modifiers() & QtCore.Qt.ControlModifier):
-            self.pg_viewbox.scaleBy((2, 2))
-
-        elif ev.button() == QtCore.Qt.LeftButton:
-            pos = self.pg_viewbox.mapFromScene(ev.pos())
-            y = pos.x()
-            x = pos.y()
-            self.mouse_left_clicked.emit(x, y)
-
-    def myMouseDoubleClickEvent(self, ev):
-        if ev.button() == QtCore.Qt.RightButton:
             self.pg_viewbox.autoRange()
-        if ev.button() == QtCore.Qt.LeftButton:
-            pos = self.pg_viewbox.mapFromScene(ev.pos())
-            self.mouse_left_double_clicked.emit(pos.x(), pos.y())
-
-    def myMouseDragEvent(self, ev, axis=None):
-        # most of this code is copied behavior of left click mouse drag from the original code
+ 
         ev.accept()
-        pos = ev.pos()
-        lastPos = ev.lastPos()
-        dif = pos - lastPos
-        dif *= -1
-        ## Ignore axes if mouse is disabled
-        mouseEnabled = np.array(self.pg_viewbox.state['mouseEnabled'], dtype=np.float32)
-        mask = mouseEnabled.copy()
-        if axis is not None:
-            mask[1 - axis] = 0.0
 
-        if ev.button() == QtCore.Qt.RightButton or \
-                (ev.button() == QtCore.Qt.LeftButton and \
-                             ev.modifiers() & QtCore.Qt.ControlModifier):
-            # determine the amount of translation
-            tr = dif * mask
-            tr = self.pg_viewbox.mapToView(tr) - self.pg_viewbox.mapToView(pg.Point(0, 0))
-            x = tr.x()
-            y = tr.y()
-
-            self.pg_viewbox.translateBy(x=x, y=y)
-            self.pg_viewbox.sigRangeChangedManually.emit(self.pg_viewbox.state['mouseEnabled'])
-        else:
-            if ev.isFinish():  ## This is the final move in the drag; change the view scale now
-                # print "finish"
-                self.pg_viewbox.rbScaleBox.hide()
-                # ax = QtCore.QRectF(Point(self.pressPos), Point(self.mousePos))
-                ax = QtCore.QRectF(pg.Point(ev.buttonDownPos(ev.button())), pg.Point(pos))
-                ax = self.pg_viewbox.childGroup.mapRectFromParent(ax)
-                self.pg_viewbox.showAxRect(ax)
-                self.pg_viewbox.axHistoryPointer += 1
-                self.pg_viewbox.axHistory = self.pg_viewbox.axHistory[:self.pg_viewbox.axHistoryPointer] + [ax]
-            else:
-                ## update shape of scale box
-                self.pg_viewbox.updateScaleBox(ev.buttonDownPos(), ev.pos())
+  
 
 
 class ImgROI(pg.ROI):
