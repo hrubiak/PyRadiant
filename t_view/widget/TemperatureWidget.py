@@ -54,12 +54,13 @@ class TemperatureWidget(QtWidgets.QWidget):
         
         self.roi_settings_widget = QtWidgets.QWidget()
         self._roi_settings_widget_layout = QtWidgets.QVBoxLayout(self.roi_settings_widget)
-        self.roi_widget = RoiWidget(4, ['Downstream', 'Upstream', 'Downstream dark', 'Upstream dark'],
-                                    roi_colors=[(255, 255, 0), (255, 140, 0),(155, 155, 0), (155,  90, 0)])
+        self.roi_widget = RoiWidget(4, ['Downstream', 'Upstream', 'Background', 'Background'],
+                                    roi_colors=[(255, 255, 0), (255, 140, 0),(155, 155, 0), (175,  110, 0)])
         self._roi_settings_widget_layout.addWidget(self.roi_widget)
         
         
         self.other_settings_widget = QtWidgets.QWidget()
+        self.other_settings_widget.setMaximumWidth(300)
         self._other_settings_widget_layout = QtWidgets.QVBoxLayout(self.other_settings_widget)
         
         self.calibration_section = TemperatureCalibrationSection()
@@ -67,7 +68,9 @@ class TemperatureWidget(QtWidgets.QWidget):
         
         self.settings_gb = SettingsGroupBox()
         self.epics_gb = EPICSGroupBox()
+        self.roi_gb = self.roi_widget.roi_gb
         self._other_settings_widget_layout.addWidget(self.settings_gb)
+        self._other_settings_widget_layout.addWidget(self.roi_gb)
         self._other_settings_widget_layout.addWidget(self.calibration_section)
         self._other_settings_widget_layout.addWidget(self.epics_gb)
         self._other_settings_widget_layout.addSpacerItem(VerticalSpacerItem())
@@ -160,23 +163,7 @@ class TemperatureFileNavigation(QtWidgets.QWidget):
       
         self.setLayout(self._layout)
         
-class LoadSettingsSection(QtWidgets.QWidget):
-    def __init__(self, *args, **kwargs):
-        super().__init__()
-        self._layout = QtWidgets.QHBoxLayout()
-        
-        
-        
-        
 
-        self._layout.addWidget(self.settings_gb)
-        self._layout.addWidget(self.epics_gb)
-        
-        self._layout.addSpacerItem(HorizontalSpacerItem())
-        
-      
-  
-        self.setLayout(self._layout)
 
 class EPICSGroupBox(QtWidgets.QGroupBox):
     def __init__(self, *args, **kwargs):
@@ -191,7 +178,7 @@ class EPICSGroupBox(QtWidgets.QGroupBox):
         self._layout.addWidget(self.connect_to_epics_cb)
         
         self.setLayout(self._layout)
-        
+        self.setMaximumWidth(300)
 
 
 class SettingsGroupBox(QtWidgets.QGroupBox):
@@ -216,7 +203,7 @@ class SettingsGroupBox(QtWidgets.QGroupBox):
 
 
         self.setLayout(self._layout)
-        
+        self.setMaximumWidth(300)
 
 
 class TemperatureCalibrationSection(QtWidgets.QGroupBox):

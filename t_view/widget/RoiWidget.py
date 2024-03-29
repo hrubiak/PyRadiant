@@ -54,14 +54,18 @@ class RoiWidget(QtWidgets.QWidget):
         
         self.status_bar = StatusBar()
 
-        self._roi_gbs_layout = QtWidgets.QHBoxLayout()
+        self.roi_gb = QtWidgets.QGroupBox('ROI')
+        self.roi_gb.setMaximumWidth(300)
+        self._roi_v_bs_layout = QtWidgets.QVBoxLayout(self.roi_gb)
+        self._roi_gbs_layout = QtWidgets.QGridLayout()
         self._roi_gbs_layout.setSpacing(2)
         self.roi_gbs = []
         self.create_roi_gbs()
-        self._roi_gbs_layout.addSpacerItem(HorizontalSpacerItem())
+        self._roi_v_bs_layout.addLayout(self._roi_gbs_layout)
+        #self._roi_gbs_layout.addSpacerItem(HorizontalSpacerItem())
 
         self._main_vertical_layout.addWidget(self.img_widget)
-        self._main_vertical_layout.addLayout(self._roi_gbs_layout)
+        #self._main_vertical_layout.addWidget(self.roi_gb)
         self._main_vertical_layout.addWidget(self.status_bar)
 
         self.pos_lbl = self.status_bar.left_lbl
@@ -69,13 +73,17 @@ class RoiWidget(QtWidgets.QWidget):
         self.setLayout(self._main_vertical_layout)
 
         self.create_signals()
+        
       
 
     def create_roi_gbs(self):
+        
         for ind in range(self.roi_num):
+            row = ind % 2
+            col = ind // 2
             self.roi_gbs.append(RoiGroupBox(self.roi_titles[ind], self.roi_colors[ind]))
             self.roi_gbs[-1].roi_txt_changed.connect(partial(self._update_img_roi, ind))
-            self._roi_gbs_layout.addWidget(self.roi_gbs[-1])
+            self._roi_gbs_layout.addWidget(self.roi_gbs[-1], row, col)
 
     def create_signals(self):
         self.img_widget.rois_changed.connect(self._update_roi_gbs)
@@ -95,10 +103,12 @@ class RoiWidget(QtWidgets.QWidget):
 
     def set_rois(self, rois_list):
         self.blockSignals(True)
+        self.roi_gb.blockSignals(True)
         self._update_roi_gbs(rois_list)
         for ind in range(self.roi_num):
             self._update_img_roi(ind, rois_list[ind])
         self.blockSignals(False)
+        self.roi_gb.blockSignals(False)
 
     def get_rois(self):
         return self.img_widget.get_roi_limits()
@@ -116,29 +126,47 @@ class RoiGroupBox(QtWidgets.QGroupBox):
     def __init__(self, title, color):
         super(RoiGroupBox, self).__init__(title)
         self.color = color
+        self._layout = QtWidgets.QVBoxLayout()
         self._grid_layout = QtWidgets.QGridLayout()
         self._grid_layout.setSpacing(2)
-        
+        self._layout.addLayout(self._grid_layout)
 
         self.x_min_txt = IntegerTextField('0')
         self.x_max_txt = IntegerTextField('0')
         self.y_min_txt = IntegerTextField('0')
         self.y_max_txt = IntegerTextField('0')
+        self.y_n_txt = IntegerTextField('0')
+        self.y_n_txt.setReadOnly(True)
+        self.y_min_txt.setMaximumWidth(70)
+        self.y_max_txt.setMaximumWidth(70)
+        self.y_n_txt.setMaximumWidth(70)
 
-        self._grid_layout.addWidget(CenteredQLabel('X:'), 1, 0)
-        self._grid_layout.addWidget(self.x_min_txt, 1, 1)
-        self._grid_layout.addWidget(self.x_max_txt, 1, 2)
+        #self._grid_layout.addWidget(CenteredQLabel('X:'), 1, 0)
+        #self._grid_layout.addWidget(self.x_min_txt, 1, 1)
+        #self._grid_layout.addWidget(self.x_max_txt, 1, 2)
 
-        self._grid_layout.addWidget(CenteredQLabel('Y:'), 2, 0)
-        self._grid_layout.addWidget(self.y_min_txt, 2, 1)
-        self._grid_layout.addWidget(self.y_max_txt, 2, 2)
+        #self._grid_layout.addWidget(CenteredQLabel('Row:'), 1, 0)
+        self._start_lbl = QtWidgets.QLabel('Start:')
+        self._end_lbl = QtWidgets.QLabel('End:')
+        self._n_lbl = QtWidgets.QLabel('n:')
+        self._start_lbl.setMaximumWidth(70)
+        self._end_lbl.setMaximumWidth(70)
+        self._n_lbl.setMaximumWidth(70)
+        self._grid_layout.addWidget(self._start_lbl, 0, 0)
+        self._grid_layout.addWidget(self._end_lbl, 1, 0)
+        self._grid_layout.addWidget(self._n_lbl, 2, 0)
+        self._grid_layout.addWidget(self.y_min_txt, 0, 1)
+        self._grid_layout.addWidget(self.y_max_txt, 1, 1)
+        self._grid_layout.addWidget(self.y_n_txt, 2, 1)
 
-        self.setLayout(self._grid_layout)
+
+        self.setLayout(self._layout)
         style_str = "color: rgb{0}; border: 1px solid rgb{0};".format(self.color)
         self.setStyleSheet('QGroupBox {' + style_str + '}')
-        self.setMaximumWidth(150)
-        self.setMinimumWidth(150)
+        '''self.setMaximumWidth(150)
+        self.setMinimumWidth(150)'''
         self.create_signals()
+     
 
     def create_signals(self):
         self.x_min_txt.editingFinished.connect(self._roi_txt_changed)
@@ -227,14 +255,10 @@ class RoiImageWidget(QtWidgets.QWidget):
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.addWidget(self.pg_widget)
         self.setLayout(self._layout)
-
         self.add_rois()
-
         self.modify_mouse_behavior()
 
     def set_wavelength_calibration(self, rect):
-        
-        
         
         if self.rect != rect :
             self.rect = rect
@@ -256,23 +280,15 @@ class RoiImageWidget(QtWidgets.QWidget):
             roi_size_x = roi.size()[0]
             if self.rect != None:
                 roi_pos_x =   (roi_pos_x-self.rect[0]) *1340 /self.rect[2]
-               
                 roi_size_x = roi_size_x / self.rect[2]*1340
-           
-
-            limit = [roi_pos_x, roi_pos_x + roi_size_x,
-                               roi.pos()[1], roi.pos()[1] + roi.size()[1]]
-            
-            
-
+            limit = [int(roi_pos_x), int(roi_pos_x + roi_size_x),
+                               int(roi.pos()[1]), int(roi.pos()[1] + roi.size()[1])]
             roi_limits.append(limit)
-        
         return roi_limits
 
     def roi_changed(self, *args):
         changed_roi = args[0]
         i = self.rois.index(changed_roi)
-        #print(i)
         changed_roi_x = [changed_roi.pos()[0], changed_roi.size()[0]]
         roi: ImgROI
         
@@ -286,10 +302,11 @@ class RoiImageWidget(QtWidgets.QWidget):
             if roi_size[0] != changed_roi_x[1]:
                 roi_size[0]=changed_roi_x[1]
                 roi.setSize(roi_size)
-            
             roi.blockSignals(False)
         
-        self.rois_changed.emit(self.get_roi_limits())
+        limits = self.get_roi_limits()
+        print(limits)
+        self.rois_changed.emit(limits)
 
     def update_roi(self, ind, roi_limits):
         pos = [roi_limits[0], roi_limits[2]]
@@ -297,15 +314,15 @@ class RoiImageWidget(QtWidgets.QWidget):
                                 roi_limits[3] - roi_limits[2]]
         if self.rect != None:
             pos[0] = self.rect[0] + pos[0] /1340 *self.rect[2]
-            #pos[1] = pos[1] + self.rect[1]
             size[0] = size[0] * (self.rect[2]/1340)
-            #size[1] = size[1] * self.rect[3]
-        
+
+        self.rois[ind].blockSignals(True)
         self.rois[ind].setPos(pos)
         self.rois[ind].setSize(size)
+        self.rois[ind].blockSignals(False)
 
     def plot_image(self, data):
-        #log_data = np.log(data)
+        
         self.pg_img_item.setImage(data)
         x_max, y_max = data.shape
         self.pg_viewbox.setLimits(xMin=0, xMax=x_max,
@@ -320,24 +337,16 @@ class RoiImageWidget(QtWidgets.QWidget):
         self.mouse_moved.emit(pos.x(), pos.y())
 
     def modify_mouse_behavior(self):
-        # different mouse handlers
         self.pg_viewbox.setMouseMode(self.pg_viewbox.RectMode)
-
         self.pg_layout.scene().sigMouseMoved.connect(self.mouseMoved)
         self.pg_viewbox.mouseClickEvent = self.myMouseClickEvent
-        #self.pg_viewbox.mouseDragEvent = self.myMouseDragEvent
-        #self.pg_viewbox.mouseDoubleClickEvent = self.myMouseDoubleClickEvent
 
     def myMouseClickEvent(self, ev):
         if ev.button() == QtCore.Qt.RightButton or \
                 (ev.button() == QtCore.Qt.LeftButton and
                          ev.modifiers() & QtCore.Qt.ControlModifier):
             self.pg_viewbox.autoRange()
- 
         ev.accept()
-
-  
-
 
 class ImgROI(pg.ROI):
 
