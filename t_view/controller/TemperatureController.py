@@ -109,6 +109,7 @@ class TemperatureController(QtCore.QObject):
         self.model.us_calculations_changed.connect(self.update_time_lapse)
 
         self.widget.roi_widget.rois_changed.connect(self.widget_rois_changed)
+        self.widget.roi_widget.wl_range_changed.connect(self.widget_wl_range_changed_callback)
 
         # mouse moved signals
         self.widget.temperature_spectrum_widget.mouse_moved.connect(self.graph_mouse_moved)
@@ -298,6 +299,7 @@ class TemperatureController(QtCore.QObject):
             
             self.widget.roi_widget.img_widget.set_wavelength_calibration((x,y,w,h))
         self.widget.roi_widget.set_rois(self.model.get_roi_data_list())
+        self.widget.roi_widget.set_wl_range(self.model.wl_range)
         
         # update exp data widget
         #####################################
@@ -424,6 +426,16 @@ class TemperatureController(QtCore.QObject):
             
             
             self.model.set_rois(roi_list)
+            wl_range = self.model.wl_range
+            self.widget.roi_widget.set_wl_range(wl_range)
+
+
+    def widget_wl_range_changed_callback(self, wl_range):
+        if self.model.has_data():
+            self.model.wl_range = wl_range
+            rois = self.model.get_roi_data_list()
+            self.model.set_rois(rois)
+            self.widget.roi_widget.set_rois(rois)
 
     def graph_mouse_moved(self, x, y):
         self.widget.graph_mouse_pos_lbl.setText("X: {:8.2f}  Y: {:8.2f}".format(x, y))
@@ -434,7 +446,7 @@ class TemperatureController(QtCore.QObject):
         try:
             s = self.model.data_img.shape
             if int(y)< s[0] and int(x)< s[1] and int(x) >= 0 and int(y) >= 0:
-                self.widget.roi_widget.pos_lbl.setText("X: {:5.0f}  Y: {:5.0f}    Int: {:6.0f}    lambda: {:5.2f} nm".
+                self.widget.roi_widget.pos_lbl.setText("X: {:5.0f}  Y: {:5.0f}    Int: {:6.0f}    Wavelength: {:5.2f} nm".
                                                    format(x, y,
                                                           self.model.data_img[int(y), int(x)],
                                                           self.model.data_img_file.x_calibration[int(x)]))

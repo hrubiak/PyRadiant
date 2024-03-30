@@ -550,7 +550,7 @@ class TestTemperatureModel(QtTest):
         self.assertEqual(lines[2], "# Upstream (K): 1413.6	2.1\n")
         self.assertEqual(lines[3], "# \n")
         self.assertEqual(lines[4], "# Datacolumns:\n")
-        self.assertEqual(lines[5], "# lambda(nm)	DS_data	DS_fit\n")
+        self.assertEqual(lines[5], "# wavelength(nm)	DS_data	DS_fit\n")
 
         file.close()
         os.remove(ds_out_path)
@@ -563,7 +563,7 @@ class TestTemperatureModel(QtTest):
         self.assertEqual(lines[2], "# Upstream (K): 1413.6	2.1\n")
         self.assertEqual(lines[3], "# \n")
         self.assertEqual(lines[4], "# Datacolumns:\n")
-        self.assertEqual(lines[5], "# lambda(nm)	US_data	US_fit\n")
+        self.assertEqual(lines[5], "# wavelength(nm)	US_data	US_fit\n")
 
         file.close()
         os.remove(us_out_path)

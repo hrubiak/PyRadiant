@@ -33,6 +33,7 @@ from .RoiData import RoiDataManager, Roi, get_roi_max, get_roi_sum
 from .SpeFile import SpeFile
 from .helper import FileNameIterator
 from .radiation import fit_linear, wien_pre_transform, m_to_T, m_b_wien
+from .helper.HelperModule import get_partial_index, get_partial_value
 
 T_LOG_FILE = 'T_log.txt'
 LOG_HEADER = '# File\tPath\tT_DS\tT_US\tDetector\tExposure Time [sec]\n'
@@ -357,7 +358,7 @@ class TemperatureModel(QtCore.QObject):
                 Downstream (K): temperatures...
                 Upstream (K): temperatures...
             column names:
-            lambda(nm), DS_data, DS_fit, US_data, US_fit, ....
+            wavelength(nm), DS_data, DS_fit, US_data, US_fit, ....
 
         if the original spe file contains several frames, all frames will be saved in order with always data and then
         fit.
@@ -370,8 +371,8 @@ class TemperatureModel(QtCore.QObject):
         header += "Downstream (K): {:.1f}\t{:.1f}\n".format(self.ds_temperature, self.ds_temperature_error)
         header += "Upstream (K): {:.1f}\t{:.1f}\n\n".format(self.us_temperature, self.us_temperature_error)
         header += "Datacolumns:\n"
-        header_ds = header + "\t".join(("lambda(nm)", "DS_data", "DS_fit"))
-        header_us = header + "\t".join(("lambda(nm)", "US_data", "US_fit"))
+        header_ds = header + "\t".join(("wavelength(nm)", "DS_data", "DS_fit"))
+        header_us = header + "\t".join(("wavelength(nm)", "US_data", "US_fit"))
 
         output_matrix_ds = np.vstack((self.ds_data_spectrum.x,
                                       self.ds_corrected_spectrum.y, self.ds_fit_spectrum.y))
@@ -384,6 +385,79 @@ class TemperatureModel(QtCore.QObject):
 
         np.savetxt(ds_filename, output_matrix_ds.T, header=header_ds)
         np.savetxt(us_filename, output_matrix_us.T, header=header_us)
+
+
+    # updating wavelength range values
+    @property
+    def wl_range(self):
+        try:
+            ds_roi = self.roi_data_manager.get_roi(0, self.data_img_file.get_dimension())
+            wl = self.x_calibration
+            wl_start = int(round(wl[int(round(ds_roi.x_min))]))
+            wl_end = int(round(wl[int(round(ds_roi.x_max))]))
+            return [min(wl_start,wl_end),max(wl_start,wl_end)]
+        except AttributeError:
+            return [0, 0]
+
+    @wl_range.setter
+    def wl_range(self, wl_range):
+        
+        wl = self.x_calibration
+        wl_max = max(wl)
+        wl_min = min(wl)
+        if wl_range[0] >= wl_min:
+            if wl_range[0] <= wl_max:
+                x_1 = int(round(get_partial_index(wl,wl_range[0])))
+            else:
+                x_1 = len(wl)-1
+        else:
+            x_1 = 0
+        if wl_range[1] >= wl_min:
+            if wl_range[1] <= wl_max:
+                x_2 = int(round(get_partial_index(wl,wl_range[1])))
+            else:
+                x_2 = len(wl)-1
+        else:
+            x_2 = 0
+        x_start = min(x_1,x_2)
+        x_end = max(x_1,x_2)
+
+        ds_limits = [0,0,0,0]
+        us_limits = [0,0,0,0]
+        ds_bg_limits = [0,0,0,0]
+        us_bg_limits = [0,0,0,0]
+
+        ds_limits[0] = x_start
+        ds_limits[1] = x_end
+        us_limits[0] = x_start
+        us_limits[1] = x_end
+        ds_bg_limits[0] = x_start
+        ds_bg_limits[1] = x_end
+        us_bg_limits[0] = x_start
+        us_bg_limits[1] = x_end
+
+        ds_roi = self.roi_data_manager.get_roi(0, self.data_img_file.get_dimension())
+        us_roi = self.roi_data_manager.get_roi(1, self.data_img_file.get_dimension())
+        ds_bg_roi = self.roi_data_manager.get_roi(2, self.data_img_file.get_dimension())
+        us_bg_roi = self.roi_data_manager.get_roi(3, self.data_img_file.get_dimension())
+
+        ds_limits[2] = ds_roi.y_min
+        ds_limits[3] = ds_roi.y_max
+        us_limits[2] = us_roi.y_min
+        us_limits[3] = us_roi.y_max
+        ds_bg_limits[2] = ds_bg_roi.y_min
+        ds_bg_limits[3] = ds_bg_roi.y_max
+        us_bg_limits[2] = us_bg_roi.y_min
+        us_bg_limits[3] = us_bg_roi.y_max
+
+        self.roi_data_manager.set_roi(0, self.data_img_file.get_dimension(), ds_limits)
+        self.roi_data_manager.set_roi(1, self.data_img_file.get_dimension(), us_limits)
+        self.roi_data_manager.set_roi(2, self.data_img_file.get_dimension(), ds_bg_limits)
+        self.roi_data_manager.set_roi(3, self.data_img_file.get_dimension(), us_bg_limits)
+
+        '''self.ds_temperature_model._update_all_spectra()
+        self.ds_temperature_model.fit_data()
+        self.ds_calculations_changed.emit()'''
 
     # updating roi values
     @property
@@ -447,6 +521,7 @@ class TemperatureModel(QtCore.QObject):
         self.ds_roi = limits[0]
         self.us_roi_bg = limits[3]
         self.ds_roi_bg = limits[2]
+
 
     def get_roi_data_list(self):
         ds_roi = self.ds_roi.as_list()

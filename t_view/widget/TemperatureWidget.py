@@ -20,10 +20,11 @@
 from PyQt5 import QtCore, QtWidgets, QtGui
 import os
 from .TemperatureSpectrumWidget import TemperatureSpectrumWidget
-from .RoiWidget import RoiWidget
+from .RoiWidget import RoiWidget, IntegerTextField
 from .Widgets import FileGroupBox
 from .Widgets import OutputGroupBox, StatusBar
 from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem
+
 
 from .. import style_path
 
@@ -58,8 +59,16 @@ class TemperatureWidget(QtWidgets.QWidget):
                                     roi_colors=[(255, 255, 0), (255, 140, 0),(155, 155, 0), (175,  110, 0)])
         self._roi_settings_widget_layout.addWidget(self.roi_widget)
         
+        # scroll area stuff
+        self.scroll = QtWidgets.QScrollArea()
+        self.scroll.setStyleSheet("QScrollArea { border: 0px;}")
+        self.scroll.setMaximumWidth(320)
         
         self.other_settings_widget = QtWidgets.QWidget()
+        self.scroll.setWidget(self.other_settings_widget)
+        self.scroll.setWidgetResizable(True)
+
+        
         self.other_settings_widget.setMaximumWidth(300)
         self._other_settings_widget_layout = QtWidgets.QVBoxLayout(self.other_settings_widget)
         
@@ -68,21 +77,9 @@ class TemperatureWidget(QtWidgets.QWidget):
         
         self.settings_gb = SettingsGroupBox()
         self.epics_gb = EPICSGroupBox()
+        
         self.roi_gb = self.roi_widget.roi_gb
-
-        self.wl_range_widget = QtWidgets.QGroupBox("Wavelength range (nm)")
-        self._wl_range_widget_layout = QtWidgets.QGridLayout(self.wl_range_widget)
-
-        self.wl_low = self.roi_widget.roi_gbs[0].x_min_txt
-        self.wl_high = self.roi_widget.roi_gbs[0].x_max_txt
-
-        self._wl_range_widget_layout.addWidget(QtWidgets.QLabel("Start:"),0,0)
-        self._wl_range_widget_layout.addWidget(self.wl_low,0,1)
-        self._wl_range_widget_layout.addWidget(QtWidgets.QLabel("End:"),0,2)
-        self._wl_range_widget_layout.addWidget(self.wl_high,0,3)
-
-   
-        self.wl_range_widget.setMaximumWidth(300)
+        self.wl_range_widget = self.roi_widget.wl_range_widget
 
         self._other_settings_widget_layout.addWidget(self.settings_gb)
         self._other_settings_widget_layout.addWidget(self.wl_range_widget)
@@ -92,7 +89,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._other_settings_widget_layout.addSpacerItem(VerticalSpacerItem())
         
         self._settings_widget_layout.addWidget(self.roi_settings_widget)
-        self._settings_widget_layout.addWidget(self.other_settings_widget)
+        self._settings_widget_layout.addWidget(self.scroll)
         
         self.tab_widget.addTab(self.graph_widget, 'Temperature')
         self.tab_widget.addTab(self.settings_widget, 'Settings')

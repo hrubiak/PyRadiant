@@ -60,7 +60,7 @@ class Roi():
         return [self.y_min, self.y_max]
 
     def as_list(self):
-        return [self.x_min, self.x_max, self.y_min, self.y_max]
+        return [int(self.x_min), int(self.x_max), int(self.y_min), int(self.y_max)]
 
     def set_roi(self, limits):
         self.x_min = limits[0]
