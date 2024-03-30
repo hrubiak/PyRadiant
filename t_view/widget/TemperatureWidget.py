@@ -69,7 +69,23 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.settings_gb = SettingsGroupBox()
         self.epics_gb = EPICSGroupBox()
         self.roi_gb = self.roi_widget.roi_gb
+
+        self.wl_range_widget = QtWidgets.QGroupBox("Wavelength range (nm)")
+        self._wl_range_widget_layout = QtWidgets.QGridLayout(self.wl_range_widget)
+
+        self.wl_low = self.roi_widget.roi_gbs[0].x_min_txt
+        self.wl_high = self.roi_widget.roi_gbs[0].x_max_txt
+
+        self._wl_range_widget_layout.addWidget(QtWidgets.QLabel("Start:"),0,0)
+        self._wl_range_widget_layout.addWidget(self.wl_low,0,1)
+        self._wl_range_widget_layout.addWidget(QtWidgets.QLabel("End:"),0,2)
+        self._wl_range_widget_layout.addWidget(self.wl_high,0,3)
+
+   
+        self.wl_range_widget.setMaximumWidth(300)
+
         self._other_settings_widget_layout.addWidget(self.settings_gb)
+        self._other_settings_widget_layout.addWidget(self.wl_range_widget)
         self._other_settings_widget_layout.addWidget(self.roi_gb)
         self._other_settings_widget_layout.addWidget(self.calibration_section)
         self._other_settings_widget_layout.addWidget(self.epics_gb)
@@ -146,8 +162,6 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.browse_by_name_rb = self.control_widget.file_gb.browse_by_name_rb 
         self.browse_by_time_rb = self.control_widget.file_gb.browse_by_time_rb 
         
-     
-
 
 class TemperatureFileNavigation(QtWidgets.QWidget):
     def __init__(self, *args, **kwargs):
@@ -220,6 +234,8 @@ class TemperatureCalibrationSection(QtWidgets.QGroupBox):
         #self._layout.addSpacerItem(VerticalSpacerItem())
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
+
+
 
 
 class CalibrationGB(QtWidgets.QGroupBox):

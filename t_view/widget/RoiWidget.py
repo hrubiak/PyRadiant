@@ -305,7 +305,7 @@ class RoiImageWidget(QtWidgets.QWidget):
             roi.blockSignals(False)
         
         limits = self.get_roi_limits()
-        print(limits)
+        #print(limits)
         self.rois_changed.emit(limits)
 
     def update_roi(self, ind, roi_limits):

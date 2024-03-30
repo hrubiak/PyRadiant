@@ -124,6 +124,7 @@ class TemperatureModel(QtCore.QObject):
         try:
             self.log_file = open(os.path.join(file_path, T_LOG_FILE), 'a')
             self.log_file.write(LOG_HEADER)
+            #self.log_file.close()
             return self.log_file
         except PermissionError:
             return None
@@ -442,10 +443,10 @@ class TemperatureModel(QtCore.QObject):
         self.us_calculations_changed.emit()
 
     def set_rois(self, limits):
-        self.us_roi = limits[0]
-        self.ds_roi = limits[1]
-        self.us_roi_bg = limits[2]
-        self.ds_roi_bg = limits[3]
+        self.us_roi = limits[1]
+        self.ds_roi = limits[0]
+        self.us_roi_bg = limits[3]
+        self.ds_roi_bg = limits[2]
 
     def get_roi_data_list(self):
         ds_roi = self.ds_roi.as_list()
@@ -723,7 +724,7 @@ class SingleTemperatureModel(QtCore.QObject):
             '''temperature, temperature_error, self.fit_spectrum = \
                 fit_black_body_function_wien(self.corrected_spectrum)'''
             self.temperature, self.temperature_error, self.fit_spectrum = \
-                fit_black_body_function(self.corrected_spectrum)
+                fit_black_body_function_wien(self.corrected_spectrum)
             '''d_T = temperature-self.temperature
             d_Terr = temperature_error - self.temperature_error
             print("d_T ",str(d_T))
@@ -747,14 +748,14 @@ def calculate_real_spectrum(data_spectrum, calibration_spectrum, standard_spectr
 
 
 def fit_black_body_function(spectrum):
-    try:
-        param, cov = curve_fit(black_body_function, spectrum._x, spectrum._y, p0=[2000, 1e-11])
-        T = param[0]
-        T_err = np.sqrt(cov[0, 0])
+    
+    param, cov = curve_fit(black_body_function, spectrum._x, spectrum._y, p0=[2000, 1e-11])
+    T = param[0]
+    T_err = np.sqrt(cov[0, 0])
 
-        return T, T_err, Spectrum(spectrum._x, black_body_function(spectrum._x, param[0], param[1]))
-    except (RuntimeError, TypeError, ValueError):
-        return np.NaN, np.NaN, Spectrum([], [])
+    return T, T_err, Spectrum(spectrum._x, black_body_function(spectrum._x, param[0], param[1]))
+    '''except (RuntimeError, TypeError, ValueError):
+        return np.NaN, np.NaN, Spectrum([], [])'''
     
 def fit_black_body_function_wien(spectrum):
     
