@@ -759,7 +759,7 @@ class SingleTemperatureModel(QtCore.QObject):
 
             self.data_roi_max = get_roi_max(_data_img_as_array, roi)
             data_y = data_y - data_y_bg
-            #data_y[data_y<0] = 0
+            
             self.data_spectrum.data = data_x, data_y
 
     def _update_calibration_spectrum(self):
@@ -803,7 +803,7 @@ class SingleTemperatureModel(QtCore.QObject):
         if len(self.corrected_spectrum):
             
             if average_counts >3:
-            
+                
                 '''temperature, temperature_error, self.fit_spectrum = \
                     fit_black_body_function_wien(self.corrected_spectrum)'''
                 self.temperature, self.temperature_error, self.fit_spectrum = \
@@ -846,8 +846,9 @@ def fit_black_body_function(spectrum):
         return np.NaN, np.NaN, Spectrum([], [])'''
     
 def fit_black_body_function_wien(spectrum):
-    
+    spectrum._y [spectrum._y <0] = 0.1
     x, y = wien_pre_transform(spectrum._x * 1e-9, spectrum._y)
+    
     #av = np.average(y)
     m, b, m_std_dev_res = fit_linear(x,y, True)
     T, T_std_dev = m_to_T(m, m_std_dev_res)

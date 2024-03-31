@@ -349,25 +349,25 @@ class RoiSpectraWidget(QtWidgets.QWidget):
         
         self._layout.addWidget(self.plots_widget)
 
-        self._ds_data_item = pg.PlotDataItem(pen=pg.mkPen("#fff", width=1.5))
-   
+        self._ds_data_item = pg.PlotDataItem(pen=pg.mkPen("#fff", width=1.0))
+        self._ds_data_item.setDownsampling(True)
         self._ds_plot.addItem(self._ds_data_item)
-        self._us_data_item = pg.PlotDataItem(pen=pg.mkPen("#fff", width=1.5))
-      
 
+        self._us_data_item = pg.PlotDataItem(pen=pg.mkPen("#fff", width=1.0))
+        self._us_data_item.setDownsampling(True)
         self._us_plot.addItem(self._us_data_item)
         
     def plot_ds_data(self, x, y):
         mx = np.amax(y)*1.1
-        if mx < 50:
-            mx = 50
+        if mx < 2:
+            mx = 2
         self._ds_view_box.setYRange(-1,mx)
         self._ds_data_item.setData(x, y)
 
     def plot_us_data(self, x, y):
         mx = np.amax(y)*1.1
-        if mx < 50:
-            mx = 50
+        if mx < 2:
+            mx = 2
         self._us_view_box.setYRange(-1,mx)
         self._us_data_item.setData(x, y)
 

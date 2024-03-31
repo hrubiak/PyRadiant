@@ -149,8 +149,10 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         #                                         brush=pg.mkBrush(colors['data_brush']),
         #                                         size=3,
         #                                         symbol ='o')
-        self._us_data_item = pg.PlotDataItem(pen=pg.mkPen("#fff", width=1.5))
+        self._us_data_item = pg.PlotDataItem(pen=pg.mkPen("#fff", width=1.0))
+        self._us_data_item.setDownsampling(True)
         self._us_fit_item = pg.PlotDataItem(pen=pg.mkPen(colors['fit_pen'], width=3))
+        self._us_fit_item.setDownsampling(True)
 
         self._us_plot.addItem(self._us_data_item)
         self._us_plot.addItem(self._us_fit_item)
@@ -170,8 +172,10 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         #                                         brush=pg.mkBrush(colors['data_brush']),
         #                                         size=3,
         #                                         symbol ='o')
-        self._ds_data_item = pg.PlotDataItem(pen=pg.mkPen("#fff", width=1.5))
+        self._ds_data_item = pg.PlotDataItem(pen=pg.mkPen("#fff", width=1.0))
+        self._ds_data_item.setDownsampling(True)
         self._ds_fit_item = pg.PlotDataItem(pen=pg.mkPen(colors['fit_pen'], width=3))
+        self._ds_fit_item.setDownsampling(True)
 
         self._ds_plot.addItem(self._ds_data_item)
         self._ds_plot.addItem(self._ds_fit_item)
@@ -220,15 +224,15 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
 
     def plot_ds_data(self, x, y):
         mx = np.amax(y)*1.1
-        if mx < 50:
-            mx = 50
+        if mx < 2:
+            mx = 2
         self._ds_view_box.setYRange(-1,mx)
         self._ds_data_item.setData(x, y)
 
     def plot_us_data(self, x, y):
         mx = np.amax(y)*1.1
-        if mx < 50:
-            mx = 50
+        if mx < 2:
+            mx = 2
         self._us_view_box.setYRange(-1,mx)
         self._us_data_item.setData(x, y)
 
