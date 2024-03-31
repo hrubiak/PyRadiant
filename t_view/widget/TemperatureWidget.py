@@ -63,6 +63,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.scroll = QtWidgets.QScrollArea()
         self.scroll.setStyleSheet("QScrollArea { border: 0px;}")
         self.scroll.setMaximumWidth(320)
+        self.scroll.setMinimumWidth(320)
         
         self.other_settings_widget = QtWidgets.QWidget()
         self.scroll.setWidget(self.other_settings_widget)

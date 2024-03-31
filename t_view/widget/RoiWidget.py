@@ -22,6 +22,7 @@ from functools import partial
 import numpy as np
 
 from PyQt5 import QtCore, QtWidgets, QtGui
+from PyQt5.QtGui import QColor
 import pyqtgraph as pg
 from pyqtgraph.graphicsItems.ROI import Handle
 from pyqtgraph import ColorMap, HistogramLUTItem
@@ -30,11 +31,20 @@ from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem, DoubleSpinB
 
 from .Widgets import StatusBar
 
-#pg.setConfigOption('useOpenGL', False)
+'''#pg.setConfigOption('useOpenGL', False)
 pg.setConfigOption('leftButtonPan', False)
 pg.setConfigOption('background', (20, 20, 20))
 #pg.setConfigOption('foreground', 'b')
-pg.setConfigOption('antialias', True)
+pg.setConfigOption('antialias', True)'''
+
+colors = {
+    'data_pen': '#FFFFFF',
+    'data_brush': '#FFFFFF',
+    'fit_pen': 'r',
+    'downstream': '#FFFF00',
+    'upstream': '#FF9900',
+    'combined': '#66FFFF'
+}
 
 
 class RoiWidget(QtWidgets.QWidget):
@@ -52,10 +62,18 @@ class RoiWidget(QtWidgets.QWidget):
         self._main_vertical_layout.setSpacing(5)
 
         self.img_widget = RoiImageWidget(roi_num=roi_num, roi_colors=roi_colors)
+        self.specra_widget = RoiSpectraWidget()
+
+        self.left_tab_widget = QtWidgets.QTabWidget()
+        self.left_tab_widget.setTabPosition(QtWidgets.QTabWidget.West)
+        self.left_tab_widget.setCurrentIndex(0)
+        self.left_tab_widget.addTab(self.img_widget, '2D')
+        self.left_tab_widget.addTab(self.specra_widget, '1D')
+
 
         self.wl_range_widget = wavelengthRangeGB()
         
-        self.status_bar = StatusBar()
+        self.status_bar = self.img_widget.status_bar
 
         self.roi_gb = QtWidgets.QGroupBox('ROI')
         self.roi_gb.setMaximumWidth(300)
@@ -67,9 +85,9 @@ class RoiWidget(QtWidgets.QWidget):
         self._roi_v_bs_layout.addLayout(self._roi_gbs_layout)
         #self._roi_gbs_layout.addSpacerItem(HorizontalSpacerItem())
 
-        self._main_vertical_layout.addWidget(self.img_widget)
+        self._main_vertical_layout.addWidget(self.left_tab_widget)
         #self._main_vertical_layout.addWidget(self.roi_gb)
-        self._main_vertical_layout.addWidget(self.status_bar)
+        #self._main_vertical_layout.addWidget(self.status_bar)
 
         self.pos_lbl = self.status_bar.left_lbl
        
@@ -271,6 +289,84 @@ class IntegerSpinBox(DoubleSpinBoxAlignRight):
         self.setMaximum(10000)
         self.setSingleStep(1)
         
+class RoiSpectraWidget(QtWidgets.QWidget):
+    mouse_moved = QtCore.pyqtSignal(float, float)
+    
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+
+        self._layout = QtWidgets.QHBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+
+        self._pg_us_layout_widget = pg.GraphicsLayoutWidget()
+        self._pg_us_layout = pg.GraphicsLayout()
+        self._pg_us_layout.setContentsMargins(0, 0, 0, 0)
+        self._pg_us_layout.layout.setVerticalSpacing(0)
+        
+        self._us_plot =pg.PlotItem()
+        self._us_view_box = self._us_plot.getViewBox()
+        
+        self._us_plot.showAxis('top', show=True)
+        self._us_plot.showAxis('right', show=True)
+        self._us_plot.getAxis('top').setStyle(showValues=False)
+        self._us_plot.getAxis('right').setStyle(showValues=False)
+        self._us_plot.getAxis('left').setStyle(showValues=True)
+        self._us_plot.setTitle("Upstream", color=QColor(colors['upstream']), size='20pt')
+        self._us_plot.setLabel('bottom', '&lambda; (nm)')
+        #self._us_plot.setMinimumWidth(120)
+        
+        #self._us_plot.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        self._pg_us_layout.addItem(self._us_plot)
+        self._pg_us_layout_widget.addItem(self._pg_us_layout)
+
+        self._pg_ds_layout_widget = pg.GraphicsLayoutWidget()
+        self._pg_ds_layout = pg.GraphicsLayout()
+        self._pg_ds_layout.setContentsMargins(0, 0, 0, 0)
+        self._pg_ds_layout.layout.setVerticalSpacing(0)
+
+        self._ds_plot = pg.PlotItem()
+        self._ds_view_box = self._ds_plot.getViewBox()
+        self._ds_plot.showAxis('top', show=True)
+        self._ds_plot.showAxis('right', show=True)
+        self._ds_plot.getAxis('top').setStyle(showValues=False)
+        self._ds_plot.getAxis('right').setStyle(showValues=False)
+        self._ds_plot.getAxis('left').setStyle(showValues=True)
+        self._ds_plot.setTitle("Downstream", color=QColor(colors['downstream']), size='20pt')
+        self._ds_plot.setLabel('bottom', '&lambda; (nm)')
+        #self._ds_plot.setMinimumWidth(120)
+        
+        #self._ds_plot.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        self._pg_ds_layout.addItem(self._ds_plot)
+        self._pg_ds_layout_widget.addItem(self._pg_ds_layout)
+
+
+        self.plots_widget = QtWidgets.QWidget()
+        self._plots_widget_layout = QtWidgets.QHBoxLayout(self.plots_widget)
+        self._plots_widget_layout.setSpacing(0)
+        self._plots_widget_layout.addWidget(self._pg_ds_layout_widget)
+        self._plots_widget_layout.addWidget(self._pg_us_layout_widget)
+        
+        self._layout.addWidget(self.plots_widget)
+
+        self._ds_data_item = pg.PlotDataItem(pen=pg.mkPen("#fff", width=1.5))
+   
+        self._ds_plot.addItem(self._ds_data_item)
+        self._us_data_item = pg.PlotDataItem(pen=pg.mkPen("#fff", width=1.5))
+      
+
+        self._us_plot.addItem(self._us_data_item)
+        
+    def plot_ds_data(self, x, y):
+        
+        self._ds_view_box.setYRange(-1,np.amax(y)*1.1)
+        self._ds_data_item.setData(x, y)
+
+    def plot_us_data(self, x, y):
+      
+        self._us_view_box.setYRange(-1,np.amax(y)*1.1)
+        self._us_data_item.setData(x, y)
+
 
 class RoiImageWidget(QtWidgets.QWidget):
     mouse_moved = QtCore.pyqtSignal(float, float)
@@ -318,9 +414,11 @@ class RoiImageWidget(QtWidgets.QWidget):
 
         self.pg_layout.addItem(self.pg_hist_item, 1, 2, 1, 3)
 
-        self._layout = QtWidgets.QHBoxLayout()
+        self._layout = QtWidgets.QVBoxLayout()
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.addWidget(self.pg_widget)
+        self.status_bar = StatusBar()
+        self._layout.addWidget(self.status_bar)
         self.setLayout(self._layout)
         self.add_rois()
         self.modify_mouse_behavior()

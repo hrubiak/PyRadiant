@@ -160,7 +160,7 @@ def get_roi_sum(img, roi):
         roi_img = img[int(roi.y_min):int(roi.y_max) + 1, int(roi.x_min):int(roi.x_max) + 1]
     except:
         print('failed')
-    return np.sum(roi_img, 0) / np.float32(np.size(roi_img, 0))
+    return np.sum(roi_img, 0) / roi_img.shape[0]
 
 
 def get_roi_max(img, roi):

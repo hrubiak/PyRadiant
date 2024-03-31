@@ -104,9 +104,9 @@ class TemperatureController(QtCore.QObject):
         self.model.ds_calculations_changed.connect(self.ds_calculations_changed)
         self.model.us_calculations_changed.connect(self.us_calculations_changed)
 
-        self.model.data_changed.connect(self.update_time_lapse)
-        self.model.ds_calculations_changed.connect(self.update_time_lapse)
-        self.model.us_calculations_changed.connect(self.update_time_lapse)
+        #self.model.data_changed.connect(self.update_time_lapse)
+        #self.model.ds_calculations_changed.connect(self.update_time_lapse)
+        #self.model.us_calculations_changed.connect(self.update_time_lapse)
 
         self.widget.roi_widget.rois_changed.connect(self.widget_rois_changed)
         self.widget.roi_widget.wl_range_changed.connect(self.widget_wl_range_changed_callback)
@@ -357,7 +357,11 @@ class TemperatureController(QtCore.QObject):
             ds_plot_spectrum = self.model.ds_data_spectrum
 
         self.widget.temperature_spectrum_widget.plot_ds_data(*ds_plot_spectrum.data)
-        self.widget.temperature_spectrum_widget.plot_ds_fit(*self.model.ds_fit_spectrum.data)
+        if self.model.ds_temperature != 0:
+            self.widget.temperature_spectrum_widget.plot_ds_fit(*self.model.ds_fit_spectrum.data)
+        else:
+            self.widget.temperature_spectrum_widget.plot_ds_fit([],[])
+        self.widget.roi_widget.specra_widget.plot_ds_data(*self.model.ds_temperature_model.data_spectrum.data)
 
         self.widget.temperature_spectrum_widget.update_ds_temperature_txt(self.model.ds_temperature,
                                                            self.model.ds_temperature_error)
@@ -386,7 +390,12 @@ class TemperatureController(QtCore.QObject):
             us_plot_spectrum = self.model.us_data_spectrum
 
         self.widget.temperature_spectrum_widget.plot_us_data(*us_plot_spectrum.data)
-        self.widget.temperature_spectrum_widget.plot_us_fit(*self.model.us_fit_spectrum.data)
+        if self.model.us_temperature != 0:
+            self.widget.temperature_spectrum_widget.plot_us_fit(*self.model.us_fit_spectrum.data)
+        else:
+            self.widget.temperature_spectrum_widget.plot_us_fit([],[])
+        self.widget.roi_widget.specra_widget.plot_us_data(*self.model.us_temperature_model.data_spectrum.data)
+
         self.widget.temperature_spectrum_widget.update_us_temperature_txt(self.model.us_temperature,
                                                            self.model.us_temperature_error)
         self.widget.temperature_spectrum_widget.update_us_roi_max_txt(self.model.us_temperature_model.data_roi_max)

@@ -640,7 +640,7 @@ class TemperatureModel(QtCore.QObject):
 
 
 class SingleTemperatureModel(QtCore.QObject):
-    data_changed = QtCore.pyqtSignal()
+    #data_changed_stm = QtCore.pyqtSignal()
 
     def __init__(self, ind, roi_data_manager):
         super(SingleTemperatureModel, self).__init__()
@@ -680,7 +680,7 @@ class SingleTemperatureModel(QtCore.QObject):
         self._update_data_spectrum()
         self._update_corrected_spectrum()
         self.fit_data()
-        self.data_changed.emit()
+        #self.data_changed_stm.emit()
 
     @property
     def calibration_img(self):
@@ -703,7 +703,7 @@ class SingleTemperatureModel(QtCore.QObject):
         self._update_calibration_spectrum()
         self._update_corrected_spectrum()
         self.fit_data()
-        self.data_changed.emit()
+        #self.data_changed_stm.emit()
 
 
 
@@ -719,7 +719,7 @@ class SingleTemperatureModel(QtCore.QObject):
         self.temperature = np.NaN
         self.temperature_error = np.NaN
         self.fit_spectrum = Spectrum([], [])
-        self.data_changed.emit()
+        #self.data_changed_stm.emit()
 
     # setting standard interface
     #########################################################################
@@ -727,19 +727,19 @@ class SingleTemperatureModel(QtCore.QObject):
         self.calibration_parameter.load_standard_spectrum(filename)
         self._update_all_spectra()
         self.fit_data()
-        self.data_changed.emit()
+        #self.data_changed_stm.emit()
 
     def set_calibration_modus(self, modus):
         self.calibration_parameter.set_modus(modus)
         self._update_all_spectra()
         self.fit_data()
-        self.data_changed.emit()
+        #self.data_changed_stm.emit()
 
     def set_calibration_temperature(self, temperature):
         self.calibration_parameter.set_temperature(temperature)
         self._update_all_spectra()
         self.fit_data()
-        self.data_changed.emit()
+        #self.data_changed_stm.emit()
 
     # Spectrum calculations
     #########################################################################
@@ -758,7 +758,9 @@ class SingleTemperatureModel(QtCore.QObject):
             data_y_bg = get_roi_sum(_data_img_as_array, roi_bg)
 
             self.data_roi_max = get_roi_max(_data_img_as_array, roi)
-            self.data_spectrum.data = data_x, data_y - data_y_bg
+            data_y = data_y - data_y_bg
+            #data_y[data_y<0] = 0
+            self.data_spectrum.data = data_x, data_y
 
     def _update_calibration_spectrum(self):
         if self.calibration_img is not None:
@@ -795,19 +797,30 @@ class SingleTemperatureModel(QtCore.QObject):
     # finally the fitting function
     ##################################################################
     def fit_data(self):
+        counts = self.data_spectrum.data[1]
+        average_counts = sum(counts)/len(counts)
+        print(average_counts)
         if len(self.corrected_spectrum):
-            '''temperature, temperature_error, self.fit_spectrum = \
-                fit_black_body_function_wien(self.corrected_spectrum)'''
-            self.temperature, self.temperature_error, self.fit_spectrum = \
-                fit_black_body_function_wien(self.corrected_spectrum)
-            '''d_T = temperature-self.temperature
-            d_Terr = temperature_error - self.temperature_error
-            print("d_T ",str(d_T))
-            print("d_Terr ",str(d_Terr))'''
+            
+            if average_counts >3:
+            
+                '''temperature, temperature_error, self.fit_spectrum = \
+                    fit_black_body_function_wien(self.corrected_spectrum)'''
+                self.temperature, self.temperature_error, self.fit_spectrum = \
+                    fit_black_body_function_wien(self.corrected_spectrum)
+                '''d_T = temperature-self.temperature
+                d_Terr = temperature_error - self.temperature_error
+                print("d_T ",str(d_T))
+                print("d_Terr ",str(d_Terr))'''
+
+            else:
+                self.temperature = 0
+                self.temperature_error = 0
+                self.fit_spectrum = Spectrum([],[])
         else:
-            self.temperature = np.NaN
-            self.temperature_error = np.NaN
-            self.fit_spectrum = Spectrum([], [])
+            self.temperature = 0
+            self.temperature_error = 0
+            self.fit_spectrum = Spectrum([],[])
 
 
 # HELPER FUNCTIONS
