@@ -75,6 +75,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         
         self.calibration_section = TemperatureCalibrationSection()
         
+        self.t_function_type_section = TemperatureFitSettings()
         
         self.settings_gb = SettingsGroupBox()
         self.epics_gb = EPICSGroupBox()
@@ -86,6 +87,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._other_settings_widget_layout.addWidget(self.wl_range_widget)
         self._other_settings_widget_layout.addWidget(self.roi_gb)
         self._other_settings_widget_layout.addWidget(self.calibration_section)
+        self._other_settings_widget_layout.addWidget(self.t_function_type_section)
         self._other_settings_widget_layout.addWidget(self.epics_gb)
         self._other_settings_widget_layout.addSpacerItem(VerticalSpacerItem())
         
@@ -159,6 +161,9 @@ class TemperatureWidget(QtWidgets.QWidget):
 
         self.browse_by_name_rb = self.control_widget.file_gb.browse_by_name_rb 
         self.browse_by_time_rb = self.control_widget.file_gb.browse_by_time_rb 
+
+        self.temperature_function_plank_rb = self.t_function_type_section.plank_btn
+        self.temperature_function_wien_rb = self.t_function_type_section.wien_btn
         
 
 class TemperatureFileNavigation(QtWidgets.QWidget):
@@ -233,7 +238,22 @@ class TemperatureCalibrationSection(QtWidgets.QGroupBox):
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
 
+class TemperatureFitSettings(QtWidgets.QGroupBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__('Temperature fit function')
+        self._layout = QtWidgets.QHBoxLayout()
 
+        self.plank_btn = QtWidgets.QRadioButton("Plank")
+        self.wien_btn = QtWidgets.QRadioButton("Wien")
+        
+
+        self._layout.addWidget(self.plank_btn)
+        self._layout.addWidget(self.wien_btn)
+        self.wien_btn.setChecked(True)
+
+        #self._layout.addSpacerItem(VerticalSpacerItem())
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
 
 
 class CalibrationGB(QtWidgets.QGroupBox):

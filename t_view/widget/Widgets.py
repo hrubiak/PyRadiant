@@ -100,8 +100,8 @@ class FileGroupBox(QtWidgets.QGroupBox):
        
         self.frame_control_widget.setLayout(self._frame_control_layout)
         
-        self.timelapse_btn = QtWidgets.QPushButton('Time Lapse')
-        self._frame_control_layout.addWidget(self.timelapse_btn)
+        #self.timelapse_btn = QtWidgets.QPushButton('Time Lapse')
+        #self._frame_control_layout.addWidget(self.timelapse_btn)
         self._frame_control_layout.addSpacerItem(HorizontalSpacerItem())
 
         self.load_previous_frame_btn.setMaximumWidth(25)

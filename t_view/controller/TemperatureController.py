@@ -69,8 +69,8 @@ class TemperatureController(QtCore.QObject):
         self.connect_click_function(self.widget.load_data_file_btn, self.load_data_file)
         self.widget.load_next_data_file_btn.clicked.connect(self.load_next_data_image)
         self.widget.load_previous_data_file_btn.clicked.connect(self.load_previous_data_image)
-        self.widget.browse_by_name_rb.clicked.connect(self.toggle_brouse_mode)
-        self.widget.browse_by_time_rb.clicked.connect(self.toggle_brouse_mode)
+        self.widget.browse_by_name_rb.clicked.connect(self.toggle_browse_mode)
+        self.widget.browse_by_time_rb.clicked.connect(self.toggle_browse_mode)
         self.widget.load_next_frame_btn.clicked.connect(self.model.load_next_img_frame)
         self.widget.load_previous_frame_btn.clicked.connect(self.model.load_previous_img_frame)
         self.widget.autoprocess_cb.toggled.connect(self.auto_process_cb_toggled)
@@ -93,6 +93,9 @@ class TemperatureController(QtCore.QObject):
         self.widget.ds_temperature_txt.editingFinished.connect(self.ds_temperature_txt_changed)
         self.widget.us_temperature_txt.editingFinished.connect(self.us_temperature_txt_changed)
 
+        self.widget.temperature_function_plank_rb.clicked.connect(self.temperature_function_callback)
+        self.widget.temperature_function_wien_rb.clicked.connect(self.temperature_function_callback)
+
         # Setting signals
         self.connect_click_function(self.widget.load_setting_btn, self.load_setting_file)
         self.connect_click_function(self.widget.save_setting_btn, self.save_setting_file)
@@ -104,9 +107,9 @@ class TemperatureController(QtCore.QObject):
         self.model.ds_calculations_changed.connect(self.ds_calculations_changed)
         self.model.us_calculations_changed.connect(self.us_calculations_changed)
 
-        #self.model.data_changed.connect(self.update_time_lapse)
-        #self.model.ds_calculations_changed.connect(self.update_time_lapse)
-        #self.model.us_calculations_changed.connect(self.update_time_lapse)
+        self.model.data_changed.connect(self.update_time_lapse)
+        self.model.ds_calculations_changed.connect(self.update_time_lapse)
+        self.model.us_calculations_changed.connect(self.update_time_lapse)
 
         self.widget.roi_widget.rois_changed.connect(self.widget_rois_changed)
         self.widget.roi_widget.wl_range_changed.connect(self.widget_wl_range_changed_callback)
@@ -151,7 +154,7 @@ class TemperatureController(QtCore.QObject):
             mode = 'time'
         self.model.load_previous_data_image(mode)
         
-    def toggle_brouse_mode(self):
+    def toggle_browse_mode(self):
         
         time_mode = self.widget.browse_by_time_rb.isChecked()
         self.model._filename_iterator.create_timed_file_list = time_mode
@@ -184,6 +187,14 @@ class TemperatureController(QtCore.QObject):
     def us_temperature_txt_changed(self):
         new_temperature = float(str(self.widget.us_temperature_txt.text()))
         self.model.set_us_calibration_temperature(new_temperature)
+
+    def temperature_function_callback(self):
+        plank = self.widget.temperature_function_plank_rb.isChecked()
+        if plank:
+            function_type = 'plank'
+        else:
+            function_type = 'wien'
+        self.model.set_temperature_fit_function(function_type)
 
     def load_ds_standard_file(self, filename=None):
         if filename is None or filename is False:
@@ -292,9 +303,9 @@ class TemperatureController(QtCore.QObject):
         if self.model.x_calibration is not None:
             wl_calibration = self.model.x_calibration
             x_dim = self.model.data_img.shape[1]
-            x = wl_calibration[0]
+            x = round(wl_calibration[0], 3)
             y = 0
-            w = wl_calibration[-1]-wl_calibration[0]
+            w = round(wl_calibration[-1]-wl_calibration[0],3)
             h = self.model.data_img.shape[0]
             
             self.widget.roi_widget.img_widget.set_wavelength_calibration((x,y,w,h))
@@ -409,8 +420,8 @@ class TemperatureController(QtCore.QObject):
 
     def update_time_lapse(self):
         us_temperature, us_temperature_error, ds_temperature, ds_temperature_error = self.model.fit_all_frames()
-        self.widget.temperature_spectrum_widget.plot_ds_time_lapse(range(0, len(ds_temperature)), ds_temperature)
-        self.widget.temperature_spectrum_widget.plot_us_time_lapse(range(0, len(us_temperature)), us_temperature)
+        self.widget.temperature_spectrum_widget.plot_ds_time_lapse(range(1, len(ds_temperature)+1), ds_temperature)
+        self.widget.temperature_spectrum_widget.plot_us_time_lapse(range(1, len(us_temperature)+1), us_temperature)
 
         if len(ds_temperature):
             out = np.mean(ds_temperature), np.std(ds_temperature)

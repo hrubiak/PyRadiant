@@ -398,6 +398,7 @@ class RoiImageWidget(QtWidgets.QWidget):
         self.pg_layout.addItem(self.left_axis, 1, 0)
 
         self.pg_img_item = pg.ImageItem()
+      
         self.pg_viewbox.addItem(self.pg_img_item)
 
         # Define your custom colors
@@ -432,6 +433,7 @@ class RoiImageWidget(QtWidgets.QWidget):
         if self.rect != rect :
             self.rect = rect
             self.pg_img_item.setRect(*rect)
+            self.bottom_axis.setRange(rect[0], rect[0]+rect[1])
 
     def add_rois(self):
         self.rois = []
@@ -448,8 +450,8 @@ class RoiImageWidget(QtWidgets.QWidget):
             roi_pos_x = roi.pos()[0]
             roi_size_x = roi.size()[0]
             if self.rect != None:
-                roi_pos_x =   (roi_pos_x-self.rect[0]) *1340 /self.rect[2]
-                roi_size_x = roi_size_x / self.rect[2]*1340
+                roi_pos_x =   (roi_pos_x-self.rect[0]) *self.pg_img_item.image.shape[0] /self.rect[2]
+                roi_size_x = roi_size_x / self.rect[2]*self.pg_img_item.image.shape[0]
             limit = [int(round(roi_pos_x)), int(round(roi_pos_x + roi_size_x)),
                                roi.pos()[1], roi.pos()[1] + roi.size()[1]]
             roi_limits.append(limit)
@@ -484,8 +486,8 @@ class RoiImageWidget(QtWidgets.QWidget):
         size = [roi_limits[1] - roi_limits[0],
                                 roi_limits[3] - roi_limits[2]]
         if self.rect != None:
-            pos[0] = int(round(self.rect[0] + pos[0] /1340 *self.rect[2]))
-            size[0] = int(round(size[0] * (self.rect[2]/1340)))
+            pos[0] = int(round(self.rect[0] + pos[0] /self.pg_img_item.image.shape[0] *self.rect[2]))
+            size[0] = int(round(size[0] * (self.rect[2]/self.pg_img_item.image.shape[0])))
         
         self.rois[ind].blockSignals(True)
         self.rois[ind].setPos(pos)
@@ -506,9 +508,17 @@ class RoiImageWidget(QtWidgets.QWidget):
     def plot_image(self, data):
         
         self.pg_img_item.setImage(data)
-        x_max, y_max = data.shape
-        self.pg_viewbox.setLimits(xMin=0, xMax=x_max,
-                                  yMin=0, yMax=y_max)
+        if self.rect != None:
+            x_min = self.rect[0]
+            x_max = self.rect[0]+ self.rect[2]
+            y_min = self.rect[1]
+            y_max = self.rect[1]+ self.rect[3]
+            self.pg_viewbox.setLimits(xMin=x_min, xMax=x_max,
+                                    yMin=y_min, yMax=y_max)
+        else:
+            x_max, y_max = data.shape
+            self.pg_viewbox.setLimits(xMin=0, xMax=x_max,
+                                    yMin=0, yMax=y_max)
 
     @property
     def img_data(self):

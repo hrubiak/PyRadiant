@@ -54,6 +54,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         super(TemperatureSpectrumWidget, self).__init__(*args, **kwargs)
         self._layout = QtWidgets.QVBoxLayout()
         self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
 
         self.create_plot_items()
         self.create_data_items()
@@ -107,6 +108,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         
         self.plots_widget = QtWidgets.QWidget()
         self._plots_widget_layout = QtWidgets.QGridLayout(self.plots_widget)
+        self._plots_widget_layout.setContentsMargins(0, 0, 0, 0)
         self._plots_widget_layout.setSpacing(0)
         self._plots_widget_layout.addWidget(self._pg_ds_layout_widget, 0, 0)
         self._plots_widget_layout.addWidget(self._pg_us_layout_widget, 0, 1)
@@ -114,6 +116,11 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._layout.addWidget(self.plots_widget)
         
         
+        self.time_lapse_container_widget = QtWidgets.QWidget()
+        self.time_lapse_container_widget_layout = QtWidgets.QVBoxLayout(self.time_lapse_container_widget)
+        self.time_lapse_container_widget_layout.setContentsMargins(0, 0, 0, 0)
+        self.time_lapse_container_widget_layout.setSpacing(0)
+
         self.time_lapse_widget = pg.GraphicsLayoutWidget()
         self._pg_layout = pg.GraphicsLayout()
         self._pg_layout.setContentsMargins(0, 0, 0, 0)
@@ -124,7 +131,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._time_lapse_plot.showAxis('right', show=True)
         self._time_lapse_plot.getAxis('top').setStyle(showValues=False)
         self._time_lapse_plot.getAxis('right').setStyle(showValues=False)
-        self._time_lapse_plot.getAxis('bottom').setStyle(showValues=False)
+        self._time_lapse_plot.getAxis('bottom').setStyle(showValues=True)
         self._time_lapse_plot.setLabel('left', "T (K)")
 
         self._pg_time_lapse_layout = pg.GraphicsLayout()
@@ -141,7 +148,13 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
 
         self._pg_time_lapse_layout.addItem(self._time_lapse_plot, 1, 0, 1, 3)
 
+        self._pg_layout.addItem(self._pg_time_lapse_layout)
+
         self.time_lapse_widget.addItem(self._pg_layout)
+        self.time_lapse_container_widget_layout.addWidget(self.time_lapse_widget)
+
+        self.time_lapse_widget_shown = False
+        
   
 
     def create_data_items(self):
@@ -280,12 +293,18 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
 
     def show_time_lapse_plot(self, bool):
         if bool:
-            if self._pg_time_lapse_layout not in self._pg_layout.items:
-                self._layout.addWidget(self.time_lapse_widget)
+            if not self.time_lapse_widget_shown:
+                
+                self._layout.addWidget(self.time_lapse_container_widget)
+                self.time_lapse_container_widget.show()
+                self.time_lapse_widget_shown = True
       
         else:
-            if self._pg_time_lapse_layout in self._pg_layout.items:
-                self._layout.removeWidget(self.time_lapse_widget)
+            if self.time_lapse_widget_shown:
+                
+                self._layout.removeWidget(self.time_lapse_container_widget)
+                self.time_lapse_container_widget.hide()
+                self.time_lapse_widget_shown = False
 
     def update_time_lapse_ds_temperature_txt(self, temperature, temperature_error):
         self._time_lapse_ds_temperature_txt.setText('{0:.0f} K &plusmn; {1:.0f}'.format(temperature,

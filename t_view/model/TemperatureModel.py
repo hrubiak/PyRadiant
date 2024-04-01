@@ -61,6 +61,8 @@ class TemperatureModel(QtCore.QObject):
 
         self.x_calibration = None
 
+        self.temperature_fit_function_str = 'wien'
+
         self._filename_iterator = FileNameIterator()
 
         self.roi_data_manager = RoiDataManager(4)
@@ -149,7 +151,17 @@ class TemperatureModel(QtCore.QObject):
         self.log_file.write('\t'.join(log_data) + '\n')
         self.log_file.flush()
 
+    def set_temperature_fit_function(self, function_type):
+        if function_type == 'wien' or function_type == 'plank':
+            self.temperature_fit_function_str = function_type
+            self._update_temperature_models_data()
+            self.data_changed.emit()
+
     def _update_temperature_models_data(self):
+
+        self.ds_temperature_model.set_temperature_fit_function(self.temperature_fit_function_str)
+        self.us_temperature_model.set_temperature_fit_function(self.temperature_fit_function_str)
+
         self.x_calibration = self.data_img_file.x_calibration
         self.ds_temperature_model.set_data(self._data_img,
                                            self.data_img_file.x_calibration)
@@ -627,11 +639,11 @@ class TemperatureModel(QtCore.QObject):
         for frame_ind in range(self.data_img_file.num_frames):
             self.set_img_frame_number_to(frame_ind)
             # self.fit_data()
-            us_temperature.append(self.us_temperature)
-            ds_temperature.append(self.ds_temperature)
+            us_temperature.append(self.us_temperature_model.temperature)
+            ds_temperature.append(self.ds_temperature_model.temperature)
 
-            us_temperature_error.append(self.us_temperature_error)
-            ds_temperature_error.append(self.ds_temperature_error)
+            us_temperature_error.append(self.us_temperature_model.temperature_error)
+            ds_temperature_error.append(self.ds_temperature_model.temperature_error)
 
         self.set_img_frame_number_to(cur_frame)
         self.blockSignals(False)
@@ -649,6 +661,8 @@ class SingleTemperatureModel(QtCore.QObject):
         self.data_spectrum = Spectrum([], [])
         self.calibration_spectrum = Spectrum([], [])
         self.corrected_spectrum = Spectrum([], [])
+
+        self.temperature_fit_function = fit_black_body_function_wien
 
         self._data_img = None
         self._data_img_x_calibration = None
@@ -705,7 +719,11 @@ class SingleTemperatureModel(QtCore.QObject):
         self.fit_data()
         #self.data_changed_stm.emit()
 
-
+    def set_temperature_fit_function(self, function_type_str:str):
+        if function_type_str == 'wien':
+            self.temperature_fit_function = fit_black_body_function_wien
+        elif function_type_str == 'plank':
+            self.temperature_fit_function = fit_black_body_function
 
     def reset_calibration_data(self):
         self._calibration_img = None
@@ -799,19 +817,14 @@ class SingleTemperatureModel(QtCore.QObject):
     def fit_data(self):
         counts = self.data_spectrum.data[1]
         average_counts = sum(counts)/len(counts)
-        print(average_counts)
+        #print(average_counts)
         if len(self.corrected_spectrum):
             
             if average_counts >3:
                 
-                '''temperature, temperature_error, self.fit_spectrum = \
-                    fit_black_body_function_wien(self.corrected_spectrum)'''
                 self.temperature, self.temperature_error, self.fit_spectrum = \
-                    fit_black_body_function_wien(self.corrected_spectrum)
-                '''d_T = temperature-self.temperature
-                d_Terr = temperature_error - self.temperature_error
-                print("d_T ",str(d_T))
-                print("d_Terr ",str(d_Terr))'''
+                    self.temperature_fit_function(self.corrected_spectrum)
+               
 
             else:
                 self.temperature = 0
