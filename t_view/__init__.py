@@ -21,8 +21,8 @@ import os
 import sys
 from sys import platform
 #from optparse import OptionParser
-
-from PyQt5 import QtWidgets
+import PyQt5
+from PyQt5 import QtWidgets, QtCore
 
 from .version import get_version
 __version__ = get_version()
@@ -33,9 +33,23 @@ style_path = os.path.join(resources_path, 'style')
 
 from .controller.MainController import MainController
 
+def make_dpi_aware():
+    _platform = platform.system()
+    if _platform == 'Windows':
+      if int(platform.release()) >= 8:
+          import ctypes
+          ctypes.windll.shcore.SetProcessDpiAwareness(True)
 
 def run_t_view():
 
+    make_dpi_aware()
+    if hasattr(QtCore.Qt, 'AA_EnableHighDpiScaling'):
+        PyQt5.QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
+
+    if hasattr(QtCore.Qt, 'AA_UseHighDpiPixmaps'):
+        PyQt5.QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
+
+    QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_ShareOpenGLContexts)
    
     app = QtWidgets.QApplication(sys.argv)
     if platform != "darwin":
