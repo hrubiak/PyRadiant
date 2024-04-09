@@ -27,7 +27,7 @@ import platform
 
 from .version import get_version
 __version__ = get_version()
-_platform = platform.system()
+__platform__ = platform.system()
 
 resources_path = os.path.join(os.path.dirname(__file__), 'resources')
 icons_path = os.path.join(resources_path, 'icons')
@@ -36,8 +36,8 @@ style_path = os.path.join(resources_path, 'style')
 from .controller.MainController import MainController
 
 def make_dpi_aware():
-    _platform = platform.system()
-    if _platform == 'Windows':
+    __platform__ = platform.system()
+    if __platform__ == 'Windows':
       if int(platform.release()) >= 8:
           import ctypes
           ctypes.windll.shcore.SetProcessDpiAwareness(True)

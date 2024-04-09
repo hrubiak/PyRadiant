@@ -39,6 +39,7 @@ class Spectrum(object):
         self._scaling = 1
         self.smoothing = 0
         self.bkg_spectrum = None
+        self.mask = None
 
     def load(self, filename, skiprows=0):
         try:
@@ -94,6 +95,8 @@ class Spectrum(object):
 
         if self.smoothing > 0:
             y = gaussian_filter1d(y, self.smoothing)
+
+        
         return x, y
 
     @data.setter
@@ -103,6 +106,25 @@ class Spectrum(object):
         self._y = y
         self.scaling = 1
         self.offset = 0
+
+    @property
+    def data_masked(self):
+        data = self.data
+        x = data[0]
+        y = data[1]
+        if self.mask is not None:
+            if x.shape[0] == self.mask.shape[0]:
+                x = x[self.mask]
+                y = y[self.mask]
+        return x, y
+
+    '''@data_masked.setter
+    def data_masked(self, data):
+        (x, y) = data
+        self._x = x
+        self._y = y
+        self.scaling = 1
+        self.offset = 0'''
 
     @property
     def original_data(self):

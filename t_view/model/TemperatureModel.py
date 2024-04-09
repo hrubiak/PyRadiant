@@ -17,6 +17,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from opcode import stack_effect
 import os
 from PyQt5 import QtCore
 import numpy as np
@@ -29,7 +30,7 @@ import math
 import datetime
 
 from .Spectrum import Spectrum
-from .RoiData import RoiDataManager, Roi, get_roi_max, get_roi_sum
+from .RoiData import RoiDataManager, Roi, get_roi_max, get_roi_sum, get_roi_img
 from .SpeFile import SpeFile
 from .helper import FileNameIterator
 from .radiation import fit_linear, wien_pre_transform, m_to_T, m_b_wien
@@ -661,6 +662,7 @@ class SingleTemperatureModel(QtCore.QObject):
         self.data_spectrum = Spectrum([], [])
         self.calibration_spectrum = Spectrum([], [])
         self.corrected_spectrum = Spectrum([], [])
+        self.within_limit = None
 
         self.temperature_fit_function = fit_black_body_function_wien
 
@@ -690,6 +692,7 @@ class SingleTemperatureModel(QtCore.QObject):
         self._data_img = img_data
         self._data_img_x_calibration = x_calibration
         self._data_img_dimension = (img_data.shape[1], img_data.shape[0])
+
 
         self._update_data_spectrum()
         self._update_corrected_spectrum()
@@ -762,6 +765,24 @@ class SingleTemperatureModel(QtCore.QObject):
     # Spectrum calculations
     #########################################################################
 
+    def columns_within_limit(self, array, limit=65534):
+        # Check if any element in each column is above the limit
+        above_limit = np.any(array > limit, axis=0)
+        return ~above_limit
+
+    def count_columns_above_limit(self, array, limit=65534):
+        # Check if any element in each column is above the limit
+        above_limit = np.any(array > limit, axis=0)
+        # Check if all elements in each column are below or equal to the limit
+        below_limit = ~np.any(array > limit, axis=0)
+        # Count the number of True values (columns with values above limit)
+        above_limit_count = np.sum(above_limit)
+        # Count the number of True values (columns with all values below or equal to limit)
+        below_limit_count = np.sum(below_limit)
+        return above_limit_count, below_limit_count
+
+ 
+
     def _update_data_spectrum(self):
         if self._data_img is not None:
             _data_img_as_array = np.asarray(self._data_img)
@@ -770,15 +791,23 @@ class SingleTemperatureModel(QtCore.QObject):
             roi_bg.x_max = roi.x_max
             roi_bg.x_min = roi.x_min
 
+            roi_img = get_roi_img(_data_img_as_array, roi)
+            self.within_limit = self.columns_within_limit(roi_img)
+            if np.any(roi_img > 65534):
+                above_limit_count, below_limit_count = self.count_columns_above_limit(roi_img)
+                #print("saturated columns = " + str(above_limit_count))
 
             data_x = self._data_img_x_calibration[int(roi.x_min):int(roi.x_max) + 1]
             data_y = get_roi_sum(_data_img_as_array, roi)
+            
             data_y_bg = get_roi_sum(_data_img_as_array, roi_bg)
 
             self.data_roi_max = get_roi_max(_data_img_as_array, roi)
             data_y = data_y - data_y_bg
             
+            
             self.data_spectrum.data = data_x, data_y
+            self.data_spectrum.mask = self.within_limit
 
     def _update_calibration_spectrum(self):
         if self.calibration_img is not None:
@@ -798,12 +827,13 @@ class SingleTemperatureModel(QtCore.QObject):
             self.corrected_spectrum = Spectrum([], [])
             return
 
-        if len(self.calibration_spectrum) == len(self.data_spectrum):
+        if len(self.calibration_spectrum._x) == len(self.data_spectrum._x):
             x, _ = self.data_spectrum.data
             lamp_spectrum = self.calibration_parameter.get_lamp_spectrum(x)
             self.corrected_spectrum = calculate_real_spectrum(self.data_spectrum,
                                                               self.calibration_spectrum,
                                                               lamp_spectrum)
+            self.corrected_spectrum.mask = self.within_limit
         else:
             self.corrected_spectrum = Spectrum([], [])
 
@@ -815,25 +845,28 @@ class SingleTemperatureModel(QtCore.QObject):
     # finally the fitting function
     ##################################################################
     def fit_data(self):
-        counts = self.data_spectrum.data[1]
-        average_counts = sum(counts)/len(counts)
-        #print(average_counts)
-        if len(self.corrected_spectrum):
-            
-            if average_counts >3:
-                
-                self.temperature, self.temperature_error, self.fit_spectrum = \
-                    self.temperature_fit_function(self.corrected_spectrum)
-               
+        okay = False
+        if self.corrected_spectrum.mask is not None:
+            count_true = np.count_nonzero(self.corrected_spectrum.mask)
+            #print('count_true '+ str(count_true))
+            if count_true > 20:
+                counts = self.data_spectrum.data[1]
+                average_counts = sum(counts)/len(counts)
+                #print(average_counts)
+                if len(self.corrected_spectrum):
+                    
+                    if average_counts >3 :
+                        
+                        self.temperature, self.temperature_error, self.fit_spectrum = \
+                            self.temperature_fit_function(self.corrected_spectrum)
+                        okay = True
+                    
 
-            else:
-                self.temperature = 0
-                self.temperature_error = 0
-                self.fit_spectrum = Spectrum([],[])
-        else:
+        if not okay:
             self.temperature = 0
             self.temperature_error = 0
             self.fit_spectrum = Spectrum([],[])
+                
 
 
 # HELPER FUNCTIONS
@@ -849,8 +882,10 @@ def calculate_real_spectrum(data_spectrum, calibration_spectrum, standard_spectr
 
 
 def fit_black_body_function(spectrum):
-    
-    param, cov = curve_fit(black_body_function, spectrum._x, spectrum._y, p0=[2000, 1e-11])
+    data = spectrum.data_masked
+    _x = data[0]
+    _y = data[1]
+    param, cov = curve_fit(black_body_function, _x, _y, p0=[2000, 1e-11])
     T = param[0]
     T_err = np.sqrt(cov[0, 0])
 
@@ -859,16 +894,20 @@ def fit_black_body_function(spectrum):
         return np.NaN, np.NaN, Spectrum([], [])'''
     
 def fit_black_body_function_wien(spectrum):
-    spectrum._y [spectrum._y <0] = 0.1
-    x, y = wien_pre_transform(spectrum._x * 1e-9, spectrum._y)
+    data = spectrum.data_masked
+    _x = data[0]
+    _y = data[1]
+    _y [_y <0] = 0.1
+    x, y = wien_pre_transform(_x * 1e-9, _y)
     
     #av = np.average(y)
     m, b, m_std_dev_res = fit_linear(x,y, True)
     T, T_std_dev = m_to_T(m, m_std_dev_res)
     
     
-    wavelength, best_fit = m_b_wien(spectrum._x * 1e-9, m, b)
+    wavelength, best_fit = m_b_wien(_x * 1e-9, m, b)
     sp = Spectrum(wavelength *1e9, best_fit)
+    sp.mask = spectrum.mask
     
     return T, T_std_dev, sp
     
