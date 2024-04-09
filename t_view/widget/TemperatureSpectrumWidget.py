@@ -235,7 +235,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         #self._us_plot.mouse_moved.connect(self.mouse_moved)
         #self._time_lapse_plot.mouse_moved.connect(self.mouse_moved)
 
-    def plot_ds_data(self, x, y):
+    def plot_ds_data(self, x, y, mask=None):
         if len(x)>0:
             mx = np.amax(y)*1.1
         else:
@@ -243,6 +243,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         if mx < 2:
             mx = 2
         self._ds_view_box.setYRange(-1,mx)
+        
         self._ds_data_item.setData(x, y)
 
     def plot_us_data(self, x, y):
