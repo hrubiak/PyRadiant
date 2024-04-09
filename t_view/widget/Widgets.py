@@ -18,6 +18,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from PyQt5 import QtWidgets, QtCore, QtGui
+import os
 from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem
 
 
@@ -38,7 +39,8 @@ class FileGroupBox(QtWidgets.QGroupBox):
         self._second_row_widget_layout.setContentsMargins(0, 0, 0, 0)
         self._second_row_widget_layout.setSpacing(0)
         self._second_row_widget_layout.addWidget(self.dirname_lbl)
-        self._second_row_widget_layout.addWidget(QtWidgets.QLabel('/'))
+
+        self._second_row_widget_layout.addWidget(QtWidgets.QLabel(os.path.sep))
         self._second_row_widget_layout.addWidget(self.filename_lbl)
         self._second_row_widget_layout.addSpacerItem(HorizontalSpacerItem())
         self._second_row_widget_layout.addWidget(self.frame_control_widget)

@@ -316,9 +316,12 @@ class TemperatureController(QtCore.QObject):
         #####################################
 
         if self.model.data_img_file is not None:
+            self.model.data_img_file.filename = os.path.normpath(self.model.data_img_file.filename)
             self.widget.filename_lbl.setText(os.path.basename(self.model.data_img_file.filename))
             dirname = os.path.sep.join(os.path.dirname(self.model.data_img_file.filename).split(os.path.sep)[-2:])
             self.widget.dirname_lbl.setText(dirname)
+            
+
             if self.model.data_img_file.num_frames > 1:
                 self.widget.frame_widget.setVisible(True)
                 self.widget.temperature_spectrum_widget.show_time_lapse_plot(True)
