@@ -23,9 +23,11 @@ from sys import platform
 #from optparse import OptionParser
 import PyQt5
 from PyQt5 import QtWidgets, QtCore
+import platform
 
 from .version import get_version
 __version__ = get_version()
+_platform = platform.system()
 
 resources_path = os.path.join(os.path.dirname(__file__), 'resources')
 icons_path = os.path.join(resources_path, 'icons')
