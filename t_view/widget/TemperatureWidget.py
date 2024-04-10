@@ -18,6 +18,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from PyQt5 import QtCore, QtWidgets, QtGui
+
 import os
 from .TemperatureSpectrumWidget import TemperatureSpectrumWidget
 from .RoiWidget import RoiWidget, IntegerTextField
@@ -410,3 +411,5 @@ class SetupEpicsDialog(QtWidgets.QDialog):
         parent_center = self._parent.window().mapToGlobal(self._parent.window().rect().center())
         self.move(parent_center.x() - 101, parent_center.y() - 48)
         super(SetupEpicsDialog, self).exec_()
+
+

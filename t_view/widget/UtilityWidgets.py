@@ -23,6 +23,8 @@ import copy
 
 #from .. import style_path
 
+
+
 class selectDetectorDialog(QtWidgets.QDialog):
     """
     Dialog which is asking for Intensity Cutoff and minimum d-spacing when loading cif files.

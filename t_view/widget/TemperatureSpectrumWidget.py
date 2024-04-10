@@ -18,13 +18,14 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from PyQt5 import QtWidgets, QtCore, QtGui
-from PyQt5.QtWidgets import QSizePolicy
+#from PyQt5.QtWidgets import QSizePolicy
 from PyQt5.QtGui import QColor
 import pyqtgraph as pg
 from pyqtgraph.exporters.ImageExporter import ImageExporter
 from pyqtgraph.exporters.SVGExporter import SVGExporter
 import numpy as np
-from .ModifiedPlotItem import ModifiedPlotItem
+#from .ModifiedPlotItem import ModifiedPlotItem
+from PyQt5.QtCore import pyqtSignal
 
 pg.setConfigOption('useOpenGL', False)
 pg.setConfigOption('leftButtonPan', False)
@@ -70,7 +71,8 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._pg_us_layout.setContentsMargins(0, 0, 0, 0)
         self._pg_us_layout.layout.setVerticalSpacing(0)
         
-        self._us_plot =pg.PlotItem()
+        us_vb = CustomViewBox() 
+        self._us_plot =pg.PlotItem(viewBox=us_vb)
         self._us_view_box = self._us_plot.getViewBox()
         
         self._us_plot.showAxis('top', show=True)
@@ -91,7 +93,8 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._pg_ds_layout.setContentsMargins(0, 0, 0, 0)
         self._pg_ds_layout.layout.setVerticalSpacing(0)
 
-        self._ds_plot = pg.PlotItem()
+        ds_vb = CustomViewBox() 
+        self._ds_plot = pg.PlotItem(viewBox=ds_vb)
         self._ds_view_box = self._ds_plot.getViewBox()
         self._ds_plot.showAxis('top', show=True)
         self._ds_plot.showAxis('right', show=True)
@@ -431,3 +434,32 @@ class IntensityIndicator(pg.GraphicsWidget):
     def set_intensity(self, intensity):
         self._intensity_level = intensity
         self.__geometryChanged()
+
+
+        
+class CustomViewBox(pg.ViewBox):  
+    plotMouseCursorSignal = pyqtSignal(float)
+    plotMouseCursor2Signal = pyqtSignal(float)  
+    def __init__(self, *args, **kwds):
+        super().__init__()
+        self.cursor_signals = [self.plotMouseCursorSignal, self.plotMouseCursor2Signal]
+        self.setMouseMode(self.RectMode)
+        self.enableAutoRange(self.XYAxes, True)
+        self.cursorPoint = 0
+    
+
+    ## reimplement right-click to zoom out
+    def mouseClickEvent(self, ev):
+        if ev.button() == QtCore.Qt.RightButton:
+            #self.enableAutoRange(self.XYAxes, True)    
+            
+            self.enableAutoRange(enable=1) 
+        elif ev.button() == QtCore.Qt.LeftButton: 
+            pos = ev.pos()  ## using signal proxy turns original arguments into a tuple
+            mousePoint = self.mapSceneToView(pos)
+
+            mptx = mousePoint.x()
+            self.cursorPoint=mptx
+
+            self.plotMouseCursorSignal.emit(self.cursorPoint) 
+        ev.accept()   
