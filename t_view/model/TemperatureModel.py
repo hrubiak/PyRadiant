@@ -662,7 +662,7 @@ class SingleTemperatureModel(QtCore.QObject):
         self.data_spectrum = Spectrum([], [])
         self.calibration_spectrum = Spectrum([], [])
         self.corrected_spectrum = Spectrum([], [])
-        self.within_limit = None
+        #self.within_limit = None
 
         self.temperature_fit_function = fit_black_body_function_wien
 
@@ -792,7 +792,7 @@ class SingleTemperatureModel(QtCore.QObject):
             roi_bg.x_min = roi.x_min
 
             roi_img = get_roi_img(_data_img_as_array, roi)
-            self.within_limit = self.columns_within_limit(roi_img)
+            within_limit = self.columns_within_limit(roi_img)
             if np.any(roi_img > 65534):
                 above_limit_count, below_limit_count = self.count_columns_above_limit(roi_img)
                 #print("saturated columns = " + str(above_limit_count))
@@ -807,7 +807,7 @@ class SingleTemperatureModel(QtCore.QObject):
             
             
             self.data_spectrum.data = data_x, data_y
-            self.data_spectrum.mask = self.within_limit
+            self.data_spectrum.mask = within_limit
 
     def _update_calibration_spectrum(self):
         if self.calibration_img is not None:
@@ -833,7 +833,7 @@ class SingleTemperatureModel(QtCore.QObject):
             self.corrected_spectrum = calculate_real_spectrum(self.data_spectrum,
                                                               self.calibration_spectrum,
                                                               lamp_spectrum)
-            self.corrected_spectrum.mask = self.within_limit
+            self.corrected_spectrum.mask = self.data_spectrum.mask
         else:
             self.corrected_spectrum = Spectrum([], [])
 

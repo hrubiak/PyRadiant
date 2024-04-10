@@ -162,12 +162,15 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         #                                         brush=pg.mkBrush(colors['data_brush']),
         #                                         size=3,
         #                                         symbol ='o')
-        self._us_data_item = pg.PlotDataItem(pen=pg.mkPen("#fff", width=1.0))
+        self._us_data_item = pg.PlotDataItem(pen=pg.mkPen("#fff", width=1.0, conntect='finite',antialias=True ))
         self._us_data_item.setDownsampling(True)
-        self._us_fit_item = pg.PlotDataItem(pen=pg.mkPen(colors['fit_pen'], width=3))
+        self._us_masked_data_item = pg.PlotDataItem(pen=pg.mkPen("#d61cff", width=1.0, conntect='finite',antialias=True ))
+        self._us_masked_data_item.setDownsampling(True)
+        self._us_fit_item = pg.PlotDataItem(pen=pg.mkPen(colors['fit_pen'], width=3, conntect='finite',antialias=True))
         self._us_fit_item.setDownsampling(True)
 
         self._us_plot.addItem(self._us_data_item)
+        self._us_plot.addItem(self._us_masked_data_item)
         self._us_plot.addItem(self._us_fit_item)
 
         self._us_temperature_txt_item = pg.LabelItem()
@@ -185,12 +188,15 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         #                                         brush=pg.mkBrush(colors['data_brush']),
         #                                         size=3,
         #                                         symbol ='o')
-        self._ds_data_item = pg.PlotDataItem(pen=pg.mkPen("#fff", width=1.0))
+        self._ds_data_item = pg.PlotDataItem(pen=pg.mkPen("#fff", width=1.0, conntect='finite',antialias=True))
         self._ds_data_item.setDownsampling(True)
-        self._ds_fit_item = pg.PlotDataItem(pen=pg.mkPen(colors['fit_pen'], width=3))
+        self._ds_masked_data_item = pg.PlotDataItem(pen=pg.mkPen("#d61cff", width=1.0, conntect='finite',antialias=True ))
+        self._ds_masked_data_item.setDownsampling(True)
+        self._ds_fit_item = pg.PlotDataItem(pen=pg.mkPen(colors['fit_pen'], width=3, conntect='finite',antialias=True))
         self._ds_fit_item.setDownsampling(True)
 
         self._ds_plot.addItem(self._ds_data_item)
+        self._ds_plot.addItem(self._ds_masked_data_item)
         self._ds_plot.addItem(self._ds_fit_item)
 
         self._ds_temperature_txt_item = pg.LabelItem()
@@ -242,19 +248,41 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
             mx = 1.1
         if mx < 2:
             mx = 2
+        if mask is not None:
+            #x[~mask] = np.nan
+            y[~mask] = np.nan
         self._ds_view_box.setYRange(-1,mx)
         
         self._ds_data_item.setData(x, y)
 
-    def plot_us_data(self, x, y):
+    def plot_us_data(self, x, y, mask):
         if len(x)>0:
             mx = np.amax(y)*1.1
         else:
             mx = 1.1
         if mx < 2:
             mx = 2
+        if mask is not None:
+            #x[~mask] = np.nan
+            y[~mask] = np.nan
         self._us_view_box.setYRange(-1,mx)
         self._us_data_item.setData(x, y)
+
+    def plot_ds_masked_data(self, x, y, mask=None):
+       
+        if mask is not None:
+            #x[~mask] = np.nan
+            y[mask] = np.nan
+   
+        self._ds_masked_data_item.setData(x, y)
+
+    def plot_us_masked_data(self, x, y, mask):
+       
+        if mask is not None:
+            #x[~mask] = np.nan
+            y[mask] = np.nan
+     
+        self._us_masked_data_item.setData(x, y)
 
     def plot_ds_fit(self, x, y):
         

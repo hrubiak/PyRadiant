@@ -370,7 +370,8 @@ class TemperatureController(QtCore.QObject):
         else:
             ds_plot_spectrum = self.model.ds_data_spectrum
 
-        self.widget.temperature_spectrum_widget.plot_ds_data(*ds_plot_spectrum.data)
+        self.widget.temperature_spectrum_widget.plot_ds_data(*ds_plot_spectrum.data,mask=ds_plot_spectrum.mask)
+        self.widget.temperature_spectrum_widget.plot_ds_masked_data(*ds_plot_spectrum.data,mask=ds_plot_spectrum.mask)
         if self.model.ds_temperature != 0:
             self.widget.temperature_spectrum_widget.plot_ds_fit(*self.model.ds_fit_spectrum.data)
         else:
@@ -403,7 +404,8 @@ class TemperatureController(QtCore.QObject):
         else:
             us_plot_spectrum = self.model.us_data_spectrum
 
-        self.widget.temperature_spectrum_widget.plot_us_data(*us_plot_spectrum.data)
+        self.widget.temperature_spectrum_widget.plot_us_data(*us_plot_spectrum.data,mask=us_plot_spectrum.mask)
+        self.widget.temperature_spectrum_widget.plot_us_masked_data(*us_plot_spectrum.data,mask=us_plot_spectrum.mask)
         if self.model.us_temperature != 0:
             self.widget.temperature_spectrum_widget.plot_us_fit(*self.model.us_fit_spectrum.data)
         else:
