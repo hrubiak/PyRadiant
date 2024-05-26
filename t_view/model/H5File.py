@@ -42,14 +42,14 @@ RH: Updated March 25, 2024
 """
 
 import datetime
-from xml.dom.minidom import parseString
 
+import h5py
 import numpy as np
 from numpy.polynomial.polynomial import polyval
 from dateutil import parser
 
 
-class SpeFile(object):
+class H5File(object):
     def __init__(self, filename, debug=False):
         """Opens the PI SPE file and loads its content
 
@@ -60,10 +60,56 @@ class SpeFile(object):
         """"""
         self.filename = filename
         self.debug = debug
-        self._fid = open(filename, 'rb')
-        self._read_parameter()
-        self._read_img()
-        self._fid.close()
+        self._fid = h5py.File(filename, 'r')
+        self._load_h5()
+        
+        
+
+    def _load_h5(self, filename):
+        f =  self._fid
+        ds_group = f['downstream_calibration']
+        if 'image' in ds_group:
+            ds_img = ds_group['image'][...]
+            
+            self.ds_calibration_filename = ds_group['image'].attrs['filename']
+            if len(ds_img.shape) == 2:
+                img_dimension = (ds_img.shape[1],
+                                ds_img.shape[0])
+            elif len(ds_img.shape) == 3:
+                img_dimension = (ds_img.shape[2],
+                                ds_img.shape[1])
+            ds_group_roi = ds_group['roi'][...]
+            ds_group_roi_bg = ds_group['roi_bg'][...]
+           
+        else:
+           
+            self.ds_calibration_filename = None
+            self.ds_roi = [0, 0, 0, 0]
+
+        standard_data = ds_group['standard_spectrum'][...]
+       
+       
+        us_group = f['upstream_calibration']
+        if 'image' in us_group:
+            us_img = us_group['image'][...]
+            
+            self.us_calibration_filename = us_group['image'].attrs['filename']
+            if len(us_img.shape) == 2:
+                img_dimension = (us_img.shape[1],
+                                us_img.shape[0])
+            elif len(us_img.shape) == 3:
+                img_dimension = (us_img.shape[2],
+                                us_img.shape[1])
+
+            us_group_roi = us_group['roi'][...]
+            us_group_roi_bg = us_group['roi_bg'][...]
+          
+        else:
+         
+            self.us_calibration_filename = None
+            self.us_roi = [0, 0, 0, 0]
+
+ 
 
     def _read_parameter(self):
         """Reads in size and datatype. Decides whether it should check in the binary
