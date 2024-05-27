@@ -329,6 +329,7 @@ class TemperatureController(QtCore.QObject):
                 self.widget.frame_widget.setVisible(False)
                 self.widget.temperature_spectrum_widget.show_time_lapse_plot(False)
             self.widget.frame_num_txt.setText(str(self.model.current_frame + 1))
+            
             self.widget.graph_info_lbl.setText(self.model.file_info)
         else:
             self.widget.filename_lbl.setText('Select File...')

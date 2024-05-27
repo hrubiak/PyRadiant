@@ -79,7 +79,12 @@ class TemperatureModel(QtCore.QObject):
         if not self.filename or not os.path.dirname(self.filename) == os.path.dirname(filename):
             self.create_log_file(os.path.dirname(filename))
         self.filename = filename
-        self.data_img_file = SpeFile(filename)
+        # Get the extension
+        _, file_extension = os.path.splitext(filename)
+        if file_extension == '.spe':
+            self.data_img_file = SpeFile(filename)
+        elif file_extension == '.h5':
+            self.data_img_file = H5File(filename,self.x_calibration)
 
         if self.data_img_file.num_frames > 1:
             self._data_img = self.data_img_file.img[0]
