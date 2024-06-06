@@ -250,7 +250,7 @@ class TemperatureFitSettings(QtWidgets.QGroupBox):
 
         self._layout.addWidget(self.plank_btn)
         self._layout.addWidget(self.wien_btn)
-        self.wien_btn.setChecked(True)
+        self.plank_btn.setChecked(True)
 
         #self._layout.addSpacerItem(VerticalSpacerItem())
         self.setLayout(self._layout)

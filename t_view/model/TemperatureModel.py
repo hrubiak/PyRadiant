@@ -38,7 +38,7 @@ from .radiation import fit_linear, wien_pre_transform, m_to_T, m_b_wien
 from .helper.HelperModule import get_partial_index, get_partial_value
 
 T_LOG_FILE = 'T_log.txt'
-LOG_HEADER = '# File\tPath\tT_DS\tT_US\tDetector\tExposure Time [sec]\n'
+LOG_HEADER = '# File\tPath\tT_DS\tT_US\tDetector\tExposure Time [sec]\tscaling_DS\tscaling_US\n'
 
 
 class TemperatureModel(QtCore.QObject):
@@ -63,7 +63,7 @@ class TemperatureModel(QtCore.QObject):
 
         self.x_calibration = None
 
-        self.temperature_fit_function_str = 'wien'
+        self.temperature_fit_function_str = 'plank'
 
         self._filename_iterator = FileNameIterator()
 
@@ -153,8 +153,17 @@ class TemperatureModel(QtCore.QObject):
         else:
             us_temp = 'NaN'
 
+        if not math.isnan(self.ds_scaling):
+            ds_scaling = format(self.ds_scaling, ".3e")
+        else:
+            ds_scaling = 'NaN'
+        if not math.isnan(self.us_scaling):
+            us_scaling = format(self.us_scaling, ".3e")
+        else:
+            us_scaling = 'NaN'    
+
         log_data = (os.path.basename(self.filename), os.path.dirname(self.filename), ds_temp, us_temp,
-                    self.data_img_file.detector, str(self.data_img_file.exposure_time))
+                    self.data_img_file.detector, str(self.data_img_file.exposure_time), ds_scaling, us_scaling)
         self.log_file.write('\t'.join(log_data) + '\n')
         self.log_file.flush()
 
@@ -594,6 +603,14 @@ class TemperatureModel(QtCore.QObject):
         return self.us_temperature_model.temperature
 
     @property
+    def ds_scaling(self):
+        return self.ds_temperature_model.scaling
+
+    @property
+    def us_scaling(self):
+        return self.us_temperature_model.scaling
+
+    @property
     def ds_temperature_error(self):
         return self.ds_temperature_model.temperature_error
 
@@ -688,6 +705,7 @@ class SingleTemperatureModel(QtCore.QObject):
 
         self.temperature = np.NaN
         self.temperature_error = np.NaN
+        self.scaling = np.NaN
         self.fit_spectrum = Spectrum([], [])
 
     @property
@@ -863,7 +881,7 @@ class SingleTemperatureModel(QtCore.QObject):
                     
                     if average_counts >3 :
                         
-                        self.temperature, self.temperature_error, self.fit_spectrum = \
+                        self.temperature, self.temperature_error, self.fit_spectrum, self.scaling = \
                             self.temperature_fit_function(self.corrected_spectrum)
                         okay = True
                     
@@ -893,9 +911,10 @@ def fit_black_body_function(spectrum):
     _y = data[1]
     param, cov = curve_fit(black_body_function, _x, _y, p0=[2000, 1e-11])
     T = param[0]
+    scaling = param[1]
     T_err = np.sqrt(cov[0, 0])
 
-    return T, T_err, Spectrum(spectrum._x, black_body_function(spectrum._x, param[0], param[1]))
+    return T, T_err, Spectrum(spectrum._x, black_body_function(spectrum._x, param[0], param[1])), scaling
     '''except (RuntimeError, TypeError, ValueError):
         return np.NaN, np.NaN, Spectrum([], [])'''
     
@@ -915,7 +934,7 @@ def fit_black_body_function_wien(spectrum):
     sp = Spectrum(wavelength *1e9, best_fit)
     sp.mask = spectrum.mask
     
-    return T, T_std_dev, sp
+    return T, T_std_dev, sp, np.NaN
     
 
 def black_body_function(wavelength, temp, scaling):
