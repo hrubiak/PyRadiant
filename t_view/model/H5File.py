@@ -63,8 +63,8 @@ class H5File(object):
         self.exposure_time = 0
         self.num_frames = 1
         self.grating = '800nm 150'
-        self._xdim = 1340
-        self._ydim = 400
+        self._xdim = 0
+        self._ydim = 0
         self.debug = debug
         self._fid = h5py.File(filename, 'r')
 
