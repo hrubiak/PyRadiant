@@ -492,14 +492,16 @@ class TemperatureController(QtCore.QObject):
                           self.widget.connect_to_epics_cb.isChecked())
 
     def load_settings(self, settings):
-        temperature_data_path = str(settings.value("temperature data file"))
-        if os.path.exists(temperature_data_path):
-            self.load_data_file(temperature_data_path)
+        
 
         settings_file_path = os.path.join(str(settings.value("temperature settings directory")),
                                           str(settings.value("temperature settings file")) + ".trs")
         if os.path.exists(settings_file_path):
             self.load_setting_file(settings_file_path)
+
+        temperature_data_path = str(settings.value("temperature data file"))
+        if os.path.exists(temperature_data_path):
+            self.load_data_file(temperature_data_path)
 
         temperature_autoprocessing = settings.value("temperature autoprocessing") == 'true'
         if temperature_autoprocessing:

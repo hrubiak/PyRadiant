@@ -307,8 +307,12 @@ class TemperatureModel(QtCore.QObject):
             ds_group_roi_bg = ds_group['roi_bg'][...]
             self.roi_data_manager.set_roi(0, img_dimension, ds_group_roi)
             self.roi_data_manager.set_roi(2, img_dimension, ds_group_roi_bg)
-            self.ds_temperature_model.set_calibration_data(ds_img,
-                                                           ds_group['image'].attrs['x_calibration'][...])
+            x_calibration = ds_group['image'].attrs['x_calibration'][...] # this is a hack to be able to 
+                                                                          # load h5 files later that don't 
+                                                                          # have x_calibration
+            self.x_calibration = x_calibration
+            self.ds_temperature_model.set_calibration_data(ds_img, x_calibration)
+            
             self.ds_temperature_model._update_all_spectra()
         else:
             self.ds_temperature_model.reset_calibration_data()
