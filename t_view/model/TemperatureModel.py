@@ -38,7 +38,7 @@ from .radiation import fit_linear, wien_pre_transform, m_to_T, m_b_wien
 from .helper.HelperModule import get_partial_index, get_partial_value
 
 T_LOG_FILE = 'T_log.txt'
-LOG_HEADER = '# File\tPath\tT_DS\tT_US\tDetector\tExposure Time [sec]\tscaling_DS\tscaling_US\n'
+LOG_HEADER = '# File\tPath\tT_DS\tT_US\tDetector\tExposure Time [sec]\tGain\tscaling_DS\tscaling_US\tcounts_DS\tcounts_US\n'
 
 
 class TemperatureModel(QtCore.QObject):
@@ -163,7 +163,7 @@ class TemperatureModel(QtCore.QObject):
             us_scaling = 'NaN'    
 
         log_data = (os.path.basename(self.filename), os.path.dirname(self.filename), ds_temp, us_temp,
-                    self.data_img_file.detector, str(self.data_img_file.exposure_time), ds_scaling, us_scaling)
+                    self.data_img_file.detector, str(self.data_img_file.exposure_time),str(self.data_img_file.gain), ds_scaling, us_scaling, format(self.ds_data_spectrum.counts, ".3e"), format(self.us_data_spectrum.counts, ".3e"))
         self.log_file.write('\t'.join(log_data) + '\n')
         self.log_file.flush()
 

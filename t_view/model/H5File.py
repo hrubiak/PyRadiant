@@ -41,12 +41,7 @@ can be requested from the object.
 RH: Updated March 25, 2024
 """
 
-import datetime
-
 import h5py
-import numpy as np
-from numpy.polynomial.polynomial import polyval
-from dateutil import parser
 
 
 class H5File(object):
@@ -67,6 +62,7 @@ class H5File(object):
         self._ydim = 0
         self.debug = debug
         self._fid = h5py.File(filename, 'r')
+        self.gain = 1
 
         self._load_h5()
         self.num_frames = 1

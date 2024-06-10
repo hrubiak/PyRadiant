@@ -67,6 +67,11 @@ class Spectrum(object):
     def set_smoothing(self, amount):
         self.smoothing = amount
 
+
+    @property
+    def counts(self):
+        return np.sum(self.original_data[1])
+
     @property
     def data(self):
         if self.bkg_spectrum is not None:

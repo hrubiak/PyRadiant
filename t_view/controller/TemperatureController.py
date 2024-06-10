@@ -300,9 +300,9 @@ class TemperatureController(QtCore.QObject):
 
     def data_changed(self):
         self.widget.roi_widget.plot_img(self.model.data_img)
-        if self.model.x_calibration is not None:
+        if self.model.x_calibration is not None and self.model.data_img is not None:
             wl_calibration = self.model.x_calibration
-            x_dim = self.model.data_img.shape[1]
+            #x_dim = self.model.data_img.shape[1]
             x = round(wl_calibration[0], 3)
             y = 0
             w = round(wl_calibration[-1]-wl_calibration[0],3)
