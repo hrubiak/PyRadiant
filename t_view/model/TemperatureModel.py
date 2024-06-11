@@ -236,7 +236,14 @@ class TemperatureModel(QtCore.QObject):
     # calibration image files:
     #########################################################################
     def load_ds_calibration_image(self, filename):
-        self.ds_calibration_img_file = SpeFile(filename)
+        # Get the extension
+        _, file_extension = os.path.splitext(filename)
+        if file_extension == '.spe':
+            self.ds_calibration_img_file = SpeFile(filename)
+        elif file_extension == '.h5':
+            self.ds_calibration_img_file = H5File(filename,self.x_calibration)
+
+        #self.ds_calibration_img_file = SpeFile(filename)
         
         self.ds_calibration_filename = filename
         self.ds_temperature_model.set_calibration_data(self.ds_calibration_img_file.img,
@@ -244,7 +251,14 @@ class TemperatureModel(QtCore.QObject):
         self.ds_calculations_changed_emit()
 
     def load_us_calibration_image(self, filename):
-        self.us_calibration_img_file = SpeFile(filename)
+        # Get the extension
+        _, file_extension = os.path.splitext(filename)
+        if file_extension == '.spe':
+            self.us_calibration_img_file = SpeFile(filename)
+        elif file_extension == '.h5':
+            self.us_calibration_img_file = H5File(filename,self.x_calibration)
+
+        #self.us_calibration_img_file = SpeFile(filename)
         self.us_calibration_filename = filename
         self.us_temperature_model.set_calibration_data(self.us_calibration_img_file.img,
                                                        self.us_calibration_img_file.x_calibration)
@@ -942,14 +956,15 @@ def fit_black_body_function(spectrum):
     data = spectrum.data_masked
     _x = data[0]
     _y = data[1]
-    param, cov = curve_fit(black_body_function, _x, _y, p0=[2000, 1e-11])
-    T = param[0]
-    scaling = param[1]
-    T_err = np.sqrt(cov[0, 0])
+    try:
+        param, cov = curve_fit(black_body_function, _x, _y, p0=[2000, 1e-11])
+        T = param[0]
+        scaling = param[1]
+        T_err = np.sqrt(cov[0, 0])
 
-    return T, T_err, Spectrum(spectrum._x, black_body_function(spectrum._x, param[0], param[1])), scaling
-    '''except (RuntimeError, TypeError, ValueError):
-        return np.NaN, np.NaN, Spectrum([], [])'''
+        return T, T_err, Spectrum(spectrum._x, black_body_function(spectrum._x, param[0], param[1])), scaling
+    except (RuntimeError, TypeError, ValueError):
+        return np.NaN, np.NaN, Spectrum([], []), np.NaN
     
 def fit_black_body_function_wien(spectrum):
     data = spectrum.data_masked

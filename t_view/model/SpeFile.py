@@ -65,6 +65,8 @@ class SpeFile(object):
         self._read_img()
         self._fid.close()
         self.gain = 1
+        self.image1File = ''
+        self.image2File = ''
 
     def _read_parameter(self):
         """Reads in size and datatype. Decides whether it should check in the binary

@@ -63,6 +63,8 @@ class H5File(object):
         self.debug = debug
         self._fid = h5py.File(filename, 'r')
         self.gain = 1
+        self.image1File = ''
+        self.image2File = ''
 
         self._load_h5()
         self.num_frames = 1
@@ -75,11 +77,8 @@ class H5File(object):
         detector_group = f['detector']
         if 'data1' in detector_group:
             data_img = detector_group['data1'][...]
-            
             self.img = data_img
-
             [self._ydim, self._xdim] = data_img.shape
-
             
         if 'CameraModel' in f:
             self.detector = f['CameraModel'][0].decode('utf-8')
