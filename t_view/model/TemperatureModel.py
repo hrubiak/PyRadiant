@@ -28,6 +28,7 @@ from scipy.optimize import curve_fit
 import h5py
 import math
 import datetime
+import time
 
 from .Spectrum import Spectrum
 from .RoiData import RoiDataManager, Roi, get_roi_max, get_roi_sum, get_roi_img
@@ -73,6 +74,20 @@ class TemperatureModel(QtCore.QObject):
         self.ds_temperature_model = SingleTemperatureModel(0, self.roi_data_manager)
         self.us_temperature_model = SingleTemperatureModel(1, self.roi_data_manager)
 
+    def data_changed_emit(self):
+        self.write_to_log()
+        self.data_changed.emit()
+
+    def ds_calculations_changed_emit(self):
+        self.ds_calculations_changed.emit()
+
+    def us_calculations_changed_emit(self):
+        self.us_calculations_changed.emit()
+
+    def write_to_log(self):
+        if self.log_file is not None:
+            self.write_to_log_file()
+
     # loading spe image files:
     #########################################################################
     def load_data_image(self, filename):
@@ -94,7 +109,7 @@ class TemperatureModel(QtCore.QObject):
         self._update_temperature_models_data()
         self._filename_iterator.update_filename(filename)
         self.mtime = self.get_last_modified_time(filename)
-        self.data_changed.emit()
+        self.data_changed_emit()
     
     def get_last_modified_time(self, file_path):
         # Get the modification time in seconds since the epoch
@@ -127,7 +142,7 @@ class TemperatureModel(QtCore.QObject):
         self.current_frame = frame_number
         self._data_img = self.data_img_file.img[frame_number]
         self._update_temperature_models_data()
-        self.data_changed.emit()
+        self.data_changed_emit()
         return True
 
     def create_log_file(self, file_path):
@@ -166,12 +181,14 @@ class TemperatureModel(QtCore.QObject):
                     self.data_img_file.detector, str(self.data_img_file.exposure_time),str(self.data_img_file.gain), ds_scaling, us_scaling, format(self.ds_data_spectrum.counts, ".3e"), format(self.us_data_spectrum.counts, ".3e"))
         self.log_file.write('\t'.join(log_data) + '\n')
         self.log_file.flush()
+        time.sleep(0.01) # may help with not missing writes when batch processing
+        
 
     def set_temperature_fit_function(self, function_type):
         if function_type == 'wien' or function_type == 'plank':
             self.temperature_fit_function_str = function_type
             self._update_temperature_models_data()
-            self.data_changed.emit()
+            self.data_changed_emit()
 
     def _update_temperature_models_data(self):
 
@@ -192,7 +209,7 @@ class TemperatureModel(QtCore.QObject):
     def data_img(self, value):
         self._data_img = value
         self._update_temperature_models_data()
-        self.data_changed.emit()
+        self.data_changed_emit()
 
     def has_data(self):
         return self._data_img is not None
@@ -212,40 +229,40 @@ class TemperatureModel(QtCore.QObject):
         self.ds_calibration_filename = filename
         self.ds_temperature_model.set_calibration_data(self.ds_calibration_img_file.img,
                                                        self.ds_calibration_img_file.x_calibration)
-        self.ds_calculations_changed.emit()
+        self.ds_calculations_changed_emit()
 
     def load_us_calibration_image(self, filename):
         self.us_calibration_img_file = SpeFile(filename)
         self.us_calibration_filename = filename
         self.us_temperature_model.set_calibration_data(self.us_calibration_img_file.img,
                                                        self.us_calibration_img_file.x_calibration)
-        self.us_calculations_changed.emit()
+        self.us_calculations_changed_emit()
 
     # setting standard interface
     #########################################################################
     def load_ds_standard_spectrum(self, filename):
         self.ds_temperature_model.load_standard_spectrum(filename)
-        self.ds_calculations_changed.emit()
+        self.ds_calculations_changed_emit()
 
     def load_us_standard_spectrum(self, filename):
         self.us_temperature_model.load_standard_spectrum(filename)
-        self.us_calculations_changed.emit()
+        self.us_calculations_changed_emit()
 
     def set_ds_calibration_modus(self, modus):
         self.ds_temperature_model.set_calibration_modus(modus)
-        self.ds_calculations_changed.emit()
+        self.ds_calculations_changed_emit()
 
     def set_us_calibration_modus(self, modus):
         self.us_temperature_model.set_calibration_modus(modus)
-        self.us_calculations_changed.emit()
+        self.us_calculations_changed_emit()
 
     def set_ds_calibration_temperature(self, temperature):
         self.ds_temperature_model.set_calibration_temperature(temperature)
-        self.ds_calculations_changed.emit()
+        self.ds_calculations_changed_emit()
 
     def set_us_calibration_temperature(self, temperature):
         self.us_temperature_model.set_calibration_temperature(temperature)
-        self.us_calculations_changed.emit()
+        self.us_calculations_changed_emit()
 
     def save_setting(self, filename):
         f = h5py.File(filename, 'w')
@@ -378,9 +395,9 @@ class TemperatureModel(QtCore.QObject):
         self.ds_temperature_model.fit_data()
         self.us_temperature_model.fit_data()
 
-        self.us_calculations_changed.emit()
-        self.ds_calculations_changed.emit()
-        self.data_changed.emit()
+        #self.us_calculations_changed_emit()
+        #self.ds_calculations_changed_emit()
+        self.data_changed_emit()
 
     def save_txt(self, filename):
         """
@@ -489,7 +506,7 @@ class TemperatureModel(QtCore.QObject):
 
         '''self.ds_temperature_model._update_all_spectra()
         self.ds_temperature_model.fit_data()
-        self.ds_calculations_changed.emit()'''
+        self.ds_calculations_changed_emit()'''
 
     # updating roi values
     @property
@@ -504,7 +521,7 @@ class TemperatureModel(QtCore.QObject):
         self.roi_data_manager.set_roi(0, self.data_img_file.get_dimension(), ds_limits)
         self.ds_temperature_model._update_all_spectra()
         self.ds_temperature_model.fit_data()
-        self.ds_calculations_changed.emit()
+        self.ds_calculations_changed_emit()
 
     @property
     def us_roi(self):
@@ -518,7 +535,7 @@ class TemperatureModel(QtCore.QObject):
         self.roi_data_manager.set_roi(1, self.data_img_file.get_dimension(), us_limits)
         self.us_temperature_model._update_all_spectra()
         self.us_temperature_model.fit_data()
-        self.us_calculations_changed.emit()
+        self.us_calculations_changed_emit()
 
     @property
     def ds_roi_bg(self):
@@ -532,7 +549,7 @@ class TemperatureModel(QtCore.QObject):
         self.roi_data_manager.set_roi(2, self.data_img_file.get_dimension(), ds_bg_limits)
         self.ds_temperature_model._update_all_spectra()
         self.ds_temperature_model.fit_data()
-        self.ds_calculations_changed.emit()
+        self.ds_calculations_changed_emit()
 
     @property
     def us_roi_bg(self):
@@ -546,7 +563,7 @@ class TemperatureModel(QtCore.QObject):
         self.roi_data_manager.set_roi(3, self.data_img_file.get_dimension(), us_bg_limits)
         self.us_temperature_model._update_all_spectra()
         self.us_temperature_model.fit_data()
-        self.us_calculations_changed.emit()
+        self.us_calculations_changed_emit()
 
     def set_rois(self, limits):
         self.us_roi = limits[1]
