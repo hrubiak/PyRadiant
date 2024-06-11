@@ -32,7 +32,7 @@ from .. import style_path
 
 class TemperatureWidget(QtWidgets.QWidget):
     def __init__(self, *args, **kwargs):
-        super(TemperatureWidget, self).__init__(*args, **kwargs)
+        super().__init__()
         self._main_layout = QtWidgets.QVBoxLayout()
         self._main_layout.setContentsMargins(0, 0, 0, 0)
         self._main_layout.setSpacing(0)
@@ -107,6 +107,8 @@ class TemperatureWidget(QtWidgets.QWidget):
 
         self.style_widgets()
         self.create_shortcuts()
+
+        
 
     def style_widgets(self):
         pass

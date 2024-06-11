@@ -38,11 +38,13 @@ class MainWidget(QtWidgets.QMainWindow):
         self._main_layout.setSpacing(0)
 
         self.temperature_widget = TemperatureWidget(self)
+     
+        
         self._main_layout.addWidget(self.temperature_widget)
         self.load_stylesheet()
         self._centeral_widget.setLayout(self._main_layout)
         self.setCentralWidget(self._centeral_widget)
-
+        self.resize(700,600)
         #self.setWindowIcon(QtGui.QIcon(os.path.join(icons_path, 't_view.ico')))
 
     def load_stylesheet(self):
