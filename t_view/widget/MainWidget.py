@@ -44,6 +44,7 @@ class MainWidget(QtWidgets.QMainWindow):
         self.load_stylesheet()
         self._centeral_widget.setLayout(self._main_layout)
         self.setCentralWidget(self._centeral_widget)
+        self.resize(1300,700)
         
         #self.setWindowIcon(QtGui.QIcon(os.path.join(icons_path, 't_view.ico')))
 

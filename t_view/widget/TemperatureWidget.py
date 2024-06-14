@@ -37,20 +37,22 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._main_layout = QtWidgets.QVBoxLayout()
         self._main_layout.setContentsMargins(0, 0, 0, 0)
         self._main_layout.setSpacing(0)
+
+        self.control_widget =  TemperatureFileNavigation()
+        self._main_layout.addWidget(self.control_widget)
         
 
         self.left_widget = QtWidgets.QWidget()
         self._left_layout = QtWidgets.QVBoxLayout(self.left_widget)
         self._left_layout.setContentsMargins(0, 0, 0, 0)
         self._left_layout.setSpacing(0)
-        self.left_widget.resize(700,600)
+        self.left_widget.resize(600,600)
 
         self.splitter_horizontal = QtWidgets.QSplitter(Qt.Horizontal)
         self._main_layout.addWidget(self.splitter_horizontal)
 
 
-        self.control_widget =  TemperatureFileNavigation()
-        self._left_layout.addWidget(self.control_widget)
+       
         
         self.tab_widget = QtWidgets.QTabWidget()
         
@@ -196,6 +198,8 @@ class TemperatureFileNavigation(QtWidgets.QWidget):
         
         self._layout.addWidget(self.file_gb)
         self._layout.addWidget(self.output_gb)
+        self.setMaximumHeight(100)
+        self.setMinimumHeight(100)
 
       
         self.setLayout(self._layout)
