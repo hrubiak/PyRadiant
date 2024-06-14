@@ -18,6 +18,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from PyQt5 import QtCore, QtWidgets, QtGui
+from PyQt5.QtCore import Qt
 
 import os
 from .TemperatureSpectrumWidget import TemperatureSpectrumWidget
@@ -36,9 +37,20 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._main_layout = QtWidgets.QVBoxLayout()
         self._main_layout.setContentsMargins(0, 0, 0, 0)
         self._main_layout.setSpacing(0)
+        
+
+        self.left_widget = QtWidgets.QWidget()
+        self._left_layout = QtWidgets.QVBoxLayout(self.left_widget)
+        self._left_layout.setContentsMargins(0, 0, 0, 0)
+        self._left_layout.setSpacing(0)
+        self.left_widget.resize(700,600)
+
+        self.splitter_horizontal = QtWidgets.QSplitter(Qt.Horizontal)
+        self._main_layout.addWidget(self.splitter_horizontal)
+
 
         self.control_widget =  TemperatureFileNavigation()
-        self._main_layout.addWidget(self.control_widget)
+        self._left_layout.addWidget(self.control_widget)
         
         self.tab_widget = QtWidgets.QTabWidget()
         
@@ -93,13 +105,18 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._other_settings_widget_layout.addSpacerItem(VerticalSpacerItem())
         
         self._settings_widget_layout.addWidget(self.roi_settings_widget)
-        self._settings_widget_layout.addWidget(self.scroll)
+
+
+        
         
         self.tab_widget.addTab(self.graph_widget, 'Temperature')
-        self.tab_widget.addTab(self.settings_widget, 'Settings')
+        self.tab_widget.addTab(self.settings_widget, 'Spectrum')
         
         
-        self._main_layout.addWidget(self.tab_widget)
+        self._left_layout.addWidget(self.tab_widget)
+
+        self.splitter_horizontal.addWidget(self.left_widget)
+        self.splitter_horizontal.addWidget(self.scroll)
         
         
 

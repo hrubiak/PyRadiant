@@ -927,11 +927,13 @@ class SingleTemperatureModel(QtCore.QObject):
                 if len(self.corrected_spectrum):
                     
                     if average_counts >3 :
-                        
+                        now = time.time()
                         self.temperature, self.temperature_error, self.fit_spectrum, self.scaling = \
                             self.temperature_fit_function(self.corrected_spectrum)
                         okay = True
-                    
+                        later = time.time()
+                        elapsed = later - now
+                        print('fit time = ' + str(elapsed))
 
         if not okay:
             self.temperature = 0

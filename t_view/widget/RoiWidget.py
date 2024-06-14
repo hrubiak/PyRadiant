@@ -67,8 +67,9 @@ class RoiWidget(QtWidgets.QWidget):
         self.left_tab_widget = QtWidgets.QTabWidget()
         self.left_tab_widget.setTabPosition(QtWidgets.QTabWidget.West)
         self.left_tab_widget.setCurrentIndex(0)
-        self.left_tab_widget.addTab(self.img_widget, '2D')
         self.left_tab_widget.addTab(self.specra_widget, '1D')
+        self.left_tab_widget.addTab(self.img_widget, '2D')
+        
 
 
         self.wl_range_widget = wavelengthRangeGB()
@@ -78,6 +79,7 @@ class RoiWidget(QtWidgets.QWidget):
         self.roi_gb = QtWidgets.QGroupBox('ROI')
         self.roi_gb.setMaximumWidth(300)
         self._roi_v_bs_layout = QtWidgets.QVBoxLayout(self.roi_gb)
+        
         self._roi_gbs_layout = QtWidgets.QGridLayout()
         self._roi_gbs_layout.setSpacing(2)
         self.roi_gbs = []
@@ -343,6 +345,7 @@ class RoiSpectraWidget(QtWidgets.QWidget):
 
         self.plots_widget = QtWidgets.QWidget()
         self._plots_widget_layout = QtWidgets.QHBoxLayout(self.plots_widget)
+        self._plots_widget_layout.setContentsMargins(0, 0, 0, 0)
         self._plots_widget_layout.setSpacing(0)
         self._plots_widget_layout.addWidget(self._pg_ds_layout_widget)
         self._plots_widget_layout.addWidget(self._pg_us_layout_widget)
