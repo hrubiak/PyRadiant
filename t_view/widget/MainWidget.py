@@ -41,19 +41,14 @@ class MainWidget(QtWidgets.QMainWindow):
      
         
         self._main_layout.addWidget(self.temperature_widget)
-        self.load_stylesheet()
+        #self.load_stylesheet()
         self._centeral_widget.setLayout(self._main_layout)
         self.setCentralWidget(self._centeral_widget)
         self.resize(1300,700)
         
         #self.setWindowIcon(QtGui.QIcon(os.path.join(icons_path, 't_view.ico')))
 
-    def load_stylesheet(self):
-        main_stylesheet_file = open(os.path.join(style_path, "stylesheet.qss"), 'r')
-        main_stylesheet_str = main_stylesheet_file.read()
-        main_stylesheet_file.close()
-        
-        self.setStyleSheet(main_stylesheet_str )
+    
 
 
 if __name__ == '__main__':

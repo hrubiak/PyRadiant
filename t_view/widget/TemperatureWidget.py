@@ -28,10 +28,11 @@ from .Widgets import OutputGroupBox, StatusBar
 from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem
 
 
-from .. import style_path
+
 
 
 class TemperatureWidget(QtWidgets.QWidget):
+    file_dragged_in = QtCore.pyqtSignal(list)
     def __init__(self, *args, **kwargs):
         super().__init__()
         self._main_layout = QtWidgets.QVBoxLayout()
@@ -127,7 +128,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.style_widgets()
         self.create_shortcuts()
 
-        
+        self.setAcceptDrops(True) 
 
     def style_widgets(self):
         pass
@@ -168,6 +169,7 @@ class TemperatureWidget(QtWidgets.QWidget):
 
         self.save_data_btn = self.control_widget.output_gb.save_data_btn
         self.save_graph_btn = self.control_widget.output_gb.save_graph_btn
+        self.data_history_btn = self.control_widget.file_gb.data_history_btn
 
         self.settings_cb = self.settings_gb.settings_cb
 
@@ -186,6 +188,38 @@ class TemperatureWidget(QtWidgets.QWidget):
 
         self.temperature_function_plank_rb = self.t_function_type_section.plank_btn
         self.temperature_function_wien_rb = self.t_function_type_section.wien_btn
+
+
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls:
+            e.accept()
+        else:
+            e.ignore()
+
+    def dragMoveEvent(self, e):
+        if e.mimeData().hasUrls:
+            e.accept()
+        else:
+            e.ignore()
+
+    def dropEvent(self, e):
+        """
+        Drop files directly onto the widget
+
+        File locations are stored in fname
+        :param e:
+        :return:
+        """
+        if e.mimeData().hasUrls:
+            e.setDropAction(QtCore.Qt.CopyAction)
+            e.accept()
+            fnames = list()
+            for url in e.mimeData().urls():
+                fname = str(url.toLocalFile())  
+                fnames.append(fname)
+            self.file_dragged_in.emit(fnames)
+        else:
+            e.ignore() 
         
 
 class TemperatureFileNavigation(QtWidgets.QWidget):
@@ -336,7 +370,7 @@ class SetupEpicsDialog(QtWidgets.QDialog):
         self._parent = parent
         self._create_widgets()
         self._layout_widgets()
-        self._style_widgets()
+        #self._style_widgets()
 
         self._connect_widgets()
         self.approved = False
@@ -379,14 +413,14 @@ class SetupEpicsDialog(QtWidgets.QDialog):
 
         self.setLayout(self._grid_layout)
 
-    def _style_widgets(self):
+    '''def _style_widgets(self):
         self.ok_btn.setEnabled(False)
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
 
         file = open(os.path.join(style_path, "stylesheet.qss"))
         stylesheet = file.read()
         self.setStyleSheet(stylesheet)
-        file.close()
+        file.close()'''
 
     def _connect_widgets(self):
         """

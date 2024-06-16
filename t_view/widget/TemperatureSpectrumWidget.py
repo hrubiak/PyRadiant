@@ -26,8 +26,9 @@ from pyqtgraph.exporters.SVGExporter import SVGExporter
 import numpy as np
 #from .ModifiedPlotItem import ModifiedPlotItem
 from PyQt5.QtCore import pyqtSignal
+from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem
 
-pg.setConfigOption('useOpenGL', False)
+#pg.setConfigOption('useOpenGL', False)
 pg.setConfigOption('leftButtonPan', False)
 pg.setConfigOption('background', 'k')
 pg.setConfigOption('foreground', 'w')
@@ -463,3 +464,128 @@ class CustomViewBox(pg.ViewBox):
 
             self.plotMouseCursorSignal.emit(self.cursorPoint) 
         ev.accept()   
+
+
+class dataHistoryWidget(QtWidgets.QWidget):
+    file_dragged_in = QtCore.pyqtSignal(list)
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+
+        self._layout = QtWidgets.QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+
+        self.file_navigation_widget = QtWidgets.QWidget()
+        #self.file_navigation_widget.setStyleSheet("QWidget { background: #000000; color: #F1F1F1}")
+        self._file_navigation_widget_layout = QtWidgets.QHBoxLayout(self.file_navigation_widget)
+        self._file_navigation_widget_layout.setSpacing(5)
+        self.btn_lbl = QtWidgets.QLabel("Log file ")
+        self.load_data_log_file_btn = QtWidgets.QPushButton('Load')
+        self.load_data_log_file_lbl = QtWidgets.QLabel('')
+        self._file_navigation_widget_layout.addWidget(self.btn_lbl)
+        #self._file_navigation_widget_layout.addWidget(self.load_data_log_file_btn)
+        self._file_navigation_widget_layout.addWidget(self.load_data_log_file_lbl)
+        self._file_navigation_widget_layout.addSpacerItem(HorizontalSpacerItem())
+
+        self._layout.addWidget(self.file_navigation_widget)
+
+        self.temperatures_plot_widget = pg.GraphicsLayoutWidget()
+        self._pg_layout = pg.GraphicsLayout()
+        self._pg_layout.setContentsMargins(0, 0, 0, 0)
+        self._pg_layout.layout.setVerticalSpacing(0)
+        
+        self._time_lapse_plot = pg.PlotItem()
+        self._time_lapse_plot.showAxis('top', show=True)
+        self._time_lapse_plot.showAxis('right', show=True)
+        self._time_lapse_plot.getAxis('top').setStyle(showValues=False)
+        self._time_lapse_plot.getAxis('right').setStyle(showValues=False)
+        self._time_lapse_plot.getAxis('bottom').setStyle(showValues=True)
+        self._time_lapse_plot.setLabel('left', "T (K)")
+
+        self._pg_time_lapse_layout = pg.GraphicsLayout()
+        self._pg_time_lapse_layout.setContentsMargins(0, 0, 0, 0)
+        self._pg_time_lapse_layout.setSpacing(0)
+
+        self._time_lapse_ds_temperature_txt = pg.LabelItem()
+        self._time_lapse_us_temperature_txt = pg.LabelItem()
+        self._time_lapse_combined_temperature_txt = pg.LabelItem()
+
+        self._pg_time_lapse_layout.addItem(self._time_lapse_ds_temperature_txt, 0, 0)
+        self._pg_time_lapse_layout.addItem(self._time_lapse_combined_temperature_txt, 0, 1)
+        self._pg_time_lapse_layout.addItem(self._time_lapse_us_temperature_txt, 0, 2)
+
+        self._pg_time_lapse_layout.addItem(self._time_lapse_plot, 1, 0, 1, 3)
+
+        self._pg_layout.addItem(self._pg_time_lapse_layout)
+
+        self.temperatures_plot_widget.addItem(self._pg_layout)
+
+        self._layout.addWidget(self.temperatures_plot_widget)
+
+        self.create_data_items()
+
+        self.setAcceptDrops(True) 
+
+    def create_data_items(self):
+        self._time_lapse_ds_data_item = pg.PlotDataItem(
+            pen=pg.mkPen(QColor(colors['downstream']), width=2),
+            brush=pg.mkBrush(QColor(colors['downstream'])),
+            symbolPen=pg.mkPen(QColor(colors['downstream']), width=1),
+            symbolBrush=pg.mkBrush(QColor(colors['downstream'])),
+            size=2,
+            symbol='s'
+        )
+        self._time_lapse_us_data_item = pg.PlotDataItem(
+            pen=pg.mkPen(QColor(colors['upstream']), width=2),
+            brush=pg.mkBrush(QColor(colors['upstream'])),
+            symbolPen=pg.mkPen(QColor(colors['upstream']), width=1),
+            symbolBrush=pg.mkBrush(QColor(colors['upstream'])),
+            size=2,
+            symbol='s'
+        )
+
+        self._time_lapse_plot.addItem(self._time_lapse_ds_data_item)
+        self._time_lapse_plot.addItem(self._time_lapse_us_data_item)
+
+    def plot_ds_time_lapse(self, x, y):
+        self._time_lapse_ds_data_item.setData(x, y)
+
+    def plot_us_time_lapse(self, x, y):
+        self._time_lapse_us_data_item.setData(x, y)
+
+    def raise_widget(self):
+        self.show()
+        self.setWindowState(self.windowState() & ~QtCore.Qt.WindowMinimized | QtCore.Qt.WindowActive)
+        self.activateWindow()
+        self.raise_()
+
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls:
+            e.accept()
+        else:
+            e.ignore()
+
+    def dragMoveEvent(self, e):
+        if e.mimeData().hasUrls:
+            e.accept()
+        else:
+            e.ignore()
+
+    def dropEvent(self, e):
+        """
+        Drop files directly onto the widget
+
+        File locations are stored in fname
+        :param e:
+        :return:
+        """
+        if e.mimeData().hasUrls:
+            e.setDropAction(QtCore.Qt.CopyAction)
+            e.accept()
+            fnames = list()
+            for url in e.mimeData().urls():
+                fname = str(url.toLocalFile())  
+                fnames.append(fname)
+            self.file_dragged_in.emit(fnames)
+        else:
+            e.ignore() 

@@ -27,12 +27,18 @@ from ..model.TemperatureModel import TemperatureModel
 
 from ..widget.MainWidget import MainWidget
 from .TemperatureController import TemperatureController
+from .. widget.TemperatureSpectrumWidget import dataHistoryWidget
+from .DataLogController import DataLogController
 
-
+from .. import style_path
 
 class MainController(object):
-    def __init__(self):
+    def __init__(self,app):
+        self.app = app  # app object
+        self.style_path = style_path
         self.main_widget = MainWidget()
+        self.data_history_widget = dataHistoryWidget()
+        
 
         self.main_widget.setWindowTitle('T-View ' + __version__)
 
@@ -41,6 +47,7 @@ class MainController(object):
         self.create_sub_controller()
         self.settings = QtCore.QSettings("T-View", "T-View")
         self.load_settings()
+        self.load_stylesheet()
 
     def show_window(self):
         self.main_widget.show()
@@ -57,7 +64,10 @@ class MainController(object):
         #self.raman_model = RamanModel()
 
     def create_sub_controller(self):
-        self.temperature_controller = TemperatureController(self.main_widget.temperature_widget, self.temperature_model)
+
+        self.datalog_controller = DataLogController(self.temperature_model, self.data_history_widget)
+        self.temperature_controller = TemperatureController(self.main_widget.temperature_widget, self.temperature_model, self.data_history_widget)
+        
         #self.ruby_controller = RubyController(self.ruby_model, self.main_widget.ruby_widget)
         #self.diamond_controller = DiamondController(self.diamond_model, self.main_widget.diamond_widget)
         #self.raman_controller = RamanController(self.raman_model, self.main_widget.raman_widget)
@@ -131,3 +141,11 @@ class MainController(object):
         self.main_widget.close()
         self.temperature_controller.close_log()
         event.accept()
+
+    def load_stylesheet(self):
+        WStyle = 'plastique'
+        file = open(os.path.join(self.style_path, "stylesheet.qss"))
+        stylesheet = file.read()
+        self.app.setStyleSheet(stylesheet)
+        file.close()
+        self.app.setStyle(WStyle)

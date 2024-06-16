@@ -29,7 +29,7 @@ from ..model import epics_settings as eps
 from .NewFileInDirectoryWatcher import NewFileInDirectoryWatcher
 import numpy as np
 from ..model.helper.HelperModule import get_partial_index , get_partial_value
-
+from .. widget.TemperatureSpectrumWidget import dataHistoryWidget
 
 try:
     import epics
@@ -42,7 +42,7 @@ class TemperatureController(QtCore.QObject):
 
     temperature_folder_changed = QtCore.pyqtSignal()
 
-    def __init__(self, temperature_widget, model):
+    def __init__(self, temperature_widget: TemperatureWidget, model: TemperatureModel, data_history_widget:dataHistoryWidget):
         """
         :param temperature_widget: reference to the temperature widget
         :type temperature_widget: TemperatureWidget
@@ -51,10 +51,14 @@ class TemperatureController(QtCore.QObject):
         :return:
         """
         super(TemperatureController, self).__init__()
-        self.widget: TemperatureWidget
+        #self.widget: TemperatureWidget
         self.widget = temperature_widget
-        self.model: TemperatureModel
+        #self.model: TemperatureModel
         self.model = model
+
+        #self.data_history_widget: dataHistoryWidget
+        self.data_history_widget = data_history_widget
+        self.data_history_widget.setWindowTitle('Temperature Log')
 
         self.setup_epics_dialog = SetupEpicsDialog(self.widget)
 
@@ -79,6 +83,9 @@ class TemperatureController(QtCore.QObject):
         self.connect_click_function(self.widget.save_graph_btn, self.save_graph_btn_clicked)
 
         self.temperature_folder_changed.connect(self.temperature_folder_changed_emitted)
+
+        # File drag and drop
+        self.widget.file_dragged_in.connect(self.file_dragged_in) 
 
         # Calibration signals
         self.connect_click_function(self.widget.load_ds_calibration_file_btn, self.load_ds_calibration_file)
@@ -118,6 +125,9 @@ class TemperatureController(QtCore.QObject):
         self.widget.temperature_spectrum_widget.mouse_moved.connect(self.graph_mouse_moved)
         self.widget.roi_widget.img_widget.mouse_moved.connect(self.roi_mouse_moved)
 
+        # data hitory signals
+        self.connect_click_function(self.widget.data_history_btn, self.data_history_btn_callback)
+
     def connect_click_function(self, emitter, function):
         emitter.clicked.connect(function)
         
@@ -137,6 +147,9 @@ class TemperatureController(QtCore.QObject):
                 self.model.load_data_image(str(filename))
                 self._directory_watcher.path = self._exp_working_dir
                 print('Loaded File: ', filename)
+
+    def file_dragged_in(self,files):
+        self.load_data_file(filenames=files)
                 
     def load_next_data_image(self):
         
@@ -445,6 +458,9 @@ class TemperatureController(QtCore.QObject):
         else:
             out = np.nan, np.nan
         self.widget.temperature_spectrum_widget.update_time_lapse_combined_temperature_txt(*out )
+
+    def data_history_btn_callback(self):
+        self.data_history_widget.raise_widget()
 
     def widget_rois_changed(self, roi_list):
         if self.model.has_data():

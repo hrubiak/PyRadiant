@@ -81,8 +81,8 @@ class FileGroupBox(QtWidgets.QGroupBox):
         
         self._file_control_layout.addSpacerItem(HorizontalSpacerItem())
         
-        
-        
+        self.data_history_btn = QtWidgets.QPushButton("T Log")
+        self._file_control_layout.addWidget(self.data_history_btn)
         
         self.frame_control_widget = QtWidgets.QWidget()
 
@@ -120,22 +120,23 @@ class OutputGroupBox(QtWidgets.QGroupBox, object):
 
         self.create_widgets()
         self.create_layout()
-        self.style_widgets()
+        #self.style_widgets()
 
     def create_widgets(self):
+        
         self.save_data_btn = QtWidgets.QPushButton("Save Data")
         self.save_graph_btn = QtWidgets.QPushButton("Save Graph")
 
     def create_layout(self):
         self._layout = QtWidgets.QHBoxLayout()
-
+        
         self._layout.addWidget(self.save_data_btn)
         self._layout.addWidget(self.save_graph_btn)
         self.setLayout(self._layout)
 
-    def style_widgets(self):
+    '''def style_widgets(self):
         self.save_data_btn.setFlat(True)
-        self.save_graph_btn.setFlat(True)
+        self.save_graph_btn.setFlat(True)'''
 
 
 class StatusBar(QtWidgets.QWidget):

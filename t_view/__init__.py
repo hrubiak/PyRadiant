@@ -56,6 +56,6 @@ def run_t_view():
     app = QtWidgets.QApplication(sys.argv)
     if platform != "darwin":
         app.setStyle('plastique')
-    controller = MainController()
+    controller = MainController(app)
     controller.show_window()
     app.exec_()

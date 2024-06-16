@@ -17,7 +17,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from opcode import stack_effect
 import os
 from PyQt5 import QtCore
 import numpy as np
@@ -87,6 +86,14 @@ class TemperatureModel(QtCore.QObject):
     def write_to_log(self):
         if self.log_file is not None:
             self.write_to_log_file()
+
+    def get_log_file_path(self):
+        if self.filename != None:
+            log_file_path = os.path.normpath(os.path.join(os.path.dirname(self.filename), T_LOG_FILE))
+            return log_file_path
+        else:
+            return None
+
 
     # loading spe image files:
     #########################################################################
