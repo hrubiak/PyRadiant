@@ -525,6 +525,7 @@ class dataHistoryWidget(QtWidgets.QWidget):
         self.create_data_items()
 
         self.setAcceptDrops(True) 
+        
 
     def create_data_items(self):
         self._time_lapse_ds_data_item = pg.PlotDataItem(
@@ -552,6 +553,20 @@ class dataHistoryWidget(QtWidgets.QWidget):
 
     def plot_us_time_lapse(self, x, y):
         self._time_lapse_us_data_item.setData(x, y)
+
+    def update_time_lapse_ds_temperature_txt(self, txt):
+        self._time_lapse_ds_temperature_txt.setText(txt,
+                                                    size='16pt',
+                                                    color=colors['downstream'],
+                                                    justify='left')
+
+    def update_time_lapse_us_temperature_txt(self, txt):
+        self._time_lapse_us_temperature_txt.setText(txt,
+                                                    size='16pt',
+                                                    color=colors['upstream'],
+                                                    justify='right')
+
+    
 
     def raise_widget(self):
         self.show()
