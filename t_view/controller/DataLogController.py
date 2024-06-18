@@ -87,7 +87,7 @@ class DataLogController(QtCore.QObject):
 
         
         if filename != '':
-            now = time.time()
+            #now = time.time()
             self._exp_working_dir = os.path.dirname(str(filename))
             records = self.model.load_last_n_records(str(filename),DATALOG_LENGTH)
             self.model.data_records_groups = [records]
@@ -106,8 +106,8 @@ class DataLogController(QtCore.QObject):
             self.widget.plot_us_time_lapse(x_US, T_US)
 
             self.widget.load_data_log_file_lbl.setText(str(filename) )
-            later  = time.time()
-            print ('T log update time = ' + str(later-now))
+            #later  = time.time()
+            #print ('T log update time = ' + str(later-now))
 
     def file_dragged_in(self,files):
         pass
