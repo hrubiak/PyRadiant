@@ -486,6 +486,8 @@ class dataHistoryWidget(QtWidgets.QWidget):
         #self._file_navigation_widget_layout.addWidget(self.load_data_log_file_btn)
         self._file_navigation_widget_layout.addWidget(self.load_data_log_file_lbl)
         self._file_navigation_widget_layout.addSpacerItem(HorizontalSpacerItem())
+        self.clear_data_log_file_btn = QtWidgets.QPushButton('Clear Log')
+        self._file_navigation_widget_layout.addWidget(self.clear_data_log_file_btn)
 
         self._layout.addWidget(self.file_navigation_widget)
 

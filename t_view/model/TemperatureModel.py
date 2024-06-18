@@ -87,6 +87,13 @@ class TemperatureModel(QtCore.QObject):
         if self.log_file is not None:
             self.write_to_log_file()
 
+    def clear_log(self):
+        if self.log_file is not None:
+            self.log_file.truncate(0)
+            self.log_file.seek(0)
+            self.log_file.write(LOG_HEADER)
+            self.data_changed_emit()
+
     def get_log_file_path(self):
         if self.filename != None:
             log_file_path = os.path.normpath(os.path.join(os.path.dirname(self.filename), T_LOG_FILE))
