@@ -31,6 +31,10 @@ from .NewFileInDirectoryWatcher import NewFileInDirectoryWatcher
 
 from ..model.DatalogModel import DatalogModel
 
+DATALOG_LENGTH = 200
+MIN_TEMPERATURE = 100
+MAX_TEMPERATURE = 12000
+
 class DataLogController(QtCore.QObject):
 
     temperature_point_selected = QtCore.pyqtSignal(list)
@@ -85,15 +89,15 @@ class DataLogController(QtCore.QObject):
         if filename != '':
             now = time.time()
             self._exp_working_dir = os.path.dirname(str(filename))
-            records = self.model.load_last_n_records(str(filename),200)
+            records = self.model.load_last_n_records(str(filename),DATALOG_LENGTH)
             self.model.data_records_groups = [records]
             T_DS, T_US = self.model.get_temperatures_by_group(0)
             #T_DS = T_DS[-200:]
             #T_US = T_US[-200:]
-            T_DS[T_DS<=100] = np.nan
-            T_US[T_US<=100] = np.nan
-            T_DS[T_DS >12000] = np.nan
-            T_US[T_US >12000] = np.nan
+            T_DS[T_DS<=MIN_TEMPERATURE] = np.nan
+            T_US[T_US<=MIN_TEMPERATURE] = np.nan
+            T_DS[T_DS >MAX_TEMPERATURE] = np.nan
+            T_US[T_US >MAX_TEMPERATURE] = np.nan
             
             x_DS = np.arange(T_DS.shape[0])
             x_US = np.arange(T_US.shape[0])

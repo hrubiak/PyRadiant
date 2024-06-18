@@ -531,19 +531,21 @@ class dataHistoryWidget(QtWidgets.QWidget):
 
     def create_data_items(self):
         self._time_lapse_ds_data_item = pg.PlotDataItem(
-            pen=pg.mkPen(QColor(colors['downstream']), width=2),
+            pen=pg.mkPen(QColor(colors['downstream']), width=1),
             brush=pg.mkBrush(QColor(colors['downstream'])),
             symbolPen=pg.mkPen(QColor(colors['downstream']), width=1),
             symbolBrush=pg.mkBrush(QColor(colors['downstream'])),
-            size=2,
+            size=1,
+            symbolSize=5,
             symbol='s'
         )
         self._time_lapse_us_data_item = pg.PlotDataItem(
-            pen=pg.mkPen(QColor(colors['upstream']), width=2),
+            pen=pg.mkPen(QColor(colors['upstream']), width=1),
             brush=pg.mkBrush(QColor(colors['upstream'])),
             symbolPen=pg.mkPen(QColor(colors['upstream']), width=1),
             symbolBrush=pg.mkBrush(QColor(colors['upstream'])),
-            size=2,
+            size=1,
+            symbolSize=5,
             symbol='s'
         )
 
