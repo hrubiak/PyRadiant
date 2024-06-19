@@ -102,8 +102,8 @@ class DataLogController(QtCore.QObject):
             x_DS = np.arange(T_DS.shape[0])
             x_US = np.arange(T_US.shape[0])
 
-            self.widget.plot_ds_time_lapse(x_DS, T_DS)
-            self.widget.plot_us_time_lapse(x_US, T_US)
+            self.widget.temperatures_plot_widget.plot_ds_time_lapse(x_DS, T_DS)
+            self.widget.temperatures_plot_widget.plot_us_time_lapse(x_US, T_US)
 
             self.widget.load_data_log_file_lbl.setText(str(filename) )
             #later  = time.time()

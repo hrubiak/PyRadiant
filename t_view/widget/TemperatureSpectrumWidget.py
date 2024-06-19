@@ -465,33 +465,10 @@ class CustomViewBox(pg.ViewBox):
             self.plotMouseCursorSignal.emit(self.cursorPoint) 
         ev.accept()   
 
-
-class dataHistoryWidget(QtWidgets.QWidget):
-    file_dragged_in = QtCore.pyqtSignal(list)
-    def __init__(self, *args, **kwargs):
+class historyPlotWidget(pg.GraphicsLayoutWidget):
+    def __init__(self, scale_label,*args,  **kwargs):
         super().__init__()
 
-        self._layout = QtWidgets.QVBoxLayout(self)
-        self._layout.setContentsMargins(0, 0, 0, 0)
-        self._layout.setSpacing(0)
-
-        self.file_navigation_widget = QtWidgets.QWidget()
-        #self.file_navigation_widget.setStyleSheet("QWidget { background: #000000; color: #F1F1F1}")
-        self._file_navigation_widget_layout = QtWidgets.QHBoxLayout(self.file_navigation_widget)
-        self._file_navigation_widget_layout.setSpacing(5)
-        self.btn_lbl = QtWidgets.QLabel("Log file ")
-        self.load_data_log_file_btn = QtWidgets.QPushButton('Load')
-        self.load_data_log_file_lbl = QtWidgets.QLabel('')
-        self._file_navigation_widget_layout.addWidget(self.btn_lbl)
-        #self._file_navigation_widget_layout.addWidget(self.load_data_log_file_btn)
-        self._file_navigation_widget_layout.addWidget(self.load_data_log_file_lbl)
-        self._file_navigation_widget_layout.addSpacerItem(HorizontalSpacerItem())
-        self.clear_data_log_file_btn = QtWidgets.QPushButton('Clear Log')
-        self._file_navigation_widget_layout.addWidget(self.clear_data_log_file_btn)
-
-        self._layout.addWidget(self.file_navigation_widget)
-
-        self.temperatures_plot_widget = pg.GraphicsLayoutWidget()
         self._pg_layout = pg.GraphicsLayout()
         self._pg_layout.setContentsMargins(0, 0, 0, 0)
         self._pg_layout.layout.setVerticalSpacing(0)
@@ -502,7 +479,7 @@ class dataHistoryWidget(QtWidgets.QWidget):
         self._time_lapse_plot.getAxis('top').setStyle(showValues=False)
         self._time_lapse_plot.getAxis('right').setStyle(showValues=False)
         self._time_lapse_plot.getAxis('bottom').setStyle(showValues=True)
-        self._time_lapse_plot.setLabel('left', "T (K)")
+        self._time_lapse_plot.setLabel('left', scale_label)
 
         self._pg_time_lapse_layout = pg.GraphicsLayout()
         self._pg_time_lapse_layout.setContentsMargins(0, 0, 0, 0)
@@ -520,14 +497,10 @@ class dataHistoryWidget(QtWidgets.QWidget):
 
         self._pg_layout.addItem(self._pg_time_lapse_layout)
 
-        self.temperatures_plot_widget.addItem(self._pg_layout)
-
-        self._layout.addWidget(self.temperatures_plot_widget)
+        self.addItem(self._pg_layout)
 
         self.create_data_items()
 
-        self.setAcceptDrops(True) 
-        
 
     def create_data_items(self):
         self._time_lapse_ds_data_item = pg.PlotDataItem(
@@ -570,7 +543,42 @@ class dataHistoryWidget(QtWidgets.QWidget):
                                                     color=colors['upstream'],
                                                     justify='right')
 
-    
+
+class dataHistoryWidget(QtWidgets.QWidget):
+    file_dragged_in = QtCore.pyqtSignal(list)
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+
+        self._layout = QtWidgets.QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+
+        self.file_navigation_widget = QtWidgets.QWidget()
+        #self.file_navigation_widget.setStyleSheet("QWidget { background: #000000; color: #F1F1F1}")
+        self._file_navigation_widget_layout = QtWidgets.QHBoxLayout(self.file_navigation_widget)
+        self._file_navigation_widget_layout.setSpacing(5)
+        self.btn_lbl = QtWidgets.QLabel("Log file ")
+        self.load_data_log_file_btn = QtWidgets.QPushButton('Load')
+        self.load_data_log_file_lbl = QtWidgets.QLabel('')
+        self._file_navigation_widget_layout.addWidget(self.btn_lbl)
+        #self._file_navigation_widget_layout.addWidget(self.load_data_log_file_btn)
+        self._file_navigation_widget_layout.addWidget(self.load_data_log_file_lbl)
+        self._file_navigation_widget_layout.addSpacerItem(HorizontalSpacerItem())
+        self.clear_data_log_file_btn = QtWidgets.QPushButton('Clear Log')
+        self._file_navigation_widget_layout.addWidget(self.clear_data_log_file_btn)
+
+        self._layout.addWidget(self.file_navigation_widget)
+
+        self.temperatures_plot_widget = historyPlotWidget(scale_label="T (K)")
+        self.scaling_plot_widget = historyPlotWidget(scale_label="Scaling")
+
+        self._layout.addWidget(self.temperatures_plot_widget)
+        self._layout.addWidget(self.scaling_plot_widget)
+
+
+        #self.setAcceptDrops(True) 
+        
+
 
     def raise_widget(self):
         self.show()

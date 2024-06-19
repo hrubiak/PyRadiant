@@ -59,8 +59,8 @@ class TemperatureController(QtCore.QObject):
         #self.data_history_widget: dataHistoryWidget
         self.data_history_widget = data_history_widget
         self.data_history_widget.setWindowTitle('Temperature Log')
-        self.data_history_widget.update_time_lapse_ds_temperature_txt('Downstream')
-        self.data_history_widget.update_time_lapse_us_temperature_txt('Upstream')
+        self.data_history_widget.temperatures_plot_widget.update_time_lapse_ds_temperature_txt('Downstream')
+        self.data_history_widget.temperatures_plot_widget.update_time_lapse_us_temperature_txt('Upstream')
 
         self.setup_epics_dialog = SetupEpicsDialog(self.widget)
 
