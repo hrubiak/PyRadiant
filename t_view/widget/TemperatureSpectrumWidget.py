@@ -573,7 +573,7 @@ class dataHistoryWidget(QtWidgets.QWidget):
         self.scaling_plot_widget = historyPlotWidget(scale_label="Scaling")
 
         self._layout.addWidget(self.temperatures_plot_widget)
-        self._layout.addWidget(self.scaling_plot_widget)
+        #self._layout.addWidget(self.scaling_plot_widget)
 
 
         #self.setAcceptDrops(True) 
