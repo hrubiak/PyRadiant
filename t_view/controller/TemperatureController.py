@@ -19,7 +19,7 @@
 
 import os, importlib
 
-from PyQt5 import QtWidgets, QtCore
+from PyQt6 import QtWidgets, QtCore
 
 from ..widget.TemperatureWidget import TemperatureWidget, SetupEpicsDialog
 from ..widget.Widgets import open_file_dialog, open_files_dialog, save_file_dialog

@@ -19,7 +19,7 @@
 
 
 import os
-from PyQt5 import QtCore
+from PyQt6 import QtCore
 import numpy as np
 np.seterr(all = 'ignore')
 import warnings

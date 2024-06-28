@@ -20,7 +20,7 @@
 import sys
 import os
 
-from PyQt5 import QtWidgets, QtCore
+from PyQt6 import QtWidgets, QtCore
 
 from .. import __version__
 from ..model.TemperatureModel import TemperatureModel
@@ -53,7 +53,7 @@ class MainController(object):
         self.main_widget.show()
         if sys.platform == "darwin":
             self.main_widget.setWindowState(
-                self.main_widget.windowState() & ~QtCore.Qt.WindowMinimized | QtCore.Qt.WindowActive)
+                self.main_widget.windowState() & ~QtCore.Qt.WindowState.WindowMinimized | QtCore.Qt.WindowState.WindowActive)
             self.main_widget.activateWindow()
             self.main_widget.raise_()
 

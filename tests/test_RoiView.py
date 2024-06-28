@@ -20,7 +20,7 @@
 import unittest
 
 import numpy as np
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
 from t_view.widget.RoiWidget import RoiWidget
 from tests.utility import QtTest

@@ -7,7 +7,7 @@ try:
 except ImportError:
     from io import StringIO
 import traceback
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
 
 def excepthook(exc_type, exc_value, traceback_obj):

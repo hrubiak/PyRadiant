@@ -20,7 +20,7 @@
 import os
 import time
 
-from PyQt5 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtWidgets
 
 
 class NewFileInDirectoryWatcher(QtCore.QObject):

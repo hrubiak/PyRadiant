@@ -21,8 +21,8 @@ from functools import partial
 
 import numpy as np
 
-from PyQt5 import QtCore, QtWidgets, QtGui
-from PyQt5.QtGui import QColor
+from PyQt6 import QtCore, QtWidgets, QtGui
+from PyQt6.QtGui import QColor
 import pyqtgraph as pg
 from pyqtgraph.graphicsItems.ROI import Handle
 from pyqtgraph import ColorMap, HistogramLUTItem
@@ -65,7 +65,7 @@ class RoiWidget(QtWidgets.QWidget):
         self.specra_widget = RoiSpectraWidget()
 
         self.left_tab_widget = QtWidgets.QTabWidget()
-        self.left_tab_widget.setTabPosition(QtWidgets.QTabWidget.West)
+        self.left_tab_widget.setTabPosition(QtWidgets.QTabWidget.TabPosition.West)
         self.left_tab_widget.setCurrentIndex(0)
         self.left_tab_widget.addTab(self.specra_widget, '1D')
         self.left_tab_widget.addTab(self.img_widget, '2D')
@@ -279,7 +279,7 @@ class CenteredQLabel(QtWidgets.QLabel):
 class IntegerTextField(QtWidgets.QLineEdit):
     def __init__(self, *args, **kwargs):
         super(IntegerTextField, self).__init__(*args, **kwargs)
-        self.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
         self.setValidator(QtGui.QIntValidator())
 
 class IntegerSpinBox(DoubleSpinBoxAlignRight):
@@ -539,8 +539,8 @@ class RoiImageWidget(QtWidgets.QWidget):
         self.pg_viewbox.mouseClickEvent = self.myMouseClickEvent
 
     def myMouseClickEvent(self, ev):
-        if ev.button() == QtCore.Qt.RightButton or \
-                (ev.button() == QtCore.Qt.LeftButton and
+        if ev.button() == QtCore.Qt.MouseButton.RightButton or \
+                (ev.button() == QtCore.Qt.MouseButton.LeftButton and
                          ev.modifiers() & QtCore.Qt.ControlModifier):
             self.pg_viewbox.autoRange()
         ev.accept()
@@ -565,9 +565,9 @@ class ImgROI(pg.ROI):
     def hoverEvent(self, ev):
         hover = False
         if not ev.isExit():
-            if ev.acceptDrags(QtCore.Qt.LeftButton):
+            if ev.acceptDrags(QtCore.Qt.MouseButton.LeftButton):
                 hover = True
-            for btn in [QtCore.Qt.LeftButton, QtCore.Qt.RightButton, QtCore.Qt.MidButton]:
+            for btn in [QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.RightButton, QtCore.Qt.MidButton]:
                 if int(self.acceptedMouseButtons() & btn) > 0 and ev.acceptClicks(btn):
                     hover = True
 
@@ -594,9 +594,9 @@ class CustomHandle(pg.graphicsItems.ROI.Handle):
     def hoverEvent(self, ev):
         hover = False
         if not ev.isExit():
-            if ev.acceptDrags(QtCore.Qt.LeftButton):
+            if ev.acceptDrags(QtCore.Qt.MouseButton.LeftButton):
                 hover = True
-            for btn in [QtCore.Qt.LeftButton, QtCore.Qt.RightButton, QtCore.Qt.MidButton]:
+            for btn in [QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.RightButton, QtCore.Qt.MidButton]:
                 if int(self.acceptedMouseButtons() & btn) > 0 and ev.acceptClicks(btn):
                     hover = True
 

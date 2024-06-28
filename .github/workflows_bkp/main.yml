@@ -30,7 +30,7 @@ jobs:
 
     - name: Install Pip Dependencies
       run: |
-        pip install scipy python-dateutil pytest PyQt5 h5py PyQt5 lmfit mock pyshortcuts
+        pip install scipy python-dateutil pytest PyQt6 h5py PyQt6 lmfit mock pyshortcuts
         pip install --pre pyqtgraph
         
     - name: Run tests

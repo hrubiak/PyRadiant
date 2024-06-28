@@ -17,7 +17,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt6 import QtWidgets, QtCore, QtGui
 import os
 from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem
 
@@ -166,7 +166,7 @@ def open_file_dialog(parent_widget, caption, directory, filter=None):
     filename = QtWidgets.QFileDialog.getOpenFileName(parent_widget, caption=caption,
                                                      directory=directory,
                                                      filter=filter)
-    if isinstance(filename, tuple):  # PyQt5 returns a tuple...
+    if isinstance(filename, tuple):  # PyQt6 returns a tuple...
         return str(filename[0])
     return str(filename)
 
@@ -174,7 +174,7 @@ def open_files_dialog(parent_widget, caption, directory, filter=None):
     filename = QtWidgets.QFileDialog.getOpenFileNames(parent_widget, caption=caption,
                                                       directory=directory,
                                                       filter=filter)
-    if isinstance(filename, tuple):  # PyQt5 returns a tuple...
+    if isinstance(filename, tuple):  # PyQt6 returns a tuple...
         return filename[0]
     return filename
 
@@ -182,6 +182,6 @@ def save_file_dialog(parent_widget, caption, directory, filter=None):
     filename = QtWidgets.QFileDialog.getSaveFileName(parent_widget, caption,
                                                      directory=directory,
                                                      filter=filter)
-    if isinstance(filename, tuple):  # PyQt5 returns a tuple...
+    if isinstance(filename, tuple):  # PyQt6 returns a tuple...
         return str(filename[0])
     return str(filename)

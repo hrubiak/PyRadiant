@@ -17,8 +17,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from PyQt5 import QtCore, QtWidgets, QtGui
-from PyQt5.QtCore import Qt
+from PyQt6 import QtCore, QtWidgets, QtGui
+from PyQt6.QtCore import Qt
 
 import os
 from .TemperatureSpectrumWidget import TemperatureSpectrumWidget
@@ -49,7 +49,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._left_layout.setSpacing(0)
         self.left_widget.resize(600,600)
 
-        self.splitter_horizontal = QtWidgets.QSplitter(Qt.Horizontal)
+        self.splitter_horizontal = QtWidgets.QSplitter(Qt.Orientation.Horizontal)
         self._main_layout.addWidget(self.splitter_horizontal)
 
 
@@ -248,7 +248,7 @@ class EPICSGroupBox(QtWidgets.QGroupBox):
    
         self.setup_epics_pb = QtWidgets.QPushButton("Setup Epics")
         self.connect_to_epics_cb = QtWidgets.QCheckBox("Connect to Epics")
-        self.connect_to_epics_cb.setLayoutDirection(QtCore.Qt.RightToLeft)
+        self.connect_to_epics_cb.setLayoutDirection(QtCore.Qt.LayoutDirection.RightToLeft)
         self._layout.addWidget(self.setup_epics_pb)
         self._layout.addWidget(self.connect_to_epics_cb)
         
@@ -351,7 +351,7 @@ class CalibrationGB(QtWidgets.QGroupBox):
     def style_widgets(self):
 
         self.temperature_txt.setValidator(QtGui.QDoubleValidator())
-        self.temperature_txt.setAlignment(QtCore.Qt.AlignRight)
+        self.temperature_txt.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
         self.temperature_rb.toggle()
 
     def set_stylesheet(self):

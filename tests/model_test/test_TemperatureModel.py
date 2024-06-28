@@ -20,7 +20,7 @@
 import unittest
 import os
 
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
 import numpy as np
 
@@ -441,10 +441,10 @@ class TestTemperatureModel(QtTest):
         self.assertEqual(self.model.ds_temperature_model.calibration_parameter.modus, 0)
         self.assertEqual(self.model.us_temperature_model.calibration_parameter.modus, 0)
 
-        self.assertTrue(self.model.ds_temperature is np.NaN)
-        self.assertTrue(self.model.ds_temperature_error is np.NaN)
-        self.assertTrue(self.model.us_temperature is np.NaN)
-        self.assertTrue(self.model.us_temperature_error is np.NaN)
+        self.assertTrue(self.model.ds_temperature is np.nan)
+        self.assertTrue(self.model.ds_temperature_error is np.nan)
+        self.assertTrue(self.model.us_temperature is np.nan)
+        self.assertTrue(self.model.us_temperature_error is np.nan)
 
         self.assertEqual(self.model.ds_roi.as_list(), [0, 0, 0, 0])
         self.assertEqual(self.model.us_roi.as_list(), [0, 0, 0, 0])

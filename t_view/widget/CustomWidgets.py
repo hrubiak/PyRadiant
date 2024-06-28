@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from PyQt5 import QtCore, QtWidgets, QtGui
+from PyQt6 import QtCore, QtWidgets, QtGui
 from math import floor, log10
 
 
@@ -25,7 +25,7 @@ class NumberTextField(QtWidgets.QLineEdit):
     def __init__(self, *args, **kwargs):
         super(NumberTextField, self).__init__(*args, **kwargs)
         self.setValidator(QtGui.QDoubleValidator())
-        self.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
         self.min = None
         self.max = None
 
@@ -57,13 +57,13 @@ class IntegerTextField(QtWidgets.QLineEdit):
     def __init__(self, *args, **kwargs):
         super(IntegerTextField, self).__init__(*args, **kwargs)
         self.setValidator(QtGui.QIntValidator())
-        self.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
 
 
 class LabelAlignRight(QtWidgets.QLabel):
     def __init__(self, *args, **kwargs):
         super(LabelAlignRight, self).__init__(*args, **kwargs)
-        self.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
 
 
 class CleanLooksComboBox(QtWidgets.QComboBox):
@@ -77,20 +77,20 @@ class CleanLooksComboBox(QtWidgets.QComboBox):
 class SpinBoxAlignRight(QtWidgets.QSpinBox):
     def __init__(self, *args, **kwargs):
         super(SpinBoxAlignRight, self).__init__(*args, **kwargs)
-        self.setAlignment(QtCore.Qt.AlignRight)
+        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
 
 
 class DoubleSpinBoxAlignRight(QtWidgets.QDoubleSpinBox):
     def __init__(self, *args, **kwargs):
         super(DoubleSpinBoxAlignRight, self).__init__(*args, **kwargs)
-        self.setAlignment(QtCore.Qt.AlignRight)
+        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
 
 
 
 class DoubleMultiplySpinBoxAlignRight(QtWidgets.QDoubleSpinBox):
     def __init__(self, *args, **kwargs):
         super(DoubleMultiplySpinBoxAlignRight, self).__init__(*args, **kwargs)
-        self.setAlignment(QtCore.Qt.AlignRight)
+        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
 
     def stepBy(self, p_int):
         self.setValue(self.calc_new_step(self.value(), p_int))
@@ -214,8 +214,8 @@ class NoRectDelegate(QtWidgets.QItemDelegate):
 
 
 def HorizontalSpacerItem(minimum_width=0):
-    return QtWidgets.QSpacerItem(minimum_width, 0, QtWidgets.QSizePolicy.MinimumExpanding,
-                                 QtWidgets.QSizePolicy.Minimum)
+    return QtWidgets.QSpacerItem(minimum_width, 0, QtWidgets.QSizePolicy.Policy.MinimumExpanding,
+                             QtWidgets.QSizePolicy.Policy.Minimum)
 
 class HorizontalSpacerWidget(QtWidgets.QWidget):
     def __init__(self):
@@ -225,4 +225,4 @@ class HorizontalSpacerWidget(QtWidgets.QWidget):
         self.setLayout(self._layout)
 
 def VerticalSpacerItem():
-    return QtWidgets.QSpacerItem(0, 0, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+    return QtWidgets.QSpacerItem(0, 0, QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Expanding)

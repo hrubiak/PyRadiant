@@ -17,15 +17,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from PyQt5 import QtWidgets, QtCore, QtGui
-#from PyQt5.QtWidgets import QSizePolicy
-from PyQt5.QtGui import QColor
+from PyQt6 import QtWidgets, QtCore, QtGui
+#from PyQt6.QtWidgets import QSizePolicy
+from PyQt6.QtGui import QColor
 import pyqtgraph as pg
 from pyqtgraph.exporters.ImageExporter import ImageExporter
 from pyqtgraph.exporters.SVGExporter import SVGExporter
 import numpy as np
 #from .ModifiedPlotItem import ModifiedPlotItem
-from PyQt5.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem
 
 #pg.setConfigOption('useOpenGL', False)
@@ -85,7 +85,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._us_plot.setLabel('bottom', '&lambda; (nm)')
         self._us_plot.setMinimumWidth(120)
         
-        self._us_plot.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        self._us_plot.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
         self._pg_us_layout.addItem(self._us_plot)
         self._pg_us_layout_widget.addItem(self._pg_us_layout)
         
@@ -106,7 +106,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._ds_plot.setLabel('bottom', '&lambda; (nm)')
         self._ds_plot.setMinimumWidth(120)
         
-        self._ds_plot.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        self._ds_plot.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
         self._pg_ds_layout.addItem(self._ds_plot)
         self._pg_ds_layout_widget.addItem(self._pg_ds_layout)
         
@@ -451,11 +451,11 @@ class CustomViewBox(pg.ViewBox):
 
     ## reimplement right-click to zoom out
     def mouseClickEvent(self, ev):
-        if ev.button() == QtCore.Qt.RightButton:
+        if ev.button() == QtCore.Qt.MouseButton.RightButton:
             #self.enableAutoRange(self.XYAxes, True)    
             
             self.enableAutoRange(enable=1) 
-        elif ev.button() == QtCore.Qt.LeftButton: 
+        elif ev.button() == QtCore.Qt.MouseButton.LeftButton: 
             pos = ev.pos()  ## using signal proxy turns original arguments into a tuple
             mousePoint = self.mapSceneToView(pos)
 

@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from PyQt5 import QtCore, QtWidgets, QtGui
+from PyQt6 import QtCore, QtWidgets, QtGui
 import os
 from .CustomWidgets import FlatButton, CleanLooksComboBox 
 import copy
@@ -72,8 +72,8 @@ class selectDetectorDialog(QtWidgets.QDialog):
         """
         Makes everything pretty and set Double validators for the line edits.
         """
-        self.detetor_lbl.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        #self.detetor_txt.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.detetor_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
+        #self.detetor_txt.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
         self.detetor_txt.setMaximumWidth(100)
         #self.detetor_txt.setValidator(QtGui.QIntValidator())
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
@@ -146,8 +146,8 @@ class xyPatternParametersDialog(QtWidgets.QDialog):
         """
         Makes everything pretty and set Double validators for the line edits.
         """
-        self.xray_wavelength_lbl.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        self.xray_wavelength_txt.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.xray_wavelength_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
+        self.xray_wavelength_txt.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
         self.xray_wavelength_txt.setMaximumWidth(100)
         self.xray_wavelength_txt.setValidator(QtGui.QDoubleValidator())
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
@@ -221,11 +221,11 @@ class CifConversionParametersDialog(QtWidgets.QDialog):
         """
         Makes everything pretty and set Double validators for the line edits.
         """
-        self.int_cutoff_lbl.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        self.int_cutoff_txt.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.int_cutoff_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
+        self.int_cutoff_txt.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
         self.int_cutoff_txt.setMaximumWidth(40)
-        self.min_d_spacing_lbl.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        self.min_d_spacing_txt.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.min_d_spacing_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
+        self.min_d_spacing_txt.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
         self.min_d_spacing_txt.setMaximumWidth(40)
 
         self.int_cutoff_txt.setValidator(QtGui.QDoubleValidator())
@@ -328,7 +328,7 @@ def open_file_dialog(parent_widget, caption, directory=None, filter=None):
     filename = QtWidgets.QFileDialog.getOpenFileName(parent_widget, caption=caption,
                                                      directory=directory,
                                                      filter=filter)
-    if isinstance(filename, tuple):  # PyQt5 returns a tuple...
+    if isinstance(filename, tuple):  # PyQt6 returns a tuple...
         return os.path.normpath(str(filename[0]))
     return os.path.normpath(str(filename))
 
@@ -337,7 +337,7 @@ def open_files_dialog(parent_widget, caption, directory=None, filter=None):
     filenames = QtWidgets.QFileDialog.getOpenFileNames(parent_widget, caption=caption,
                                                        directory=directory,
                                                        filter=filter)
-    if isinstance(filenames, tuple):  # PyQt5 returns a tuple...
+    if isinstance(filenames, tuple):  # PyQt6 returns a tuple...
         filenames = filenames[0]
     return filenames
 
@@ -353,6 +353,6 @@ def save_file_dialog(parent_widget, caption, directory=None, filter=None, warn_o
         filename = QtWidgets.QFileDialog.getSaveFileName(parent_widget, caption,
                                                      directory=directory,
                                                      filter=filter)
-    if isinstance(filename, tuple):  # PyQt5 returns a tuple...
+    if isinstance(filename, tuple):  # PyQt6 returns a tuple...
         return os.path.normpath(str(filename[0]))
     return os.path.normpath(str(filename))

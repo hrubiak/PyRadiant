@@ -17,7 +17,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from PyQt5 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtWidgets
 import pyqtgraph as pg
 import numpy as np
 
@@ -64,13 +64,13 @@ class ModifiedPlotItem(pg.PlotItem):
                 pass
 
     def mouse_click_event(self, ev):
-        if ev.button() == QtCore.Qt.RightButton or \
-                (ev.button() == QtCore.Qt.LeftButton and
+        if ev.button() == QtCore.Qt.MouseButton.RightButton or \
+                (ev.button() == QtCore.Qt.MouseButton.LeftButton and
                          ev.modifiers() & QtCore.Qt.ControlModifier):
             if self.enableMouseInterAction:
                 self.vb.scaleBy(2)
                 self.vb.sigRangeChangedManually.emit(self.vb.state['mouseEnabled'])
-        elif ev.button() == QtCore.Qt.LeftButton:
+        elif ev.button() == QtCore.Qt.MouseButton.LeftButton:
             if self.sceneBoundingRect().contains(ev.pos()):
                 pos = self.vb.mapToView(ev.pos())
                 x = pos.x()
@@ -79,7 +79,7 @@ class ModifiedPlotItem(pg.PlotItem):
 
     def mouse_double_click_event(self, ev):
         if self.enableMouseInterAction:
-            if (ev.button() == QtCore.Qt.RightButton) or (ev.button() == QtCore.Qt.LeftButton and
+            if (ev.button() == QtCore.Qt.MouseButton.RightButton) or (ev.button() == QtCore.Qt.MouseButton.LeftButton and
                                                                   ev.modifiers() & QtCore.Qt.ControlModifier):
                 self.vb.autoRange()
                 self.vb.enableAutoRange()
@@ -104,8 +104,8 @@ class ModifiedPlotItem(pg.PlotItem):
         dif = pos - last_pos
         dif *= -1
 
-        if ev.button() == QtCore.Qt.RightButton or \
-                (ev.button() == QtCore.Qt.LeftButton and ev.modifiers() & QtCore.Qt.ControlModifier):
+        if ev.button() == QtCore.Qt.MouseButton.RightButton or \
+                (ev.button() == QtCore.Qt.MouseButton.LeftButton and ev.modifiers() & QtCore.Qt.ControlModifier):
             # determine the amount of translation
             tr = dif
             tr = self.vb.mapToView(tr) - self.vb.mapToView(pg.Point(0, 0))

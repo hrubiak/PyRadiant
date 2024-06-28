@@ -19,7 +19,7 @@
 
 import os, importlib
 import time
-from PyQt5 import QtWidgets, QtCore
+from PyQt6 import QtWidgets, QtCore
 
 from ..widget.Widgets import open_file_dialog, open_files_dialog, save_file_dialog
 

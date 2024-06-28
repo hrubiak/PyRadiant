@@ -22,8 +22,8 @@ import os, sys
 import numpy as np
 
 from ..ehook import excepthook
-from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtTest import QTest
+from PyQt6 import QtWidgets, QtCore
+from PyQt6.QtTest import QTest
 
 from tests.utility import QtTest
 
@@ -46,10 +46,10 @@ class RamanControllerTest(QtTest):
         self.model.load_file(test_file)
 
     def click_checkbox(self, checkbox):
-        QTest.mouseClick(checkbox, QtCore.Qt.LeftButton, pos=QtCore.QPoint(2, checkbox.height() / 2))
+        QTest.mouseClick(checkbox, QtCore.Qt.MouseButton.LeftButton, pos=QtCore.QPoint(2, checkbox.height() / 2))
 
     def click_button(widget):
-        QTest.mouseClick(widget, QtCore.Qt.LeftButton)
+        QTest.mouseClick(widget, QtCore.Qt.MouseButton.LeftButton)
 
     def test_laser_line(self):
         x, y = self.widget.graph_widget.get_data()

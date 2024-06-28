@@ -22,7 +22,7 @@ import os
 
 import numpy as np
 
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
 from tests.utility import QtTest
 

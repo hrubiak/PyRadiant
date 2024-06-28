@@ -21,8 +21,8 @@ import os
 import sys
 from sys import platform
 #from optparse import OptionParser
-import PyQt5
-from PyQt5 import QtWidgets, QtCore
+import PyQt6
+from PyQt6 import QtWidgets, QtCore
 import platform
 
 from .version import get_version
@@ -38,24 +38,28 @@ from .controller.MainController import MainController
 def make_dpi_aware():
     __platform__ = platform.system()
     if __platform__ == 'Windows':
-      if int(platform.release()) >= 8:
-          import ctypes
-          ctypes.windll.shcore.SetProcessDpiAwareness(True)
+        if int(platform.release()) >= 8:
+            import ctypes
+            from ctypes import wintypes
+            # Constants for DPI awareness levels
+            PROCESS_PER_MONITOR_DPI_AWARE = 2
+            # Set the DPI awareness
+            ctypes.windll.shcore.SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE)
 
 def run_t_view():
 
     make_dpi_aware()
-    if hasattr(QtCore.Qt, 'AA_EnableHighDpiScaling'):
-        PyQt5.QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
+    if hasattr(QtCore.Qt.ApplicationAttribute, 'AA_EnableHighDpiScaling'):
+        QtWidgets.QApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
 
-    if hasattr(QtCore.Qt, 'AA_UseHighDpiPixmaps'):
-        PyQt5.QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
+    if hasattr(QtCore.Qt.ApplicationAttribute, 'AA_UseHighDpiPixmaps'):
+        QtWidgets.QApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
 
-    QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_ShareOpenGLContexts)
+    QtCore.QCoreApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
    
     app = QtWidgets.QApplication(sys.argv)
     if platform != "darwin":
         app.setStyle('plastique')
     controller = MainController(app)
     controller.show_window()
-    app.exec_()
+    sys.exit(app.exec())

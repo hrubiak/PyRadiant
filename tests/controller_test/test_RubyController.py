@@ -20,9 +20,9 @@
 import unittest
 import os
 
-from PyQt5 import QtWidgets, QtCore
+from PyQt6 import QtWidgets, QtCore
 
-from PyQt5.QtTest import QTest
+from PyQt6.QtTest import QTest
 
 from tests.utility import QtTest
 
