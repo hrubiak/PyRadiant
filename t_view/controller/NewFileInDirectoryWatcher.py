@@ -76,7 +76,7 @@ class NewFileInDirectoryWatcher(QtCore.QObject):
         """
         activates the watcher to emit signals when a new file is added
         """
-        if ~self.check_timer.isActive():
+        if not self.check_timer.isActive():
             self._files_in_path = os.listdir(self.path)
             self.check_timer.start()
 

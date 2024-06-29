@@ -68,6 +68,7 @@ class FileGroupBox(QtWidgets.QGroupBox):
         self.browse_by_name_rb.setChecked(True)
         self.browse_by_time_rb = QtWidgets.QRadioButton('By Time')
         self.autoprocess_cb = QtWidgets.QCheckBox('auto')
+        self.autoprocess_lbl = QtWidgets.QLabel('')
         self.filename_lbl = QtWidgets.QLabel('file')
         self.dirname_lbl = QtWidgets.QLabel('folder')
         
@@ -78,6 +79,7 @@ class FileGroupBox(QtWidgets.QGroupBox):
         self._file_control_layout.addWidget(self.browse_by_name_rb)
         self._file_control_layout.addWidget(self.browse_by_time_rb)
         self._file_control_layout.addWidget(self.autoprocess_cb)
+        self._file_control_layout.addWidget(self.autoprocess_lbl)
         
         self._file_control_layout.addSpacerItem(HorizontalSpacerItem())
         

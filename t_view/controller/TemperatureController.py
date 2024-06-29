@@ -27,6 +27,7 @@ from ..model.TemperatureModel import TemperatureModel
 from ..model.helper.FileNameIterator import get_file_and_extension
 from ..model import epics_settings as eps
 from .NewFileInDirectoryWatcher import NewFileInDirectoryWatcher
+from .ADWatcher import ADWatcher
 import numpy as np
 from ..model.helper.HelperModule import get_partial_index , get_partial_value
 from .. widget.TemperatureSpectrumWidget import dataHistoryWidget
@@ -353,15 +354,7 @@ class TemperatureController(QtCore.QObject):
             self.widget.frame_widget.setVisible(False)
             self.widget.temperature_spectrum_widget.show_time_lapse_plot(False)
 
-        '''epics_counter = True
-        if eps.epics_settings['file_counter'] is None or eps.epics_settings['file_counter'] == '' or \
-                        eps.epics_settings['file_counter'] == 'None' or not self.widget.connect_to_epics_cb.isChecked():
-            epics_counter = None
-        if epics is not None and epics_counter is not None:
-            counter = (epics.caget(eps.epics_settings['file_counter'], as_string=True))
-            if counter == '' or counter is None:
-                counter = '1'
-            epics.caput(eps.epics_settings['file_counter'], str(int(counter) + 1))'''
+      
 
         self.ds_calculations_changed()
         self.us_calculations_changed()
@@ -533,15 +526,38 @@ class TemperatureController(QtCore.QObject):
         )
 
     def auto_process_cb_toggled(self):
-        if self.widget.autoprocess_cb.isChecked():
-            print('activate')
-            self._directory_watcher.activate()
-        else:
+
+        connect_to_ad = self.widget.connect_to_ad_cb.isChecked()
+
+        if connect_to_ad:
+            if self.widget.autoprocess_cb.isChecked():
+                self.widget.autoprocess_lbl.setText('AD')
+                self._AD_watcher.activate()
+                
+            else:
+                self._AD_watcher.deactivate()
+                self.widget.autoprocess_lbl.setText('')
+
             self._directory_watcher.deactivate()
+        else:
+            if self.widget.autoprocess_cb.isChecked():
+                self.widget.autoprocess_lbl.setText('FS')
+                self._directory_watcher.activate()
+            else:
+                self._directory_watcher.deactivate()
+                self.widget.autoprocess_lbl.setText('')
+
+            self._AD_watcher.deactivate()
 
     def _create_autoprocess_system(self):
         self._directory_watcher = NewFileInDirectoryWatcher(file_types=['.spe'])
         self._directory_watcher.file_added.connect(self.load_data_file)
+
+        if epics is not None and eps.epics_settings['area_detector'] is not None \
+                and eps.epics_settings['area_detector'] != 'None':
+            self._AD_watcher = ADWatcher(record_name=eps.epics_settings['area_detector'])
+            self._AD_watcher.file_added.connect(self.load_data_file)
+        
         self.setup_temperature_file_folder_monitor()
 
     def setup_temperature_file_folder_monitor(self):
@@ -564,16 +580,19 @@ class TemperatureController(QtCore.QObject):
         self.setup_epics_dialog.ds_temp_pv = eps.epics_settings['ds_last_temp']
 
         self.setup_epics_dialog.temperature_file_folder_pv = eps.epics_settings['T_folder']
+        self.setup_epics_dialog.area_detector_pv = eps.epics_settings['area_detector']
         self.setup_epics_dialog.exec()
         if self.setup_epics_dialog.approved:
-            with open('model/epics_settings.py', 'w') as outfile:
+            with open('t_view/model/epics_settings.py', 'w') as outfile:
                 outfile.write('epics_settings = {\n')
                 outfile.write("    'us_last_temp': '" + self.setup_epics_dialog.us_temp_pv + "',\n")
                 outfile.write("    'ds_last_temp': '" + self.setup_epics_dialog.ds_temp_pv + "',\n")
               
-                outfile.write("    'T_folder': '" + self.setup_epics_dialog.temperature_file_folder_pv + ",\n")
+                outfile.write("    'T_folder': '" + self.setup_epics_dialog.temperature_file_folder_pv + "',\n")
+                outfile.write("    'area_detector': '" + self.setup_epics_dialog.area_detector_pv + "',\n")
                 outfile.write("}\n")
             eps.epics_settings['us_last_temp'] = self.setup_epics_dialog.us_temp_pv
             eps.epics_settings['ds_last_temp'] = self.setup_epics_dialog.ds_temp_pv
 
             eps.epics_settings['T_folder'] = self.setup_epics_dialog.temperature_file_folder_pv
+            eps.epics_settings['area_detector'] = self.setup_epics_dialog.area_detector_pv

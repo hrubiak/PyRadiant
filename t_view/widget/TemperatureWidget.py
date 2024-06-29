@@ -144,6 +144,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.frame_widget = self.control_widget.file_gb.frame_control_widget
 
         self.autoprocess_cb = self.control_widget.file_gb.autoprocess_cb
+        self.autoprocess_lbl = self.control_widget.file_gb.autoprocess_lbl
         self.filename_lbl = self.control_widget.file_gb.filename_lbl
         self.dirname_lbl = self.control_widget.file_gb.dirname_lbl
         self.mtime = self.control_widget.file_gb.mtime
@@ -181,6 +182,7 @@ class TemperatureWidget(QtWidgets.QWidget):
 
         self.setup_epics_pb = self.epics_gb. setup_epics_pb
         self.connect_to_epics_cb = self.epics_gb. connect_to_epics_cb
+        self.connect_to_ad_cb = self.epics_gb. connect_to_ad_cb
 
 
         self.browse_by_name_rb = self.control_widget.file_gb.browse_by_name_rb 
@@ -244,13 +246,16 @@ class EPICSGroupBox(QtWidgets.QGroupBox):
     def __init__(self, *args, **kwargs):
         super().__init__('EPICS')
 
-        self._layout = QtWidgets.QHBoxLayout()
+        self._layout = QtWidgets.QGridLayout()
    
-        self.setup_epics_pb = QtWidgets.QPushButton("Setup Epics")
-        self.connect_to_epics_cb = QtWidgets.QCheckBox("Connect to Epics")
+        self.setup_epics_pb = QtWidgets.QPushButton("Setup EPICS")
+        self.connect_to_epics_cb = QtWidgets.QCheckBox("Output to EPICS")
+        self.connect_to_ad_cb = QtWidgets.QCheckBox("Connect to AD")
         self.connect_to_epics_cb.setLayoutDirection(QtCore.Qt.LayoutDirection.RightToLeft)
-        self._layout.addWidget(self.setup_epics_pb)
-        self._layout.addWidget(self.connect_to_epics_cb)
+        self.connect_to_ad_cb.setLayoutDirection(QtCore.Qt.LayoutDirection.RightToLeft)
+        self._layout.addWidget(self.setup_epics_pb,0,0)
+        self._layout.addWidget(self.connect_to_epics_cb,0,1)
+        self._layout.addWidget(self.connect_to_ad_cb,1,1)
         
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
@@ -382,11 +387,14 @@ class SetupEpicsDialog(QtWidgets.QDialog):
      
         self.temperature_file_directory_pv_lbl = QtWidgets.QLabel("T File Directory PV")
 
+        self.area_detector_pv_lbl = QtWidgets.QLabel("Area Detector PV")
+
         self.us_temp_txt = QtWidgets.QLineEdit()
         self.us_temp_txt.setMinimumWidth(200)
         self.ds_temp_txt = QtWidgets.QLineEdit()
    
         self.temperature_file_directory_pv_txt = QtWidgets.QLineEdit()
+        self.area_detector_pv_txt = QtWidgets.QLineEdit()
 
         self.us_temp_txt.setToolTip("Enter the complete PV, or None")
         self.ds_temp_txt.setToolTip("Enter the complete PV, or None")
@@ -408,8 +416,13 @@ class SetupEpicsDialog(QtWidgets.QDialog):
 
         self._grid_layout.addWidget(self.temperature_file_directory_pv_txt, 2, 1)
 
-        self._grid_layout.addWidget(self.ok_btn, 3, 0)
-        self._grid_layout.addWidget(self.cancel_btn, 3, 1)
+        self._grid_layout.addWidget(self.area_detector_pv_lbl, 3, 0)
+        self._grid_layout.addWidget(self.area_detector_pv_txt, 3, 1)
+
+        self._grid_layout.addWidget(self.ok_btn, 4, 0)
+        self._grid_layout.addWidget(self.cancel_btn, 4, 1)
+
+
 
         self.setLayout(self._grid_layout)
 
@@ -460,6 +473,14 @@ class SetupEpicsDialog(QtWidgets.QDialog):
     @temperature_file_folder_pv.setter
     def temperature_file_folder_pv(self, pv):
         self.temperature_file_directory_pv_txt.setText(pv)
+
+    @property
+    def area_detector_pv(self):
+        return str(self.area_detector_pv_txt.text())
+
+    @area_detector_pv.setter
+    def area_detector_pv(self, pv):
+        self.area_detector_pv_txt.setText(pv)
 
     def exec(self):
         """
