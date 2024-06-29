@@ -564,7 +564,7 @@ class TemperatureController(QtCore.QObject):
         self.setup_epics_dialog.ds_temp_pv = eps.epics_settings['ds_last_temp']
 
         self.setup_epics_dialog.temperature_file_folder_pv = eps.epics_settings['T_folder']
-        self.setup_epics_dialog.exec_()
+        self.setup_epics_dialog.exec()
         if self.setup_epics_dialog.approved:
             with open('model/epics_settings.py', 'w') as outfile:
                 outfile.write('epics_settings = {\n')

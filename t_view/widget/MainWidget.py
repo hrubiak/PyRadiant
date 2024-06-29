@@ -56,4 +56,4 @@ if __name__ == '__main__':
     widget = MainWidget()
     widget.show()
     widget.raise_()
-    app.exec_()
+    app.exec()

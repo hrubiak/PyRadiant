@@ -45,5 +45,5 @@ def excepthook(exc_type, exc_value, traceback_obj):
 #
 #     controller = MainController()
 #     controller.show_window()
-#     app.exec_()
+#     app.exec()
 #     del app

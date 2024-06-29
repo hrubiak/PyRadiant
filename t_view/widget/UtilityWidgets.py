@@ -72,11 +72,11 @@ class selectDetectorDialog(QtWidgets.QDialog):
         """
         Makes everything pretty and set Double validators for the line edits.
         """
-        self.detetor_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
+        self.detetor_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
         #self.detetor_txt.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
         self.detetor_txt.setMaximumWidth(100)
         #self.detetor_txt.setValidator(QtGui.QIntValidator())
-        self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
+        self.setWindowFlags(QtCore.Qt.WindowType.FramelessWindowHint)
 
     def _connect_widgets(self):
         """
@@ -91,7 +91,7 @@ class selectDetectorDialog(QtWidgets.QDialog):
     @classmethod
     def showDialog(cls,n_detectors):
         dialog = cls(n_detectors)
-        dialog.exec_()
+        dialog.exec()
         out = copy.deepcopy(dialog.out)
         dialog.deleteLater()
         return out
@@ -146,11 +146,11 @@ class xyPatternParametersDialog(QtWidgets.QDialog):
         """
         Makes everything pretty and set Double validators for the line edits.
         """
-        self.xray_wavelength_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
-        self.xray_wavelength_txt.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
+        self.xray_wavelength_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.xray_wavelength_txt.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
         self.xray_wavelength_txt.setMaximumWidth(100)
         self.xray_wavelength_txt.setValidator(QtGui.QDoubleValidator())
-        self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
+        self.setWindowFlags(QtCore.Qt.WindowType.FramelessWindowHint)
 
     def _connect_widgets(self):
         """
@@ -165,7 +165,7 @@ class xyPatternParametersDialog(QtWidgets.QDialog):
     @classmethod
     def showDialog(cls,filename,unit,value):
         dialog = cls(filename,unit,value)
-        dialog.exec_()
+        dialog.exec()
         out = copy.deepcopy(dialog.out)
         dialog.deleteLater()
         return out
@@ -221,17 +221,17 @@ class CifConversionParametersDialog(QtWidgets.QDialog):
         """
         Makes everything pretty and set Double validators for the line edits.
         """
-        self.int_cutoff_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
-        self.int_cutoff_txt.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
+        self.int_cutoff_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.int_cutoff_txt.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
         self.int_cutoff_txt.setMaximumWidth(40)
-        self.min_d_spacing_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
-        self.min_d_spacing_txt.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
+        self.min_d_spacing_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.min_d_spacing_txt.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
         self.min_d_spacing_txt.setMaximumWidth(40)
 
         self.int_cutoff_txt.setValidator(QtGui.QDoubleValidator())
         self.min_d_spacing_txt.setValidator(QtGui.QDoubleValidator())
 
-        self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
+        self.setWindowFlags(QtCore.Qt.WindowType.FramelessWindowHint)
 
         #file = open("stylesheet.qss")
         #stylesheet = file.read()
@@ -258,13 +258,13 @@ class CifConversionParametersDialog(QtWidgets.QDialog):
         """
         return float(str(self.min_d_spacing_txt.text()))
 
-    def exec_(self):
+    def exec(self):
         """
-        Overwriting the dialog exec_ function to center the widget in the parent window before execution.
+        Overwriting the dialog exec function to center the widget in the parent window before execution.
         """
         #parent_center = self._parent.window().mapToGlobal(self._parent.window().rect().center())
         #self.move(parent_center.x() - 101, parent_center.y() - 48)
-        super(CifConversionParametersDialog, self).exec_()
+        super(CifConversionParametersDialog, self).exec()
 
 
 class FileInfoWidget(QtWidgets.QWidget):
@@ -278,7 +278,7 @@ class FileInfoWidget(QtWidgets.QWidget):
         self._layout = QtWidgets.QVBoxLayout()
         self._layout.setContentsMargins(5, 5, 5, 5)
         self._layout.addWidget(self.text_lbl)
-        self._layout.setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
+        self._layout.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetFixedSize)
 
         self.setStyleSheet(
             """
@@ -290,12 +290,13 @@ class FileInfoWidget(QtWidgets.QWidget):
             }"""
         )
         self.setLayout(self._layout)
-        self.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.MSWindowsFixedSizeDialogHint)
-        self.setAttribute(QtCore.Qt.WA_MacAlwaysShowToolWindow)
-
+        self.setWindowFlags(QtCore.Qt.WindowType.Tool | QtCore.Qt.WindowType.MSWindowsFixedSizeDialogHint)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow)
+        
     def raise_widget(self):
         self.show()
-        self.setWindowState(self.windowState() & ~QtCore.Qt.WindowMinimized | QtCore.Qt.WindowActive)
+        self.setWindowState(self.windowState() & ~QtCore.Qt.WindowState.WindowMinimized | QtCore.Qt.WindowState.WindowActive)
+        
         self.activateWindow()
         self.raise_()
 
@@ -306,7 +307,8 @@ class ErrorMessageBox(QtWidgets.QDialog):
         self.setWindowTitle("OOOPS! An error occurred!")
 
         self.text_lbl = QtWidgets.QLabel()
-        self.text_lbl.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.text_lbl.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+
         self.scroll_area = QtWidgets.QScrollArea()
 
         self.scroll_area.setWidget(self.text_lbl)
@@ -344,7 +346,7 @@ def open_files_dialog(parent_widget, caption, directory=None, filter=None):
 
 def save_file_dialog(parent_widget, caption, directory=None, filter=None, warn_overwrite = True):
     if not warn_overwrite:
-        opt = QtWidgets.QFileDialog.DontConfirmOverwrite
+        opt = QtWidgets.QFileDialog.Option.DontConfirmOverwrite
         filename = QtWidgets.QFileDialog.getSaveFileName(parent_widget, caption,
                                                      directory=directory,
                                                      filter=filter, options =opt)

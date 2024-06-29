@@ -133,11 +133,6 @@ class DataLogController(QtCore.QObject):
 
 
 
-    def _create_autoprocess_system(self):
-        self._directory_watcher = NewFileInDirectoryWatcher(file_types=['.txt'])
-        self._directory_watcher.file_added.connect(self.load_data_file)
-        self.setup_temperature_file_folder_monitor()
-
     def setup_temperature_file_folder_monitor(self):
         pass
 

@@ -415,7 +415,7 @@ class SetupEpicsDialog(QtWidgets.QDialog):
 
     '''def _style_widgets(self):
         self.ok_btn.setEnabled(False)
-        self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
+        self.setWindowFlags(QtCore.Qt.WindowType.FramelessWindowHint)
 
         file = open(os.path.join(style_path, "stylesheet.qss"))
         stylesheet = file.read()
@@ -461,12 +461,12 @@ class SetupEpicsDialog(QtWidgets.QDialog):
     def temperature_file_folder_pv(self, pv):
         self.temperature_file_directory_pv_txt.setText(pv)
 
-    def exec_(self):
+    def exec(self):
         """
-        Overwriting the dialog exec_ function to center the widget in the parent window before execution.
+        Overwriting the dialog exec function to center the widget in the parent window before execution.
         """
         parent_center = self._parent.window().mapToGlobal(self._parent.window().rect().center())
         self.move(parent_center.x() - 101, parent_center.y() - 48)
-        super(SetupEpicsDialog, self).exec_()
+        super(SetupEpicsDialog, self).exec()
 
 
