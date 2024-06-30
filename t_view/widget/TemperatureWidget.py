@@ -111,10 +111,13 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._settings_widget_layout.addWidget(self.roi_settings_widget)
 
 
+        temperature_tab_icon = QIcon()
+        temperature_tab_icon.addFile(os.path.join(resources_path,'style','device_thermostat.svg'))
+        spectrum_tab_icon = QIcon()
+        spectrum_tab_icon.addFile(os.path.join(resources_path,'style','infrared.svg'))
         
-        
-        self.tab_widget.addTab(self.graph_widget, 'Temperature')
-        self.tab_widget.addTab(self.settings_widget, 'Spectrum')
+        self.tab_widget.addTab(self.graph_widget,temperature_tab_icon, 'Temperature')
+        self.tab_widget.addTab(self.settings_widget,spectrum_tab_icon, 'Spectrum')
         
         
         self._left_layout.addWidget(self.tab_widget)
