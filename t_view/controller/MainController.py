@@ -47,7 +47,7 @@ class MainController(object):
         self.create_sub_controller()
         self.settings = QtCore.QSettings("T-View", "T-View")
         self.load_settings()
-        self.load_stylesheet()
+        #self.load_stylesheet()
 
     def show_window(self):
         self.main_widget.show()

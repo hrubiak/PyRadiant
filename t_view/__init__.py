@@ -21,8 +21,9 @@ import os
 import sys
 from sys import platform
 #from optparse import OptionParser
-import PyQt6
+#import PyQt6
 from PyQt6 import QtWidgets, QtCore
+import qdarktheme
 import platform
 
 from .version import get_version
@@ -58,6 +59,8 @@ def run_t_view():
     QtCore.QCoreApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
    
     app = QtWidgets.QApplication(sys.argv)
+    # Apply the complete dark theme to your Qt App.
+    qdarktheme.setup_theme()
     if platform != "darwin":
         app.setStyle('plastique')
     controller = MainController(app)
