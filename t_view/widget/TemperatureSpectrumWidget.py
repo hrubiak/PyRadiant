@@ -17,18 +17,20 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import os
 from PyQt6 import QtWidgets, QtCore, QtGui
-#from PyQt6.QtWidgets import QSizePolicy
-from PyQt6.QtGui import QColor
+
+from PyQt6.QtGui import QColor, QIcon
 import pyqtgraph as pg
 from pyqtgraph.exporters.ImageExporter import ImageExporter
 from pyqtgraph.exporters.SVGExporter import SVGExporter
 import numpy as np
-#from .ModifiedPlotItem import ModifiedPlotItem
+
 from PyQt6.QtCore import pyqtSignal
 from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem
 
-#pg.setConfigOption('useOpenGL', False)
+from .. import resources_path
+
 pg.setConfigOption('leftButtonPan', False)
 pg.setConfigOption('background', 'k')
 pg.setConfigOption('foreground', 'w')
@@ -565,6 +567,10 @@ class dataHistoryWidget(QtWidgets.QWidget):
         self._file_navigation_widget_layout.addWidget(self.load_data_log_file_lbl)
         self._file_navigation_widget_layout.addSpacerItem(HorizontalSpacerItem())
         self.clear_data_log_file_btn = QtWidgets.QPushButton('Clear Log')
+        clear_data_icon = QIcon()
+        clear_data_icon.addFile(os.path.join(resources_path,'style','delete_forever.svg'))
+        self.clear_data_log_file_btn.setIcon(clear_data_icon)
+
         self._file_navigation_widget_layout.addWidget(self.clear_data_log_file_btn)
 
         self._layout.addWidget(self.file_navigation_widget)

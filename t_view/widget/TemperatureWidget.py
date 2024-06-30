@@ -19,7 +19,8 @@
 
 from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtCore import Qt
-
+from PyQt6.QtWidgets import QStyle
+from PyQt6.QtGui import QIcon
 import os
 from .TemperatureSpectrumWidget import TemperatureSpectrumWidget
 from .RoiWidget import RoiWidget, IntegerTextField
@@ -27,7 +28,7 @@ from .Widgets import FileGroupBox
 from .Widgets import OutputGroupBox, StatusBar
 from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem
 
-
+from .. import resources_path
 
 
 
@@ -234,8 +235,8 @@ class TemperatureFileNavigation(QtWidgets.QWidget):
         
         self._layout.addWidget(self.file_gb)
         self._layout.addWidget(self.output_gb)
-        self.setMaximumHeight(100)
-        self.setMinimumHeight(100)
+        self.setMaximumHeight(120)
+        self.setMinimumHeight(120)
 
       
         self.setLayout(self._layout)
@@ -272,8 +273,16 @@ class SettingsGroupBox(QtWidgets.QGroupBox):
         self.settings_cb.setMaximumWidth(250)'''
         
         self._btns_layout = QtWidgets.QHBoxLayout()
-        self.load_setting_btn = QtWidgets.QPushButton('Load')
-        self.save_setting_btn = QtWidgets.QPushButton('Save')
+        self.load_setting_btn = QtWidgets.QPushButton("Load")
+        load_setting_icon = QIcon()
+        load_setting_icon.addFile(os.path.join(resources_path,'style','input.svg'))
+        self.load_setting_btn.setIcon(load_setting_icon)
+
+        self.save_setting_btn = QtWidgets.QPushButton("Save")
+        save_setting_pixmap = QStyle.StandardPixmap.SP_DialogSaveButton
+        save_setting_icon = self.style().standardIcon(save_setting_pixmap)  
+        self.save_setting_btn.setIcon(save_setting_icon)
+
         self._btns_layout.addWidget(self.load_setting_btn)
         self._btns_layout.addWidget(self.save_setting_btn)
         #self._btns_layout.addSpacerItem(HorizontalSpacerItem())

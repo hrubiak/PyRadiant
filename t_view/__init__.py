@@ -23,7 +23,7 @@ from sys import platform
 #from optparse import OptionParser
 #import PyQt6
 from PyQt6 import QtWidgets, QtCore
-import qdarktheme
+import qdarktheme 
 import platform
 
 from .version import get_version
@@ -49,20 +49,20 @@ def make_dpi_aware():
 
 def run_t_view():
 
-    make_dpi_aware()
+    '''make_dpi_aware()
     if hasattr(QtCore.Qt.ApplicationAttribute, 'AA_EnableHighDpiScaling'):
         QtWidgets.QApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
 
     if hasattr(QtCore.Qt.ApplicationAttribute, 'AA_UseHighDpiPixmaps'):
         QtWidgets.QApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
-
-    QtCore.QCoreApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
-   
+    '''
+    #QtCore.QCoreApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
+    qdarktheme.enable_hi_dpi()
     app = QtWidgets.QApplication(sys.argv)
     # Apply the complete dark theme to your Qt App.
-    qdarktheme.setup_theme()
-    if platform != "darwin":
-        app.setStyle('plastique')
+    qdarktheme.setup_theme("dark", custom_colors={"primary": "#4DDECD"}) 
+    '''if platform != "darwin":
+        app.setStyle('plastique')'''
     controller = MainController(app)
     controller.show_window()
     sys.exit(app.exec())

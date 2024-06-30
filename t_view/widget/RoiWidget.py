@@ -18,11 +18,12 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from functools import partial
-
+import os
 import numpy as np
 
 from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QIcon
 import pyqtgraph as pg
 from pyqtgraph.graphicsItems.ROI import Handle
 from pyqtgraph import ColorMap, HistogramLUTItem
@@ -30,6 +31,8 @@ from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem, DoubleSpinB
 #from .HistogramLUTItem import HistogramLUTItem
 
 from .Widgets import StatusBar
+
+from .. import resources_path
 
 '''#pg.setConfigOption('useOpenGL', False)
 pg.setConfigOption('leftButtonPan', False)
@@ -183,7 +186,11 @@ class wavelengthRangeGB(QtWidgets.QGroupBox):
         super().__init__('Wavelength range (nm)')
         
         self._layout = QtWidgets.QGridLayout(self)
-        self._layout.addWidget(QtWidgets.QLabel("Start:"),0,0)
+
+        start_lbl = QtWidgets.QLabel("Start:")
+        
+
+        self._layout.addWidget(start_lbl,0,0)
         self.wl_start = IntegerTextField('0')
         self._layout.addWidget(self.wl_start,0,1)
         self._layout.addWidget(QtWidgets.QLabel("End:"),0,2)
