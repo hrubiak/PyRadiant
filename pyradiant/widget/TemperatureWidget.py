@@ -53,8 +53,6 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.splitter_horizontal = QtWidgets.QSplitter(Qt.Orientation.Horizontal)
         self._main_layout.addWidget(self.splitter_horizontal)
 
-
-       
         
         self.tab_widget = QtWidgets.QTabWidget()
         
@@ -77,18 +75,29 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._roi_settings_widget_layout.addWidget(self.roi_widget)
         
         # scroll area stuff
-        self.scroll = QtWidgets.QScrollArea()
-        self.scroll.setStyleSheet("QScrollArea { border: 0px;}")
-        self.scroll.setMaximumWidth(320)
-        self.scroll.setMinimumWidth(320)
+        self.scroll_area = QtWidgets.QScrollArea()
+        self.scroll_area.setStyleSheet("QScrollArea { border: 0px;}")
+        self.scroll_area.setMaximumWidth(320)
+        self.scroll_area.setMinimumWidth(320)
         
         self.other_settings_widget = QtWidgets.QWidget()
-        self.scroll.setWidget(self.other_settings_widget)
-        self.scroll.setWidgetResizable(True)
+        self.scroll_area.setWidget(self.other_settings_widget)
+        self.scroll_area.setWidgetResizable(True)
 
         
         self.other_settings_widget.setMaximumWidth(300)
         self._other_settings_widget_layout = QtWidgets.QVBoxLayout(self.other_settings_widget)
+
+        self.side_bar_close_btn_widget = QtWidgets.QWidget()
+        self._side_bar_close_btn_widget_layout = QtWidgets.QHBoxLayout(self.side_bar_close_btn_widget)
+        self._side_bar_close_btn_widget_layout.setSpacing(0)
+        self._side_bar_close_btn_widget_layout.setContentsMargins(0, 0, 0, 0)
+        self.side_bar_close_btn = QtWidgets.QPushButton()
+        side_bar_close_icon = QIcon()
+        side_bar_close_icon.addFile(os.path.join(resources_path,'style','right_panel_close.svg'))
+        self.side_bar_close_btn.setIcon(side_bar_close_icon)
+        self._side_bar_close_btn_widget_layout.addWidget(self.side_bar_close_btn)
+        self._side_bar_close_btn_widget_layout.addSpacerItem(HorizontalSpacerItem())
         
         self.calibration_section = TemperatureCalibrationSection()
         
@@ -100,6 +109,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.roi_gb = self.roi_widget.roi_gb
         self.wl_range_widget = self.roi_widget.wl_range_widget
 
+        self._other_settings_widget_layout.addWidget(self.side_bar_close_btn_widget)
         self._other_settings_widget_layout.addWidget(self.settings_gb)
         self._other_settings_widget_layout.addWidget(self.wl_range_widget)
         self._other_settings_widget_layout.addWidget(self.roi_gb)
@@ -123,7 +133,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._left_layout.addWidget(self.tab_widget)
 
         self.splitter_horizontal.addWidget(self.left_widget)
-        self.splitter_horizontal.addWidget(self.scroll)
+        self.splitter_horizontal.addWidget(self.scroll_area)
         
         
 
@@ -133,6 +143,14 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.create_shortcuts()
 
         self.setAcceptDrops(True) 
+
+        self.side_bar_close_btn.clicked.connect(self.hide_right_panel)
+
+    def hide_right_panel(self):
+        self.splitter_horizontal.setSizes([self.splitter_horizontal.width(), 0])
+        
+    def show_right_panel(self):    
+        self.splitter_horizontal.setSizes([self.splitter_horizontal.width() - self.scroll_area.width(), self.scroll_area.width()])
 
     def style_widgets(self):
         pass
