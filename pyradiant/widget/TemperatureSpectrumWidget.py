@@ -39,7 +39,7 @@ pg.setConfigOption('antialias', True)
 colors = {
     'data_pen': '#FFFFFF',
     'data_brush': '#FFFFFF',
-    'fit_pen': 'r',
+    'fit_pen': '#FF005C',
     'downstream': '#FFD700',
     'upstream': '#FF6F61',
     'combined': '#66FFFF'
