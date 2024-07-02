@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
-# T-View - GUI program for analysis of thermal spectra during
+# -*- coding: utf8 -*-
+# PyRadiant - GUI program for analysis of thermal spectra during
 # laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
 # High Pressure Collaborative Access Team, Argonne National Laboratory
@@ -24,7 +24,7 @@ from tests.utility import QtTest
 
 import numpy as np
 
-from t_view.model.Spectrum import Spectrum, BkgNotInRangeError
+from pyradiant.model.Spectrum import Spectrum, BkgNotInRangeError
 
 
 class SpectrumTest(QtTest):

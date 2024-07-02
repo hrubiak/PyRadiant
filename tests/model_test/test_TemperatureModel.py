@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
-# T-View - GUI program for analysis of thermal spectra during
+# -*- coding: utf8 -*-
+# PyRadiant - GUI program for analysis of thermal spectra during
 # laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
 # High Pressure Collaborative Access Team, Argonne National Laboratory
@@ -20,14 +20,14 @@
 import unittest
 import os
 
-from qtpy import QtWidgets
+from PyQt6 import QtWidgets
 
 import numpy as np
 
 from tests.utility import QtTest
 
-from t_view.model.TemperatureModel import TemperatureModel, T_LOG_FILE, LOG_HEADER
-from t_view.model.RoiData import Roi, get_roi_max, get_roi_sum
+from pyradiant.model.TemperatureModel import TemperatureModel, T_LOG_FILE, LOG_HEADER
+from pyradiant.model.RoiData import Roi, get_roi_max, get_roi_sum
 
 unittest_path = os.path.dirname(__file__)
 unittest_files_path = os.path.join(unittest_path, '..', 'test_files')
@@ -441,10 +441,10 @@ class TestTemperatureModel(QtTest):
         self.assertEqual(self.model.ds_temperature_model.calibration_parameter.modus, 0)
         self.assertEqual(self.model.us_temperature_model.calibration_parameter.modus, 0)
 
-        self.assertTrue(self.model.ds_temperature is np.NaN)
-        self.assertTrue(self.model.ds_temperature_error is np.NaN)
-        self.assertTrue(self.model.us_temperature is np.NaN)
-        self.assertTrue(self.model.us_temperature_error is np.NaN)
+        self.assertTrue(self.model.ds_temperature is np.nan)
+        self.assertTrue(self.model.ds_temperature_error is np.nan)
+        self.assertTrue(self.model.us_temperature is np.nan)
+        self.assertTrue(self.model.us_temperature_error is np.nan)
 
         self.assertEqual(self.model.ds_roi.as_list(), [0, 0, 0, 0])
         self.assertEqual(self.model.us_roi.as_list(), [0, 0, 0, 0])
@@ -550,7 +550,7 @@ class TestTemperatureModel(QtTest):
         self.assertEqual(lines[2], "# Upstream (K): 1413.6	2.1\n")
         self.assertEqual(lines[3], "# \n")
         self.assertEqual(lines[4], "# Datacolumns:\n")
-        self.assertEqual(lines[5], "# lambda(nm)	DS_data	DS_fit\n")
+        self.assertEqual(lines[5], "# wavelength(nm)	DS_data	DS_fit\n")
 
         file.close()
         os.remove(ds_out_path)
@@ -563,7 +563,7 @@ class TestTemperatureModel(QtTest):
         self.assertEqual(lines[2], "# Upstream (K): 1413.6	2.1\n")
         self.assertEqual(lines[3], "# \n")
         self.assertEqual(lines[4], "# Datacolumns:\n")
-        self.assertEqual(lines[5], "# lambda(nm)	US_data	US_fit\n")
+        self.assertEqual(lines[5], "# wavelength(nm)	US_data	US_fit\n")
 
         file.close()
         os.remove(us_out_path)

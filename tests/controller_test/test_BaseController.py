@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
-# T-View - GUI program for analysis of thermal spectra during
+# -*- coding: utf8 -*-
+# PyRadiant - GUI program for analysis of thermal spectra during
 # laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
 # High Pressure Collaborative Access Team, Argonne National Laboratory
@@ -24,17 +24,17 @@ import os
 import shutil
 from numpy import array_equal
 
-from qtpy import QtWidgets, QtCore
-from qtpy.QtTest import QTest
+from PyQt6 import QtWidgets, QtCore
+from PyQt6.QtTest import QTest
 
 from tests.utility import QtTest
 
 unittest_path = os.path.dirname(__file__)
 unittest_files_path = os.path.join(unittest_path, '..', 'test_files')
 
-from t_view.model.BaseModel import SingleSpectrumModel
-from t_view.widget.BaseWidget import BaseWidget
-from t_view.controller.BaseController import BaseController
+from pyradiant.model.BaseModel import SingleSpectrumModel
+from pyradiant.widget.BaseWidget import BaseWidget
+from pyradiant.controller.BaseController import BaseController
 
 
 class BaseControllerTest(QtTest):
@@ -60,7 +60,7 @@ class BaseControllerTest(QtTest):
             os.remove(path)
 
     def test_loading_files(self):
-        QTest.mouseClick(self.widget.load_file_btn, QtCore.Qt.LeftButton)
+        QTest.mouseClick(self.widget.load_file_btn, QtCore.Qt.MouseButton.LeftButton)
 
         self.assertIsNotNone(self.model.spectrum)
         self.assertEqual(str(self.widget.filename_lbl.text()), 'temper_009.spe')
@@ -83,10 +83,10 @@ class BaseControllerTest(QtTest):
         QtWidgets.QFileDialog.getSaveFileName = MagicMock(return_value=out_path)
 
         # initiate the saving process
-        QTest.mouseClick(self.widget.save_data_btn, QtCore.Qt.LeftButton)
+        QTest.mouseClick(self.widget.save_data_btn, QtCore.Qt.MouseButton.LeftButton)
         self.assertTrue(os.path.exists(out_path))
 
-    @patch('qtpy.QtWidgets.QFileDialog.getSaveFileName')
+    @patch('PyQt6.QtWidgets.QFileDialog.getSaveFileName')
     def test_saving_graph(self, filedialog):
         # load a file:
         self.controller.load_file_btn_clicked()
@@ -95,7 +95,7 @@ class BaseControllerTest(QtTest):
         out_path = os.path.join(unittest_files_path, 'output.svg')
         filedialog.return_value = out_path
 
-        QTest.mouseClick(self.widget.save_graph_btn, QtCore.Qt.LeftButton)
+        QTest.mouseClick(self.widget.save_graph_btn, QtCore.Qt.MouseButton.LeftButton)
         self.assertTrue(os.path.exists(out_path))
 
         # do the same for png
@@ -103,7 +103,7 @@ class BaseControllerTest(QtTest):
         out_path = os.path.join(unittest_files_path, 'output.png')
         filedialog.return_value = out_path
 
-        QTest.mouseClick(self.widget.save_graph_btn, QtCore.Qt.LeftButton)
+        QTest.mouseClick(self.widget.save_graph_btn, QtCore.Qt.MouseButton.LeftButton)
         self.assertTrue(os.path.exists(out_path))
 
     def test_load_multiple_frame_file(self):
@@ -116,10 +116,10 @@ class BaseControllerTest(QtTest):
         self.assertEqual(float(str(self.widget.frame_txt.text())), self.model.current_frame)
 
         img_data = self.widget.roi_widget.img_widget.img_data
-        QTest.mouseClick(self.widget.load_next_frame_btn, QtCore.Qt.LeftButton)
+        QTest.mouseClick(self.widget.load_next_frame_btn, QtCore.Qt.MouseButton.LeftButton)
         img_data2 = self.widget.roi_widget.img_widget.img_data
         self.assertFalse(array_equal(img_data, img_data2))
-        QTest.mouseClick(self.widget.load_previous_frame_btn, QtCore.Qt.LeftButton)
+        QTest.mouseClick(self.widget.load_previous_frame_btn, QtCore.Qt.MouseButton.LeftButton)
         img_data3 = self.widget.roi_widget.img_widget.img_data
         self.assertTrue(array_equal(img_data, img_data3))
 
@@ -137,7 +137,7 @@ class BaseControllerTest(QtTest):
     def test_using_auto_load_function(self):
         self.controller.load_file_btn_clicked()
 
-        QTest.mouseClick(self.widget.autoprocess_cb, QtCore.Qt.LeftButton,
+        QTest.mouseClick(self.widget.autoprocess_cb, QtCore.Qt.MouseButton.LeftButton,
                          pos=QtCore.QPoint(2, self.widget.autoprocess_cb.height() / 2))
         self.assertTrue(self.widget.autoprocess_cb.isChecked())
         shutil.copy2(os.path.join(unittest_files_path, 'temper_009.spe'),

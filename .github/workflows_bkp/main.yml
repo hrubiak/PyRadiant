@@ -21,7 +21,7 @@ jobs:
       uses: actions/cache@v1
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('T-View.spec') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('PyRadiant.spec') }}
         restore-keys: |
           ${{ runner.os }}-pip-
 
@@ -30,7 +30,7 @@ jobs:
 
     - name: Install Pip Dependencies
       run: |
-        pip install scipy python-dateutil pytest pyqt5 h5py qtpy lmfit mock pyshortcuts
+        pip install scipy python-dateutil pytest PyQt6 h5py PyQt6 lmfit mock pyshortcuts
         pip install --pre pyqtgraph
         
     - name: Run tests

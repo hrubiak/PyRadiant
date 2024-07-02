@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
-# T-View - GUI program for analysis of thermal spectra during
+# -*- coding: utf8 -*-
+# PyRadiant - GUI program for analysis of thermal spectra during
 # laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
 # High Pressure Collaborative Access Team, Argonne National Laboratory
@@ -21,13 +21,13 @@ import unittest
 import os
 import numpy as np
 
-from qtpy import QtCore
-from qtpy.QtTest import QTest
+from PyQt6 import QtCore
+from PyQt6.QtTest import QTest
 from tests.utility import QtTest
 
-from t_view.model.DiamondModel import DiamondModel
-from t_view.widget.DiamondWidget import DiamondWidget
-from t_view.controller.DiamondController import DiamondController
+from pyradiant.model.DiamondModel import DiamondModel
+from pyradiant.widget.DiamondWidget import DiamondWidget
+from pyradiant.controller.DiamondController import DiamondController
 
 unittest_path = os.path.dirname(__file__)
 unittest_files_path = os.path.join(unittest_path, '..', 'test_files')

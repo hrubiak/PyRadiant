@@ -24,37 +24,37 @@ jobs:
       uses: actions/cache@v1
       with:
         path: ~/Library/Caches/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('T-View.spec') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('PyRadiant.spec') }}
         restore-keys: |
           ${{ runner.os }}-pip-
         
     - name: Install Pip Dependencies
       run: |
-        pip install scipy python-dateutil pytest pyqt5 h5py qtpy lmfit mock pyshortcuts pyinstaller
+        pip install scipy python-dateutil pytest PyQt6 h5py PyQt6 lmfit mock pyshortcuts pyinstaller
         pip install --pre pyqtgraph
 
-    - name: Run T-View from source to test and create version file
-      run: python run_t_view.py test
+    - name: Run PyRadiant from source to test and create version file
+      run: python run_pyradiant.py test
 
     - name: Run PyInstaller
-      run: pyinstaller T-View.spec
+      run: pyinstaller PyRadiant.spec
 
     - name: Clean Up Executable Folder
       run: |
-        cd dist/T-View*
+        cd dist/PyRadiant*
         cd Contents/MacOS
         rm QtQuick QtQml QtQmlmodels QtNetwork QtWebSockets libcrypto.1.0.0.dylib
 
-    - name: Run T-View Executable
+    - name: Run PyRadiant Executable
       run: |
-        cd dist/T-View*
+        cd dist/PyRadiant*
         cd Contents/MacOS
-        ./run_t_view test
+        ./run_pyradiant test
 
     - name: Compress App
       run: |
         cd dist
-        export folderName=$(ls | grep T-View*.app)
+        export folderName=$(ls | grep PyRadiant*.app)
         echo $folderName
         zip -r $folderName.zip $folderName
         du -sh $folderName.zip

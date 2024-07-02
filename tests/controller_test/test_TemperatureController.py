@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
-# T-View - GUI program for analysis of thermal spectra during
+# -*- coding: utf8 -*-
+# PyRadiant - GUI program for analysis of thermal spectra during
 # laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
 # High Pressure Collaborative Access Team, Argonne National Laboratory
@@ -23,14 +23,14 @@ import os, shutil
 
 import numpy as np
 
-from qtpy import QtCore, QtWidgets
-from qtpy.QtTest import QTest
+from PyQt6 import QtCore, QtWidgets
+from PyQt6.QtTest import QTest
 
 from tests.utility import QtTest
 
-from t_view.model.TemperatureModel import TemperatureModel
-from t_view.controller.TemperatureController import TemperatureController
-from t_view.widget.TemperatureWidget import TemperatureWidget
+from pyradiant.model.TemperatureModel import TemperatureModel
+from pyradiant.controller.TemperatureController import TemperatureController
+from pyradiant.widget.TemperatureWidget import TemperatureWidget
 
 unittest_path = os.path.dirname(__file__)
 unittest_files_path = os.path.join(unittest_path, '..', 'test_files')
@@ -60,7 +60,7 @@ class TestTemperatureController(QtTest):
         ds_x, ds_y = self.model.ds_data_spectrum.data
         us_x, us_y = self.model.us_data_spectrum.data
 
-        QTest.mouseClick(self.widget.load_next_data_file_btn, QtCore.Qt.LeftButton)
+        QTest.mouseClick(self.widget.load_next_data_file_btn, QtCore.Qt.MouseButton.LeftButton)
 
         ds_x_1, ds_y_1 = self.model.ds_data_spectrum.data
         us_x_1, us_y_1 = self.model.us_data_spectrum.data
@@ -71,7 +71,7 @@ class TestTemperatureController(QtTest):
         self.array_almost_equal(us_x, us_x_1)
         self.array_not_almost_equal(us_y, us_y_1)
 
-        QTest.mouseClick(self.widget.load_previous_data_file_btn, QtCore.Qt.LeftButton)
+        QTest.mouseClick(self.widget.load_previous_data_file_btn, QtCore.Qt.MouseButton.LeftButton)
 
         ds_x_2, ds_y_2 = self.model.ds_data_spectrum.data
         us_x_2, us_y_2 = self.model.us_data_spectrum.data
@@ -121,7 +121,7 @@ class TestTemperatureController(QtTest):
         self.assertEqual(1, int(str(self.widget.frame_num_txt.text())))
 
         # browsing frames changes the frame_num_txt
-        QTest.mouseClick(self.widget.load_next_frame_btn, QtCore.Qt.LeftButton)
+        QTest.mouseClick(self.widget.load_next_frame_btn, QtCore.Qt.MouseButton.LeftButton)
         self.assertEqual(2, int(str(self.widget.frame_num_txt.text())))
 
     def test_loading_downstream_calibration_img(self):
@@ -141,11 +141,11 @@ class TestTemperatureController(QtTest):
                          str(self.widget.us_calibration_filename_lbl.text()))
 
     def test_downstream_calibration_controls(self):
-        QTest.mouseClick(self.widget.ds_standard_rb, QtCore.Qt.LeftButton,
+        QTest.mouseClick(self.widget.ds_standard_rb, QtCore.Qt.MouseButton.LeftButton,
                          pos=QtCore.QPoint(2, self.widget.ds_standard_rb.height() / 2))
         self.assertTrue(self.widget.ds_standard_rb.isChecked())
         self.assertEqual(self.model.ds_temperature_model.calibration_parameter.modus, 1)
-        QTest.mouseClick(self.widget.ds_temperature_rb, QtCore.Qt.LeftButton,
+        QTest.mouseClick(self.widget.ds_temperature_rb, QtCore.Qt.MouseButton.LeftButton,
                          pos=QtCore.QPoint(2, self.widget.ds_standard_rb.height() / 2))
         self.assertEqual(self.model.ds_temperature_model.calibration_parameter.modus, 0)
 
@@ -160,11 +160,11 @@ class TestTemperatureController(QtTest):
         self.assertEqual(str(self.widget.ds_standard_filename_lbl.text()), os.path.basename(filename))
 
     def test_upstream_calibration_controls(self):
-        QTest.mouseClick(self.widget.us_standard_rb, QtCore.Qt.LeftButton,
+        QTest.mouseClick(self.widget.us_standard_rb, QtCore.Qt.MouseButton.LeftButton,
                          pos=QtCore.QPoint(2, self.widget.us_standard_rb.height() / 2))
         self.assertTrue(self.widget.us_standard_rb.isChecked())
         self.assertEqual(self.model.us_temperature_model.calibration_parameter.modus, 1)
-        QTest.mouseClick(self.widget.us_temperature_rb, QtCore.Qt.LeftButton,
+        QTest.mouseClick(self.widget.us_temperature_rb, QtCore.Qt.MouseButton.LeftButton,
                          pos=QtCore.QPoint(2, self.widget.us_standard_rb.height() / 2))
         self.assertEqual(self.model.us_temperature_model.calibration_parameter.modus, 0)
 
@@ -256,12 +256,12 @@ class TestTemperatureController(QtTest):
         setting_filename = os.path.join(temperature_fitting_path, 'PiMax.trs')
         self.controller.load_setting_file(setting_filename)
 
-    @patch('qtpy.QtWidgets.QFileDialog.getSaveFileName')
+    @patch('PyQt6.QtWidgets.QFileDialog.getSaveFileName')
     def test_saving_data_as_txt(self, filedialog):
         self.load_single_frame_file_and_calibration()
         out_path = os.path.join(unittest_files_path, 'data.txt')
         filedialog.return_value = out_path
-        QTest.mouseClick(self.widget.save_data_btn, QtCore.Qt.LeftButton)
+        QTest.mouseClick(self.widget.save_data_btn, QtCore.Qt.MouseButton.LeftButton)
 
         saved_filename_us = os.path.splitext(out_path)[0] + '_us.txt'
         saved_filename_ds = os.path.splitext(out_path)[0] + '_ds.txt'
@@ -271,20 +271,20 @@ class TestTemperatureController(QtTest):
         os.remove(saved_filename_us)
         os.remove(saved_filename_ds)
 
-    @patch('qtpy.QtWidgets.QFileDialog.getSaveFileName')
+    @patch('PyQt6.QtWidgets.QFileDialog.getSaveFileName')
     def test_saving_graph_image(self, filedialog):
         self.load_single_frame_file_and_calibration()
 
         out_path = os.path.join(unittest_files_path, 'data.png')
         filedialog.return_value = out_path
-        QTest.mouseClick(self.widget.save_graph_btn, QtCore.Qt.LeftButton)
+        QTest.mouseClick(self.widget.save_graph_btn, QtCore.Qt.MouseButton.LeftButton)
 
         self.assertTrue(os.path.exists(out_path))
         os.remove(out_path)
 
         out_path = os.path.join(unittest_files_path, 'data.svg')
         filedialog.return_value = out_path
-        QTest.mouseClick(self.widget.save_graph_btn, QtCore.Qt.LeftButton)
+        QTest.mouseClick(self.widget.save_graph_btn, QtCore.Qt.MouseButton.LeftButton)
 
         self.assertTrue(os.path.exists(out_path))
         os.remove(out_path)
@@ -324,7 +324,7 @@ class TestTemperatureController(QtTest):
             import epics
         except ImportError:
             return
-        QTest.mouseClick(self.widget.connect_to_epics_cb, QtCore.Qt.LeftButton,
+        QTest.mouseClick(self.widget.connect_to_epics_cb, QtCore.Qt.MouseButton.LeftButton,
                          pos=QtCore.QPoint(self.widget.connect_to_epics_cb.width() - 2,
                                            self.widget.connect_to_epics_cb.height() / 2))
 

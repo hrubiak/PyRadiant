@@ -9,7 +9,7 @@
 *.pyc
 *.xml
 *.XML
-T-View/spe_xml.xml
+PyRadiant/spe_xml.xml
 T_log.txt
 __version__
 *log.txt

@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
-# T-View - GUI program for analysis of thermal spectra during
+# -*- coding: utf8 -*-
+# PyRadiant - GUI program for analysis of thermal spectra during
 # laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
 # High Pressure Collaborative Access Team, Argonne National Laboratory
@@ -22,15 +22,15 @@ import os, sys
 import numpy as np
 
 from ..ehook import excepthook
-from qtpy import QtWidgets, QtCore
-from qtpy.QtTest import QTest
+from PyQt6 import QtWidgets, QtCore
+from PyQt6.QtTest import QTest
 
 from tests.utility import QtTest
 
-from t_view.model.RamanModel import RamanModel
-from t_view.widget.RamanWidget import RamanWidget
-from t_view.controller.RamanController import RamanController
-from t_view.controller.BaseController import BaseController
+from pyradiant.model.RamanModel import RamanModel
+from pyradiant.widget.RamanWidget import RamanWidget
+from pyradiant.controller.RamanController import RamanController
+from pyradiant.controller.BaseController import BaseController
 
 unittest_path = os.path.dirname(__file__)
 unittest_files_path = os.path.join(unittest_path, '..', 'test_files')
@@ -46,10 +46,10 @@ class RamanControllerTest(QtTest):
         self.model.load_file(test_file)
 
     def click_checkbox(self, checkbox):
-        QTest.mouseClick(checkbox, QtCore.Qt.LeftButton, pos=QtCore.QPoint(2, checkbox.height() / 2))
+        QTest.mouseClick(checkbox, QtCore.Qt.MouseButton.LeftButton, pos=QtCore.QPoint(2, checkbox.height() / 2))
 
     def click_button(widget):
-        QTest.mouseClick(widget, QtCore.Qt.LeftButton)
+        QTest.mouseClick(widget, QtCore.Qt.MouseButton.LeftButton)
 
     def test_laser_line(self):
         x, y = self.widget.graph_widget.get_data()
