@@ -44,8 +44,8 @@ colors = {
     'data_pen': '#FFFFFF',
     'data_brush': '#FFFFFF',
     'fit_pen': 'r',
-    'downstream': '#FFFF00',
-    'upstream': '#FF9900',
+    'downstream': '#FFD700',
+    'upstream': '#FF6F61',
     'combined': '#66FFFF'
 }
 

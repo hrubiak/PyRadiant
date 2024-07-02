@@ -71,7 +71,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.roi_settings_widget = QtWidgets.QWidget()
         self._roi_settings_widget_layout = QtWidgets.QVBoxLayout(self.roi_settings_widget)
         self.roi_widget = RoiWidget(4, ['Downstream', 'Upstream', 'Background', 'Background'],
-                                    roi_colors=[(255, 255, 0), (255, 140, 0),(155, 155, 0), (175,  110, 0)])
+                                    roi_colors=[(255, 215, 0), (255, 111, 97),(151, 135, 50), (157,  60, 50)])
         self._roi_settings_widget_layout.addWidget(self.roi_widget)
         
         # scroll area stuff
@@ -321,8 +321,8 @@ class TemperatureCalibrationSection(QtWidgets.QGroupBox):
         super().__init__('Intensity calibration')
         self._layout = QtWidgets.QVBoxLayout()
 
-        self.downstream_gb = CalibrationGB('Downstream', 'rgba(255, 255, 0, 255)')
-        self.upstream_gb = CalibrationGB('Upstream', 'rgba(255, 140, 0, 255)')
+        self.downstream_gb = CalibrationGB('Downstream', 'rgba(255, 215, 0, 255)')
+        self.upstream_gb = CalibrationGB('Upstream', 'rgba(255, 111, 97, 255)')
 
         self._layout.addWidget(self.downstream_gb)
         self._layout.addWidget(self.upstream_gb)
