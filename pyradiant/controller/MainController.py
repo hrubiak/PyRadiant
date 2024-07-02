@@ -1,5 +1,5 @@
 # -*- coding: utf8 -*-
-# T-View - GUI program for analysis of thermal spectra during
+# PyRadiant - GUI program for analysis of thermal spectra during
 # laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
 # High Pressure Collaborative Access Team, Argonne National Laboratory
@@ -40,12 +40,12 @@ class MainController(object):
         self.data_history_widget = dataHistoryWidget()
         
 
-        self.main_widget.setWindowTitle('T-View ' + __version__)
+        self.main_widget.setWindowTitle('PyRadiant ' + __version__)
 
         self.create_signals()
         self.create_data_models()
         self.create_sub_controller()
-        self.settings = QtCore.QSettings("T-View", "T-View")
+        self.settings = QtCore.QSettings("PyRadiant", "PyRadiant")
         self.load_settings()
         #self.load_stylesheet()
 

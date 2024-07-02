@@ -24,7 +24,7 @@ jobs:
       uses: actions/cache@v1
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('T-View.spec') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('PyRadiant.spec') }}
         restore-keys: |
           ${{ runner.os }}-pip-
 
@@ -36,26 +36,26 @@ jobs:
         pip install scipy python-dateutil pytest PyQt6 h5py PyQt6 lmfit mock pyshortcuts pyinstaller
         pip install --pre pyqtgraph
 
-    - name: Run T-view from source to test and create version file
-      run: xvfb-run python run_t_view.py test
+    - name: Run PyRadiant from source to test and create version file
+      run: xvfb-run python run_pyradiant.py test
         
     - name: Run PyInstaller
-      run: pyinstaller T-View.spec
+      run: pyinstaller PyRadiant.spec
 
     - name: Clean Up Executable Folder
       run: |
-        cd dist/T-View*
+        cd dist/PyRadiant*
         rm libQt5Quick.so.5 libQt5Qml.so.5 libQt5Network.so.5 libcrypto.so.1.1
 
-    - name: Run T-View executable
+    - name: Run PyRadiant executable
       run: |
-        cd dist/T-View*
-        xvfb-run ./T-View test
+        cd dist/PyRadiant*
+        xvfb-run ./PyRadiant test
 
     - name: Compress Executable
       run: |
         cd dist
-        export folderName=$(ls | grep T-View)
+        export folderName=$(ls | grep PyRadiant)
         tar -zcvf $folderName.tar.gz $folderName
         du -sh $folderName.tar.gz
 

@@ -21,7 +21,7 @@ jobs:
       uses: actions/cache@v1
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('T-View.spec') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('PyRadiant.spec') }}
         restore-keys: |
           ${{ runner.os }}-pip-
 

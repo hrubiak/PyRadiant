@@ -43,7 +43,7 @@ def get_config():
     cfg.style = ""
     cfg.tag_prefix = ""
     cfg.parentdir_prefix = "''"
-    cfg.versionfile_source = "t_view/_version.py"
+    cfg.versionfile_source = "pyradiant/_version.py"
     cfg.verbose = False
     return cfg
 

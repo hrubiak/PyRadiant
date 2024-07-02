@@ -11,13 +11,13 @@ folder = os.getcwd()
 lib2to3_path = os.path.dirname(lib2to3.__file__)
 
 extra_datas = [
-    ("t_view/resources", "t_view/resources"),
+    ("pyradiant/resources", "pyradiant/resources"),
     (os.path.join(lib2to3_path, 'Grammar.txt'), 'lib2to3/'),
     (os.path.join(lib2to3_path, 'PatternGrammar.txt'), 'lib2to3/'),
 ]
 
 
-a = Analysis(['run_t_view.py'],
+a = Analysis(['run_pyradiant.py'],
              pathex=[folder],
              datas=extra_datas,
              hiddenimports=['scipy.special._ufuncs_cxx', 'scipy.integrate', 'scipy.integrate.quadrature',
@@ -40,23 +40,23 @@ platform = ''
 
 if _platform == "linux" or _platform == "linux2":
     platform = "Linux64"
-    name = "T-View"
+    name = "PyRadiant"
 elif _platform == "win32" or _platform == "cygwin":
     platform = "Win64"
-    name = "T-View.exe"
+    name = "PyRadiant.exe"
 elif _platform == "darwin":
     platform = "Mac64"
-    name = "run_t_view"
+    name = "run_pyradiant"
 
-# getting the current version of T-view
+# getting the current version of PyRadiant
 # __version__ file for executable has prevalence over versioneer output
 try:
-    with open(os.path.join('t-view', '__version__'), 'r') as fp:
+    with open(os.path.join('pyradiant', '__version__'), 'r') as fp:
         __version__ = fp.readline()
 except FileNotFoundError:
-    from t_view import __version__
+    from pyradiant import __version__
 
-from t_view import icons_path
+from pyradiant import icons_path
 
 pyz = PYZ(a.pure, a.zipped_data,
           cipher=block_cipher)
@@ -77,9 +77,9 @@ coll = COLLECT(exe,
                a.datas,
                strip=None,
                upx=True,
-               name='T-View_{}_{}'.format(platform, __version__))
+               name='PyRadiant_{}_{}'.format(platform, __version__))
 
 if _platform == "darwin":
     app = BUNDLE(coll,
-                 name='T-View_{}.app'.format(__version__)
+                 name='PyRadiant_{}.app'.format(__version__)
                  )

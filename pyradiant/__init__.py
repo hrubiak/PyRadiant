@@ -1,5 +1,5 @@
 # -*- encoding: utf8 -*-
-# T-View - GUI program for analysis of thermal spectra during
+# PyRadiant - GUI program for analysis of thermal spectra during
 # laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
 # High Pressure Collaborative Access Team, Argonne National Laboratory
@@ -47,7 +47,7 @@ def make_dpi_aware():
             # Set the DPI awareness
             ctypes.windll.shcore.SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE)
 
-def run_t_view():
+def run_pyradiant():
 
     '''make_dpi_aware()
     if hasattr(QtCore.Qt.ApplicationAttribute, 'AA_EnableHighDpiScaling'):

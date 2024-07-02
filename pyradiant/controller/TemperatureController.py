@@ -1,5 +1,5 @@
 # -*- coding: utf8 -*-
-# T-View - GUI program for analysis of thermal spectra during
+# PyRadiant - GUI program for analysis of thermal spectra during
 # laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
 # High Pressure Collaborative Access Team, Argonne National Laboratory
@@ -583,7 +583,7 @@ class TemperatureController(QtCore.QObject):
         self.setup_epics_dialog.area_detector_pv = eps.epics_settings['area_detector']
         self.setup_epics_dialog.exec()
         if self.setup_epics_dialog.approved:
-            with open('t_view/model/epics_settings.py', 'w') as outfile:
+            with open('pyradiant/model/epics_settings.py', 'w') as outfile:
                 outfile.write('epics_settings = {\n')
                 outfile.write("    'us_last_temp': '" + self.setup_epics_dialog.us_temp_pv + "',\n")
                 outfile.write("    'ds_last_temp': '" + self.setup_epics_dialog.ds_temp_pv + "',\n")

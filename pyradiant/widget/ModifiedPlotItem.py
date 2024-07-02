@@ -1,5 +1,5 @@
 # -*- coding: utf8 -*-
-# T-View - GUI program for analysis of thermal spectra during
+# PyRadiant - GUI program for analysis of thermal spectra during
 # laser heated diamond anvil cell experiments
 # Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
 # High Pressure Collaborative Access Team, Argonne National Laboratory
@@ -42,7 +42,7 @@ class ModifiedPlotItem(pg.PlotItem):
             self.range_changed_timer = QtCore.QTimer()
             self.range_changed_timer.timeout.connect(self.emit_sig_range_changed)
             self.range_changed_timer.setInterval(30)
-            self.last_view_range = np.array(self.vb.viewRange())
+            self.laspyradiant_range = np.array(self.vb.viewRange())
         else:
             self.vb.mouseDragEvent = self.empty_event_function
             self.vb.wheelEvent = self.empty_event_function
@@ -134,9 +134,9 @@ class ModifiedPlotItem(pg.PlotItem):
 
     def emit_sig_range_changed(self):
         new_view_range = np.array(self.vb.viewRange())
-        if not np.array_equal(self.last_view_range, new_view_range):
+        if not np.array_equal(self.laspyradiant_range, new_view_range):
             self.vb.sigRangeChangedManually.emit(self.vb.state['mouseEnabled'])
-            self.last_view_range = new_view_range
+            self.laspyradiant_range = new_view_range
 
     def wheel_event(self, ev, axis=None, *args):
         pg.ViewBox.wheelEvent(self.vb, ev, axis)
