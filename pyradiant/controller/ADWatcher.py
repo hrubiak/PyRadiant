@@ -19,7 +19,7 @@
 
 import os
 import time
-
+import codecs
 from PyQt6 import QtCore
 from epics import PV 
 
@@ -61,6 +61,7 @@ class ADWatcher(QtCore.QObject):
         
         ## monitor epics pvs
         file_path_pv_name = new_record_name + ':cam1:FullFileName_RBV'
+        image_pv_name = new_record_name + ':Pva1:Image'
    
         self.pvs = {}
         self.pvs['file_path'] = PV(file_path_pv_name)
@@ -87,9 +88,11 @@ class ADWatcher(QtCore.QObject):
 
     def handle_AD_callback(self, Status):
        
-        if Status == 'Done':
-           
-            self.file_added.emit('test')
+        if len(Status):
+            path = os.path.normpath(Status)
+            print("AD: "+ path)
+            self.file_added.emit(path)
+            
 
 
 

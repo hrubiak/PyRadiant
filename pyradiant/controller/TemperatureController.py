@@ -147,10 +147,13 @@ class TemperatureController(QtCore.QObject):
 
         for filename in filenames:
             if filename != '':
-                self._exp_working_dir = os.path.dirname(str(filename))
-                self.model.load_data_image(str(filename))
-                self._directory_watcher.path = self._exp_working_dir
-                print('Loaded File: ', filename)
+                if os.path.isfile(filename):
+                    self._exp_working_dir = os.path.dirname(str(filename))
+                    self.model.load_data_image(str(filename))
+                    self._directory_watcher.path = self._exp_working_dir
+                    print('Loaded File: ', filename)
+                else:
+                    print('file not found: ' + str(filename))
 
     def file_dragged_in(self,files):
         self.load_data_file(filenames=files)
