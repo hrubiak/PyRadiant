@@ -101,19 +101,25 @@ class TemperatureModel(QtCore.QObject):
         else:
             return None
 
+    def load_data_image_ad(self, area_detector):
+        self.load_data_image(area_detector.record_name, area_detector=area_detector)
 
-    # loading spe image files:
+    # loading spe or h5 image files:
     #########################################################################
-    def load_data_image(self, filename):
+    def load_data_image(self, filename, area_detector=None):
         if not self.filename or not os.path.dirname(self.filename) == os.path.dirname(filename):
             self.create_log_file(os.path.dirname(filename))
         self.filename = filename
         # Get the extension
         _, file_extension = os.path.splitext(filename)
-        if file_extension == '.spe':
-            self.data_img_file = SpeFile(filename)
-        elif file_extension == '.h5':
-            self.data_img_file = H5File(filename,self.x_calibration)
+        if area_detector!=None:
+            area_detector.update_data()
+            self.data_img_file = area_detector
+        else:
+            if file_extension == '.spe':
+                self.data_img_file = SpeFile(filename)
+            elif file_extension == '.h5':
+                self.data_img_file = H5File(filename,self.x_calibration)
 
         if self.data_img_file.num_frames > 1:
             self._data_img = self.data_img_file.img[0]
@@ -124,6 +130,8 @@ class TemperatureModel(QtCore.QObject):
         self._filename_iterator.update_filename(filename)
         self.mtime = self.get_last_modified_time(filename)
         self.data_changed_emit()
+
+
     
     def get_last_modified_time(self, file_path):
         # Get the modification time in seconds since the epoch

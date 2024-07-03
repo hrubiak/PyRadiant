@@ -68,8 +68,27 @@ class TemperatureController(QtCore.QObject):
         self._exp_working_dir = ''
         self._setting_working_dir = ''
 
+        self.live_data = False # this is True when AD checkbox is checked and an area detector connection is established, otherwise it's False
+        self._AD_watcher = None
+        if epics != None:
+            self.connect_to_area_detector()
+
+
+
         self._create_autoprocess_system()
         self.create_signals()
+
+    def connect_to_area_detector(self):
+        if epics != None:
+            ad_on = self.widget.connect_to_ad_cb.isChecked()
+            if ad_on:
+                if self._AD_watcher == None:
+                    self._AD_watcher = ADWatcher(record_name=eps.epics_settings['area_detector'], x_calibration=None)
+                    self._AD_watcher.activate()
+                
+        else:
+            ad_on = self.widget.connect_to_ad_cb.setChecked(False)
+            self.widget.connect_to_ad_cb.setEnabled(False)
 
     def create_signals(self):
         # File signals
@@ -132,11 +151,20 @@ class TemperatureController(QtCore.QObject):
         self.connect_click_function(self.widget.data_history_btn, self.data_history_btn_callback)
         self.connect_click_function(self.data_history_widget.clear_data_log_file_btn, self.clear_data_log_file_btn_callback)
 
+        # epics stuff
+        self.widget.connect_to_ad_cb.toggled.connect(self.connect_to_ad_cb_callback)
+
+
+
     def connect_click_function(self, emitter, function):
         emitter.clicked.connect(function)
         
     def close_log(self):
         self.model.close_log()
+
+    def connect_to_ad_cb_callback(self):
+        if self.widget.connect_to_ad_cb.isChecked():
+            self.connect_to_area_detector()
 
     def load_data_file(self, filenames=None):
         if isinstance(filenames, str):
@@ -154,6 +182,14 @@ class TemperatureController(QtCore.QObject):
                     print('Loaded File: ', filename)
                 else:
                     print('file not found: ' + str(filename))
+
+    def load_data_file_ad(self, filename=None):
+        if isinstance(filename, str):
+         
+        
+            self.model.load_data_image_ad(self._AD_watcher)
+          
+              
 
     def file_dragged_in(self,files):
         self.load_data_file(filenames=files)
@@ -558,8 +594,8 @@ class TemperatureController(QtCore.QObject):
 
         if epics is not None and eps.epics_settings['area_detector'] is not None \
                 and eps.epics_settings['area_detector'] != 'None':
-            self._AD_watcher = ADWatcher(record_name=eps.epics_settings['area_detector'])
-            self._AD_watcher.file_added.connect(self.load_data_file)
+            if self._AD_watcher != None:
+                self._AD_watcher.file_added.connect(self.load_data_file_ad)
         
         self.setup_temperature_file_folder_monitor()
 
