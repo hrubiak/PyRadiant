@@ -39,7 +39,7 @@ pg.setConfigOption('antialias', True)
 colors = {
     'data_pen': '#FFFFFF',
     'data_brush': '#FFFFFF',
-    'fit_pen': '#FF005C',
+    'fit_pen': '#C90048',
     'downstream': '#FFD700',
     'upstream': '#FF6F61',
     'combined': '#66FFFF'
@@ -172,7 +172,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._us_data_item.setDownsampling(True)
         self._us_masked_data_item = pg.PlotDataItem(pen=pg.mkPen("#d61cff", width=1.0, conntect='finite',antialias=True ))
         self._us_masked_data_item.setDownsampling(True)
-        self._us_fit_item = pg.PlotDataItem(pen=pg.mkPen(colors['fit_pen'], width=3, conntect='finite',antialias=True))
+        self._us_fit_item = pg.PlotDataItem(pen=pg.mkPen(colors['fit_pen'], width=4, conntect='finite',antialias=True))
         self._us_fit_item.setDownsampling(True)
 
         self._us_plot.addItem(self._us_data_item)
@@ -198,7 +198,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._ds_data_item.setDownsampling(True)
         self._ds_masked_data_item = pg.PlotDataItem(pen=pg.mkPen("#d61cff", width=1.0, conntect='finite',antialias=True ))
         self._ds_masked_data_item.setDownsampling(True)
-        self._ds_fit_item = pg.PlotDataItem(pen=pg.mkPen(colors['fit_pen'], width=3, conntect='finite',antialias=True))
+        self._ds_fit_item = pg.PlotDataItem(pen=pg.mkPen(colors['fit_pen'], width=4, conntect='finite',antialias=True))
         self._ds_fit_item.setDownsampling(True)
 
         self._ds_plot.addItem(self._ds_data_item)
