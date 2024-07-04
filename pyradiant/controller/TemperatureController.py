@@ -586,7 +586,8 @@ class TemperatureController(QtCore.QObject):
                 self._directory_watcher.deactivate()
                 self.widget.autoprocess_lbl.setText('')
 
-            self._AD_watcher.deactivate()
+            if self._AD_watcher != None:
+                self._AD_watcher.deactivate()
 
     def _create_autoprocess_system(self):
         self._directory_watcher = NewFileInDirectoryWatcher(file_types=['.spe'])
