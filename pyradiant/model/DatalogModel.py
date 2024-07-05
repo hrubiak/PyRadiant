@@ -135,7 +135,13 @@ class DatalogModel(QtCore.QObject):
         next(reader)  # Skip the header line in deque
         for row in reader:
             if row['Path'] != 'Path':
-                record = DataRecord(**row)
-                data_records.append(record)
+                headings = list(row.keys())
+
+                all_strings = all(isinstance(item, str) for item in headings)
+                if all_strings:
+                    record = DataRecord(**row)
+                    data_records.append(record)
+                else:
+                    continue
         
         return data_records
