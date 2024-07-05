@@ -523,12 +523,14 @@ class TemperatureController(QtCore.QObject):
         x = int(np.floor(x))
         y = int(np.floor(y))
         try:
-            s = self.model.data_img.shape
-            if int(y)< s[0] and int(x)< s[1] and int(x) >= 0 and int(y) >= 0:
-                self.widget.roi_widget.pos_lbl.setText("X: {:5.0f}  Y: {:5.0f}    Int: {:6.0f}    Wavelength: {:5.2f} nm".
-                                                   format(x, y,
-                                                          self.model.data_img[int(y), int(x)],
-                                                          self.model.data_img_file.x_calibration[int(x)]))
+            
+            if self.model.data_img != None:
+                s = self.model.data_img.shape
+                if int(y)< s[0] and int(x)< s[1] and int(x) >= 0 and int(y) >= 0:
+                    self.widget.roi_widget.pos_lbl.setText("X: {:5.0f}  Y: {:5.0f}    Int: {:6.0f}    Wavelength: {:5.2f} nm".
+                                                    format(x, y,
+                                                            self.model.data_img[int(y), int(x)],
+                                                            self.model.data_img_file.x_calibration[int(x)]))
         except (IndexError, TypeError):
             pass
 
