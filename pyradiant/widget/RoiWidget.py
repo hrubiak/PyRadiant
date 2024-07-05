@@ -605,7 +605,7 @@ class CustomHandle(pg.graphicsItems.ROI.Handle):
             if ev.acceptDrags(QtCore.Qt.MouseButton.LeftButton):
                 hover = True
             for btn in [QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.RightButton, QtCore.Qt.MouseButton.MiddleButton]:
-                if int(self.acceptedMouseButtons() & btn) > 0 and ev.acceptClicks(btn):
+                if (self.acceptedMouseButtons() & btn) and ev.acceptClicks(btn):
                     hover = True
 
         if hover:
