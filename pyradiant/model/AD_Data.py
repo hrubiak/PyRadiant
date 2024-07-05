@@ -35,7 +35,7 @@ RH: Updated July 3, 2024
 
 from epics import PV
 from PyQt6.QtCore import QObject
-from enum import Enum
+
 
 
 
