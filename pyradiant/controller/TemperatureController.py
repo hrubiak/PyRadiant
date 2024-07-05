@@ -524,7 +524,7 @@ class TemperatureController(QtCore.QObject):
         y = int(np.floor(y))
         try:
             
-            if self.model.data_img != None:
+            if self.model.data_img is not None:
                 s = self.model.data_img.shape
                 if int(y)< s[0] and int(x)< s[1] and int(x) >= 0 and int(y) >= 0:
                     self.widget.roi_widget.pos_lbl.setText("X: {:5.0f}  Y: {:5.0f}    Int: {:6.0f}    Wavelength: {:5.2f} nm".
