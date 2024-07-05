@@ -548,7 +548,7 @@ class RoiImageWidget(QtWidgets.QWidget):
     def myMouseClickEvent(self, ev):
         if ev.button() == QtCore.Qt.MouseButton.RightButton or \
                 (ev.button() == QtCore.Qt.MouseButton.LeftButton and
-                         ev.modifiers() & QtCore.Qt.ControlModifier):
+                         ev.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier):
             self.pg_viewbox.autoRange()
         ev.accept()
 
@@ -574,7 +574,7 @@ class ImgROI(pg.ROI):
         if not ev.isExit():
             if ev.acceptDrags(QtCore.Qt.MouseButton.LeftButton):
                 hover = True
-            for btn in [QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.RightButton, QtCore.Qt.MidButton]:
+            for btn in [QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.RightButton, QtCore.Qt.MouseButton.MiddleButton]:
                 if int(self.acceptedMouseButtons() & btn) > 0 and ev.acceptClicks(btn):
                     hover = True
 
@@ -603,7 +603,7 @@ class CustomHandle(pg.graphicsItems.ROI.Handle):
         if not ev.isExit():
             if ev.acceptDrags(QtCore.Qt.MouseButton.LeftButton):
                 hover = True
-            for btn in [QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.RightButton, QtCore.Qt.MidButton]:
+            for btn in [QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.RightButton, QtCore.Qt.MouseButton.MiddleButton]:
                 if int(self.acceptedMouseButtons() & btn) > 0 and ev.acceptClicks(btn):
                     hover = True
 
