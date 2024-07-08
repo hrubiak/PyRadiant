@@ -82,13 +82,22 @@ class TemperatureController(QtCore.QObject):
         if epics != None:
             ad_on = self.widget.connect_to_ad_cb.isChecked()
             if ad_on:
-                if self._AD_watcher == None:
+                if self._AD_watcher is None:
                     self._AD_watcher = ADWatcher(record_name=eps.epics_settings['area_detector'], x_calibration=None)
-                    self._AD_watcher.activate()
+                    if self._AD_watcher.initialized:
+                        self._AD_watcher.activate()
+                    else:
+                        self._AD_watcher = None
                 
         else:
             ad_on = self.widget.connect_to_ad_cb.setChecked(False)
             self.widget.connect_to_ad_cb.setEnabled(False)
+    
+    def disconnect_to_area_detector(self):
+        if self._AD_watcher != None:
+            if self._AD_watcher.initialized:
+                self._AD_watcher.deactivate()
+                self._AD_watcher = None
 
     def create_signals(self):
         # File signals
@@ -165,6 +174,8 @@ class TemperatureController(QtCore.QObject):
     def connect_to_ad_cb_callback(self):
         if self.widget.connect_to_ad_cb.isChecked():
             self.connect_to_area_detector()
+        else:
+            self.disconnect_to_area_detector()
 
     def load_data_file(self, filenames=None):
         if isinstance(filenames, str):

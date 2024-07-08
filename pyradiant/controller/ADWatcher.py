@@ -20,7 +20,7 @@
 import os
 import time, copy
 from PyQt6 import QtCore
-from epics import PV 
+from epics import PV, caget
 
 
 ColorMode = {
@@ -71,67 +71,74 @@ class ADWatcher(QtCore.QObject):
     """
     file_added = QtCore.pyqtSignal(str)
 
-    def __init__(self, record_name, x_calibration, file_type=None, activate=False, debug = False):
+    def __init__(self, record_name='16LF1', x_calibration=None, file_type=None, activate=False, debug = False):
         """
         :record_name: Area Detector PV name, e.g. '16LF1'.
        
         :param activate: whether or not the Watcher will already emit signals
         """
         super().__init__()
+        self.initialized = False
         self.file_path_monitor = None
         self.file_type = file_type
         self.n_detectors = 1 # may support multiple detectors in the future, only 1 is implemented for now
         self.record_name = record_name
+        pv_name = record_name+ ':cam1:Model_RBV'
+        check_pv = caget(pv_name, as_string=True)
+        if check_pv != None:
 
-        pvs = {'cam1': 
-                    {
-                    'Manufacturer_RBV': None,
-                    'Model_RBV' : None,
-                    'LFGrating_RBV' : None,
-                    'LFGratingWL_RBV' : None,
-                    'AcquireTime_RBV': None,
-                    'LFGain_RBV': None,
-                    'LFExitPort_RBV': None,
-                    'LFIntensifierGain_RBV': None,
-                    'TemperatureActual_RBV': None},
-         
-                'image1' : {'ArrayData': None,
-                            'ArraySize0_RBV': None,
-                            'ArraySize1_RBV': None,
-                            'ArraySize2_RBV': None,
-                            'DataType_RBV': None,
-                            'NDimensions_RBV': None,
-                            'ColorMode_RBV': None   
-                            },
-               }
-        
-        self.pvs = []
-        for i in range(self.n_detectors):
-            self.pvs.append(copy.deepcopy(pvs))
-            for group in self.pvs[i].keys():
-                for pv in self.pvs[i][group].keys():
-                    name = self.record_name+':'+str(group[:-1])+str(i+1) + ':' + pv
-                    self.pvs[i][group][pv] = PV(name)
-        
-        self.detector = 'NA'
-        self.exposure_time = 0
-        self.num_frames = 1
-        self.grating = 'NA'
-        self._xdim = 0
-        self._ydim = 0
-        self.debug = debug
+            pvs = {'cam1': 
+                        {
+                        'Manufacturer_RBV': None,
+                        'Model_RBV' : None,
+                        'LFGrating_RBV' : None,
+                        'LFGratingWL_RBV' : None,
+                        'AcquireTime_RBV': None,
+                        'LFGain_RBV': None,
+                        'LFExitPort_RBV': None,
+                        'LFIntensifierGain_RBV': None,
+                        'TemperatureActual_RBV': None},
+            
+                    'image1' : {'ArrayData': None,
+                                'ArraySize0_RBV': None,
+                                'ArraySize1_RBV': None,
+                                'ArraySize2_RBV': None,
+                                'DataType_RBV': None,
+                                'NDimensions_RBV': None,
+                                'ColorMode_RBV': None   
+                                },
+                }
+            
+            self.pvs = []
 
-        self.gain = 1
-        self.image1File = ''
-        self.image2File = ''
+            for i in range(self.n_detectors):
+                self.pvs.append(copy.deepcopy(pvs))
+                for group in self.pvs[i].keys():
+                    for pv in self.pvs[i][group].keys():
+                        
+                        pv_name = self.record_name+':'+str(group[:-1])+str(i+1) + ':' + pv
+                        self.pvs[i][group][pv] = PV(pv_name)
+            
+            self.detector = 'NA'
+            self.exposure_time = 0
+            self.num_frames = 1
+            self.grating = 'NA'
+            self._xdim = 0
+            self._ydim = 0
+            self.debug = debug
 
-        self.update_data()
-        self.num_frames = 1
+            self.gain = 1
+            self.image1File = ''
+            self.image2File = ''
 
-        self.x_calibration = x_calibration
+            self.update_data()
+            self.num_frames = 1
 
-        if activate:
-            self.activate()
+            self.x_calibration = x_calibration
+
+            if activate:
+                self.activate()
+            self.initialized = True
 
     def update_data(self): 
         ArrayData = self.pvs[0]['image1']['ArrayData'].get()
