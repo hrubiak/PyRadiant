@@ -107,11 +107,12 @@ class TemperatureModel(QtCore.QObject):
     # loading spe or h5 image files:
     #########################################################################
     def load_data_image(self, filename, area_detector=None):
-        if not self.filename or not os.path.dirname(self.filename) == os.path.dirname(filename):
-            self.create_log_file(os.path.dirname(filename))
-        self.filename = filename
-        # Get the extension
-        _, file_extension = os.path.splitext(filename)
+        if area_detector == None:
+            if not self.filename or not os.path.dirname(self.filename) == os.path.dirname(filename):
+                self.create_log_file(os.path.dirname(filename))
+            self.filename = filename
+            # Get the extension
+            _, file_extension = os.path.splitext(filename)
         if area_detector!=None:
             area_detector.update_data()
             self.data_img_file = area_detector
@@ -135,12 +136,15 @@ class TemperatureModel(QtCore.QObject):
     
     def get_last_modified_time(self, file_path):
         # Get the modification time in seconds since the epoch
-        modification_time = os.path.getmtime(file_path)
-        
-        # Convert the modification time to a readable format
-        modified_time = datetime.datetime.fromtimestamp(modification_time)
-        
-        return modified_time
+        if os.path.isfile(file_path):
+            modification_time = os.path.getmtime(file_path)
+            
+            # Convert the modification time to a readable format
+            modified_time = datetime.datetime.fromtimestamp(modification_time)
+            
+            return modified_time
+        else:
+            return None
 
     def load_next_data_image(self, mode):
         new_filename = self._filename_iterator.get_next_filename(mode)
@@ -168,13 +172,16 @@ class TemperatureModel(QtCore.QObject):
         return True
 
     def create_log_file(self, file_path):
-        try:
-            self.log_file = open(os.path.join(file_path, T_LOG_FILE), 'a')
-            self.log_file.write(LOG_HEADER)
-            #self.log_file.close()
-            return self.log_file
-        except PermissionError:
-            return None
+        if len(file_path):
+            
+            try:
+                self.log_file = open(os.path.join(file_path, T_LOG_FILE), 'a')
+                self.log_file.write(LOG_HEADER)
+                #self.log_file.close()
+                return self.log_file
+            except PermissionError:
+                return None
+        return None
         
     def close_log(self):
         if self.log_file != None:

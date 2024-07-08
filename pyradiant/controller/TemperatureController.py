@@ -83,8 +83,10 @@ class TemperatureController(QtCore.QObject):
             ad_on = self.widget.connect_to_ad_cb.isChecked()
             if ad_on:
                 if self._AD_watcher is None:
-                    self._AD_watcher = ADWatcher(record_name=eps.epics_settings['area_detector'], x_calibration=None)
+                    x_cal = self.model.x_calibration
+                    self._AD_watcher = ADWatcher(record_name=eps.epics_settings['area_detector'], x_calibration=x_cal)
                     if self._AD_watcher.initialized:
+                        self._AD_watcher.file_added.connect(self.load_data_file_ad)
                         self._AD_watcher.activate()
                     else:
                         self._AD_watcher = None
@@ -97,6 +99,7 @@ class TemperatureController(QtCore.QObject):
         if self._AD_watcher != None:
             if self._AD_watcher.initialized:
                 self._AD_watcher.deactivate()
+                self._AD_watcher.file_added.disconnect(self.load_data_file_ad)
                 self._AD_watcher = None
 
     def create_signals(self):
@@ -383,11 +386,14 @@ class TemperatureController(QtCore.QObject):
         #####################################
 
         if self.model.data_img_file is not None:
-            self.model.data_img_file.filename = os.path.normpath(self.model.data_img_file.filename)
-            self.widget.filename_lbl.setText(os.path.basename(self.model.data_img_file.filename))
-            dirname = os.path.sep.join(os.path.dirname(self.model.data_img_file.filename).split(os.path.sep)[-2:])
-            self.widget.dirname_lbl.setText(dirname)
-            
+            if hasattr(self.model.data_img_file, 'filename') :
+                self.model.data_img_file.filename = os.path.normpath(self.model.data_img_file.filename)
+                self.widget.filename_lbl.setText(os.path.basename(self.model.data_img_file.filename))
+                dirname = os.path.sep.join(os.path.dirname(self.model.data_img_file.filename).split(os.path.sep)[-2:])
+                self.widget.dirname_lbl.setText(dirname)
+            else:
+                self.widget.filename_lbl.setText('')
+                self.widget.dirname_lbl.setText('')
 
             if self.model.data_img_file.num_frames > 1:
                 self.widget.frame_widget.setVisible(True)
@@ -606,10 +612,7 @@ class TemperatureController(QtCore.QObject):
         self._directory_watcher = NewFileInDirectoryWatcher(file_types=['.spe'])
         self._directory_watcher.file_added.connect(self.load_data_file)
 
-        if epics is not None and eps.epics_settings['area_detector'] is not None \
-                and eps.epics_settings['area_detector'] != 'None':
-            if self._AD_watcher != None:
-                self._AD_watcher.file_added.connect(self.load_data_file_ad)
+        
         
         self.setup_temperature_file_folder_monitor()
 

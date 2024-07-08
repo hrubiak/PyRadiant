@@ -19,6 +19,7 @@
 
 import os
 import time, copy
+import numpy as np
 from PyQt6 import QtCore
 from epics import PV, caget
 
@@ -79,6 +80,8 @@ class ADWatcher(QtCore.QObject):
         """
         super().__init__()
         self.initialized = False
+        self.img = None
+        
         self.file_path_monitor = None
         self.file_type = file_type
         self.n_detectors = 1 # may support multiple detectors in the future, only 1 is implemented for now
@@ -146,8 +149,8 @@ class ADWatcher(QtCore.QObject):
         ArraySize1 = self.pvs[0]['image1']['ArraySize1_RBV'].get()
         NDimensions = self.pvs[0]['image1']['NDimensions_RBV'].get()
         if NDimensions == 2 and ArraySize0 != 0 and ArraySize1 != 0:
-            reshaped_arr = ArrayData.reshape((ArraySize0, ArraySize1))
-            self.img = reshaped_arr
+            reshaped_arr = ArrayData.reshape((ArraySize1, ArraySize0))
+            self.img = reshaped_arr.astype(np.uint16)
             [self._ydim, self._xdim] = self.img.shape
             self.detector = self.pvs[0]['cam1']['Model_RBV'].get(as_string=True)
             self.exposure_time = self.pvs[0]['cam1']['AcquireTime_RBV'].get()
