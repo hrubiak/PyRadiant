@@ -87,7 +87,7 @@ class ADWatcher(QtCore.QObject):
         self.n_detectors = 1 # may support multiple detectors in the future, only 1 is implemented for now
         self.record_name = record_name
         pv_name = record_name+ ':cam1:Model_RBV'
-        check_pv = caget(pv_name, as_string=True)
+        check_pv = caget(pv_name, as_string=True, timeout=2, connection_timeout=2)
         if check_pv != None:
 
             pvs = {'cam1': 

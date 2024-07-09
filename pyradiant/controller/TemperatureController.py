@@ -89,6 +89,8 @@ class TemperatureController(QtCore.QObject):
                         self._AD_watcher.file_added.connect(self.load_data_file_ad)
                         self._AD_watcher.activate()
                     else:
+                        self.widget.show_error_dialog("Couldn't connect to Area Detector.", "Connection Error")
+                        self.widget.connect_to_ad_cb.setChecked(False)
                         self._AD_watcher = None
                 
         else:

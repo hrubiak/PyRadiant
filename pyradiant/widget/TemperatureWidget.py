@@ -244,6 +244,16 @@ class TemperatureWidget(QtWidgets.QWidget):
             self.file_dragged_in.emit(fnames)
         else:
             e.ignore() 
+
+
+    def show_error_dialog(self, message_text:str, dialog_title:str):
+        error_dialog = QtWidgets.QMessageBox()
+        error_dialog.setIcon(QtWidgets.QMessageBox.Icon.Critical)
+        error_dialog.setText(message_text)
+        error_dialog.setWindowTitle(dialog_title)
+        error_dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
+
+        error_dialog.exec()
         
 
 class TemperatureFileNavigation(QtWidgets.QWidget):
