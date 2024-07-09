@@ -497,8 +497,14 @@ class TemperatureModel(QtCore.QObject):
         try:
             ds_roi = self.roi_data_manager.get_roi(0, self.data_img_file.get_dimension())
             wl = self.x_calibration
-            wl_start = int(round(wl[int(round(ds_roi.x_min))]))
-            wl_end = int(round(wl[int(round(ds_roi.x_max))]))
+            min_ind = int(round(ds_roi.x_min))
+            max_ind = int(round(ds_roi.x_max))
+            if min_ind < 0:
+                min_ind = 0
+            if max_ind >= len(wl):
+                max_ind = len(wl)-1
+            wl_start = int(round(wl[min_ind]))
+            wl_end = int(round(wl[max_ind]))
             return [min(wl_start,wl_end),max(wl_start,wl_end)]
         except AttributeError:
             return [0, 0]
