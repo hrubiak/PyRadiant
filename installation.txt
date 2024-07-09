@@ -1,6 +1,7 @@
 conda create --name python_3.12_env python=3.12
 activate python_3.12_env
 pip install PyQt6
+pip install pyqtgraph
 pip install pyqtdarktheme==2.1.0 --ignore-requires-python
 pip install pyepics
 pip install scipy
