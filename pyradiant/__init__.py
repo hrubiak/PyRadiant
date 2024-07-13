@@ -23,6 +23,7 @@ from sys import platform
 #from optparse import OptionParser
 #import PyQt6
 from PyQt6 import QtWidgets, QtCore
+from PyQt6.QtCore import Qt
 import qdarktheme 
 import platform
 
@@ -59,6 +60,7 @@ def run_pyradiant():
     #QtCore.QCoreApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
     qdarktheme.enable_hi_dpi()
     app = QtWidgets.QApplication(sys.argv)
+
     # Apply the complete dark theme to your Qt App.
     qdarktheme.setup_theme("dark", custom_colors={"primary": "#4DDECD"}) 
     '''if platform != "darwin":

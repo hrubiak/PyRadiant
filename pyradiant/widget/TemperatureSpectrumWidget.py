@@ -467,6 +467,7 @@ class CustomViewBox(pg.ViewBox):
             self.plotMouseCursorSignal.emit(self.cursorPoint) 
         ev.accept()   
 
+
 class historyPlotWidget(pg.GraphicsLayoutWidget):
     def __init__(self, scale_label,*args,  **kwargs):
         super().__init__()
