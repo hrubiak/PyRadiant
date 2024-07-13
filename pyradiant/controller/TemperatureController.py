@@ -27,7 +27,7 @@ from ..model.TemperatureModel import TemperatureModel
 from ..model.helper.FileNameIterator import get_file_and_extension
 from ..model import epics_settings as eps
 from .NewFileInDirectoryWatcher import NewFileInDirectoryWatcher
-from .ADWatcher import ADWatcher
+from ..model.data_models.ADWatcher import ADWatcher
 import numpy as np
 from ..model.helper.HelperModule import get_partial_index , get_partial_value
 from .. widget.TemperatureSpectrumWidget import dataHistoryWidget
