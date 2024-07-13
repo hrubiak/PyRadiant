@@ -31,8 +31,8 @@ import time
 
 from .Spectrum import Spectrum
 from .RoiData import RoiDataManager, Roi, get_roi_max, get_roi_sum, get_roi_img
-from .SpeFile import SpeFile
-from .H5File import H5File
+from .data_models.SpeFile import SpeFile
+from .data_models.H5File import H5File
 from .helper import FileNameIterator
 from .radiation import fit_linear, wien_pre_transform, m_to_T, m_b_wien
 from .helper.HelperModule import get_partial_index, get_partial_value
