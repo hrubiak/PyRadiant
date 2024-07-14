@@ -70,8 +70,8 @@ class TemperatureController(QtCore.QObject):
 
         self.live_data = False # this is True when AD checkbox is checked and an area detector connection is established, otherwise it's False
         self._AD_watcher = None
-        if epics != None:
-            self.connect_to_area_detector()
+        '''if epics != None:
+            self.connect_to_area_detector()'''
 
 
 
@@ -168,6 +168,9 @@ class TemperatureController(QtCore.QObject):
         # epics stuff
         self.widget.connect_to_ad_cb.toggled.connect(self.connect_to_ad_cb_callback)
 
+        self.widget.use_backbround_data_cb.toggled.connect(self.use_backbround_cb_callback)
+        self.widget.use_backbround_calibration_cb.toggled.connect(self.use_backbround_cb_callback)
+
 
 
     def connect_click_function(self, emitter, function):
@@ -175,6 +178,12 @@ class TemperatureController(QtCore.QObject):
         
     def close_log(self):
         self.model.close_log()
+
+    def use_backbround_cb_callback(self):
+        use_data_background = self.widget.use_backbround_data_cb.isChecked()
+        use_calibration_background = self.widget.use_backbround_calibration_cb.isChecked()
+        self.model.set_use_insitu_background(use_data_background,use_calibration_background)
+
 
     def connect_to_ad_cb_callback(self):
         if self.widget.connect_to_ad_cb.isChecked():
@@ -370,6 +379,15 @@ class TemperatureController(QtCore.QObject):
         self.widget.settings_cb.setCurrentIndex(current_index)
         self.widget.settings_cb.blockSignals(False)
 
+    def use_background_update(self):
+        self.widget.use_backbround_calibration_cb.blockSignals(True)
+        self.widget.use_backbround_data_cb.blockSignals(True)
+        self.widget.use_backbround_calibration_cb.setChecked (bool(self.model.use_insitu_calibration_background))
+        self.widget.use_backbround_data_cb.setChecked (bool(self.model.use_insitu_data_background))
+        self.widget.use_backbround_calibration_cb.blockSignals(False)
+        self.widget.use_backbround_data_cb.blockSignals(False)
+
+
     def data_changed(self):
         self.widget.roi_widget.plot_img(self.model.data_img)
         if self.model.x_calibration is not None and self.model.data_img is not None:
@@ -412,7 +430,7 @@ class TemperatureController(QtCore.QObject):
             self.widget.frame_widget.setVisible(False)
             self.widget.temperature_spectrum_widget.show_time_lapse_plot(False)
 
-      
+        self.use_background_update()
 
         self.ds_calculations_changed()
         self.us_calculations_changed()

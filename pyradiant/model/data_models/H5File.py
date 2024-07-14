@@ -42,9 +42,9 @@ RH: Updated March 25, 2024
 """
 
 import h5py
+from .DataModel import DataModel
 
-
-class H5File(object):
+class H5File(DataModel):
     def __init__(self, filename, x_calibration, debug=False):
         """Opens the PI SPE file and loads its content
 
@@ -53,6 +53,7 @@ class H5File(object):
         directory
         """
         """"""
+        DataModel.__init__(self, debug)
         self.filename = filename
         self.detector = 'NA'
         self.exposure_time = 0
@@ -63,8 +64,6 @@ class H5File(object):
         self.debug = debug
         self._fid = h5py.File(filename, 'r')
         self.gain = 1
-        self.image1File = ''
-        self.image2File = ''
 
         self._load_h5()
         self.num_frames = 1
@@ -86,6 +85,3 @@ class H5File(object):
             exposure_time = f['AcquireTime'][0]
             self.exposure_time = exposure_time
     
-    def get_dimension(self):
-        """Returns (xdim, ydim)"""
-        return (self._xdim, self._ydim)

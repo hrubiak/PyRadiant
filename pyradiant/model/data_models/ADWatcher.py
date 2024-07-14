@@ -22,6 +22,7 @@ import time, copy
 import numpy as np
 from PyQt6 import QtCore
 from epics import PV, caget
+from .DataModel import DataModel
 
 
 ColorMode = {
@@ -58,30 +59,27 @@ ExitPort = {
     1:'Front'
 }
 
-class ADWatcher(QtCore.QObject):
+class ADWatcher(DataModel, QtCore.QObject):
     """
     This class watches the Area Detector PV if a new file is available.
-
     Typical usage::
         def callback_fcn(path):
             print(path)
-
         watcher = ADWatcher(record_name, file_type = '.spe') #file_type parameter not implemented yet)
         watcher.file_added.connect(callback_fcn)
-
     """
     file_added = QtCore.pyqtSignal(str)
 
     def __init__(self, record_name='16LF1', x_calibration=None, file_type=None, activate=False, debug = False):
         """
         :record_name: Area Detector PV name, e.g. '16LF1'.
-       
         :param activate: whether or not the Watcher will already emit signals
         """
-        super().__init__()
+        DataModel.__init__(self, debug=debug)
+        QtCore.QObject.__init__(self)
+        
         self.initialized = False
         self.img = None
-        
         self.file_path_monitor = None
         self.file_type = file_type
         self.n_detectors = 1 # may support multiple detectors in the future, only 1 is implemented for now
@@ -89,7 +87,6 @@ class ADWatcher(QtCore.QObject):
         pv_name = record_name+ ':cam1:Model_RBV'
         check_pv = caget(pv_name, as_string=True, timeout=2, connection_timeout=2)
         if check_pv != None:
-
             pvs = {'cam1': 
                         {
                         'Manufacturer_RBV': None,
@@ -111,9 +108,7 @@ class ADWatcher(QtCore.QObject):
                                 'ColorMode_RBV': None   
                                 },
                 }
-            
             self.pvs = []
-
             for i in range(self.n_detectors):
                 self.pvs.append(copy.deepcopy(pvs))
                 for group in self.pvs[i].keys():
@@ -121,7 +116,6 @@ class ADWatcher(QtCore.QObject):
                         
                         pv_name = self.record_name+':'+str(group[:-1])+str(i+1) + ':' + pv
                         self.pvs[i][group][pv] = PV(pv_name)
-            
             self.detector = 'NA'
             self.exposure_time = 0
             self.num_frames = 1
@@ -129,16 +123,11 @@ class ADWatcher(QtCore.QObject):
             self._xdim = 0
             self._ydim = 0
             self.debug = debug
-
             self.gain = 1
-            self.image1File = ''
-            self.image2File = ''
 
             self.update_data()
             self.num_frames = 1
-
             self.x_calibration = x_calibration
-
             if activate:
                 self.activate()
             self.initialized = True
@@ -158,11 +147,7 @@ class ADWatcher(QtCore.QObject):
             if g in Grating:
                 self.grating = Grating[g]
 
-
-
-    def get_dimension(self):
-        """Returns (xdim, ydim)"""
-        return (self._xdim, self._ydim)
+    
 
     @property
     def record_name(self):
@@ -174,11 +159,9 @@ class ADWatcher(QtCore.QObject):
         ## monitor epics pvs
         file_path_pv_name = new_record_name + ':cam1:FullFileName_RBV'
         image_pv_name = new_record_name + ':image1:ArrayData'
-   
         self.pvs = {}
         self.pvs['file_path'] = PV(file_path_pv_name)
         self.pvs['image'] = PV(image_pv_name)
-
         if self.file_path_monitor != None:
             self.file_path_monitor.unSetPVmonitor()
         self.file_path_monitor = epicsMonitor(self.pvs['file_path'], self.handle_AD_callback, autostart=False)
@@ -198,16 +181,10 @@ class ADWatcher(QtCore.QObject):
         if self.file_path_monitor != None:
             self.file_path_monitor.unSetPVmonitor()
 
-
     def handle_AD_callback(self, Status):
-       
         if len(Status):
-            
             self.file_added.emit(Status)
             
-
-
-
 class epicsMonitor(QtCore.QObject):
     callback_triggered = QtCore.pyqtSignal(str)
 
@@ -216,14 +193,10 @@ class epicsMonitor(QtCore.QObject):
         self.mcaPV = pv
         self.monitor_On = False
         self.emitted_timestamp = None
-        
-
-
         self.callback_triggered.connect(callback)
         if autostart:
             self.SetPVmonitor()
             
-
     def SetPVmonitor(self):
         if self.monitor_On == False:
             self.mcaPV.clear_callbacks()
@@ -235,7 +208,5 @@ class epicsMonitor(QtCore.QObject):
             self.monitor_On = False
 
     def onPVChange(self, pvname=None, char_value=None, **kws):
-
-        
         self.callback_triggered.emit(char_value)
 

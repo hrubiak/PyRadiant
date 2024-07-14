@@ -88,6 +88,12 @@ class RoiWidget(QtWidgets.QWidget):
         self.roi_gbs = []
         self.create_roi_gbs()
         self._roi_v_bs_layout.addLayout(self._roi_gbs_layout)
+        self.use_backbround_data_cb = QtWidgets.QCheckBox('- Data background')
+        self._roi_v_bs_layout.addWidget(self.use_backbround_data_cb)
+        self.use_backbround_data_cb.setChecked(True)
+        self.use_backbround_calibration_cb = QtWidgets.QCheckBox('- Calibration background')
+        self._roi_v_bs_layout.addWidget(self.use_backbround_calibration_cb)
+        self.use_backbround_calibration_cb.setChecked(True)
         #self._roi_gbs_layout.addSpacerItem(HorizontalSpacerItem())
 
         self._main_vertical_layout.addWidget(self.left_tab_widget)
@@ -95,6 +101,8 @@ class RoiWidget(QtWidgets.QWidget):
         #self._main_vertical_layout.addWidget(self.status_bar)
 
         self.pos_lbl = self.status_bar.left_lbl
+
+        
        
         self.setLayout(self._main_vertical_layout)
 
@@ -240,6 +248,8 @@ class RoiGroupBox(QtWidgets.QGroupBox):
         #self._grid_layout.addWidget(CenteredQLabel('X:'), 1, 0)
         #self._grid_layout.addWidget(self.x_min_txt, 3, 1)
         #self._grid_layout.addWidget(self.x_max_txt, 4, 1)
+
+        
 
 
         self.setLayout(self._layout)

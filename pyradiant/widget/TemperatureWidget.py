@@ -213,6 +213,9 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.temperature_function_plank_rb = self.t_function_type_section.plank_btn
         self.temperature_function_wien_rb = self.t_function_type_section.wien_btn
 
+        self.use_backbround_data_cb = self.roi_widget.use_backbround_data_cb
+        self.use_backbround_calibration_cb = self.roi_widget.use_backbround_calibration_cb
+
 
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls:

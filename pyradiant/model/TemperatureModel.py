@@ -61,6 +61,9 @@ class TemperatureModel(QtCore.QObject):
         self.ds_calibration_filename = None
         self.us_calibration_filename = None
 
+        self.use_insitu_data_background = True
+        self.use_insitu_calibration_background = True
+
         self.x_calibration = None
 
         self.temperature_fit_function_str = 'plank'
@@ -231,6 +234,21 @@ class TemperatureModel(QtCore.QObject):
             self._update_temperature_models_data()
             self.data_changed_emit()
 
+    def set_use_insitu_background(self, use_data_background,use_calibration_background):
+        if use_data_background != self.use_insitu_data_background or use_calibration_background !=self.use_insitu_calibration_background:
+            self.use_insitu_data_background = use_data_background
+            self.use_insitu_calibration_background = use_calibration_background
+            self.ds_temperature_model.subtract_inistu_data_background = use_data_background
+            self.us_temperature_model.subtract_inistu_data_background = use_data_background
+            self.ds_temperature_model.subtract_inistu_calibration_background = use_calibration_background
+            self.us_temperature_model.subtract_inistu_calibration_background = use_calibration_background
+            self.ds_temperature_model._update_calibration_spectrum()
+            self.us_temperature_model._update_calibration_spectrum()
+            
+            self._update_temperature_models_data()
+            
+            self.data_changed_emit()
+
     def _update_temperature_models_data(self):
 
         self.ds_temperature_model.set_temperature_fit_function(self.temperature_fit_function_str)
@@ -328,11 +346,13 @@ class TemperatureModel(QtCore.QObject):
             ds_group['image'] = self.ds_calibration_img_file.img
             ds_group['image'].attrs['filename'] = self.ds_calibration_img_file.filename
             ds_group['image'].attrs['x_calibration'] = self.ds_calibration_img_file.x_calibration
+            ds_group['image'].attrs['subtract_bg'] = self.use_insitu_data_background
         else:
             if self.ds_temperature_model.calibration_img is not None:
                 ds_group['image'] = self.ds_temperature_model.calibration_img
                 ds_group['image'].attrs['filename'] = self.ds_calibration_filename
                 ds_group['image'].attrs['x_calibration'] = self.ds_temperature_model._data_img_x_calibration
+                ds_group['image'].attrs['subtract_bg'] = self.use_insitu_data_background
         ds_group['roi'] = self.ds_roi.as_list()
         ds_group['roi_bg'] = self.ds_roi_bg.as_list()
         ds_group['modus'] = self.ds_temperature_model.calibration_parameter.modus
@@ -340,6 +360,7 @@ class TemperatureModel(QtCore.QObject):
         ds_group['standard_spectrum'] = self.ds_temperature_model.calibration_parameter.get_standard_spectrum().data
         ds_group['standard_spectrum'].attrs['filename'] = \
             self.ds_temperature_model.calibration_parameter.get_standard_filename()
+        ds_group['standard_spectrum'].attrs['subtract_bg'] = self.use_insitu_calibration_background
 
         f.create_group('upstream_calibration')
         us_group = f['upstream_calibration']
@@ -347,11 +368,13 @@ class TemperatureModel(QtCore.QObject):
             us_group['image'] = self.us_calibration_img_file.img
             us_group['image'].attrs['filename'] = self.us_calibration_img_file.filename
             us_group['image'].attrs['x_calibration'] = self.us_calibration_img_file.x_calibration
+            us_group['image'].attrs['subtract_bg'] = self.use_insitu_data_background
         else:
             if self.us_temperature_model.calibration_img is not None:
                 us_group['image'] = self.us_temperature_model.calibration_img
                 us_group['image'].attrs['filename'] = self.us_calibration_filename
                 us_group['image'].attrs['x_calibration'] = self.us_temperature_model._data_img_x_calibration
+                us_group['image'].attrs['subtract_bg'] = self.use_insitu_data_background
         us_group['roi'] = self.us_roi.as_list()
         us_group['roi_bg'] = self.us_roi_bg.as_list()
         us_group['modus'] = self.us_temperature_model.calibration_parameter.modus
@@ -359,6 +382,7 @@ class TemperatureModel(QtCore.QObject):
         us_group['standard_spectrum'] = self.us_temperature_model.calibration_parameter.get_standard_spectrum().data
         us_group['standard_spectrum'].attrs['filename'] = \
             self.us_temperature_model.calibration_parameter.get_standard_filename()
+        us_group['standard_spectrum'].attrs['subtract_bg'] = self.use_insitu_calibration_background
 
         f.close()
 
@@ -382,6 +406,10 @@ class TemperatureModel(QtCore.QObject):
             x_calibration = ds_group['image'].attrs['x_calibration'][...] # this is a hack to be able to 
                                                                           # load h5 files later that don't 
                                                                           # have x_calibration
+            if 'subtract_bg'in ds_group['image'].attrs:
+                use_data_bg = bool(ds_group['image'].attrs['subtract_bg'])
+                self.use_insitu_data_background = use_data_bg
+
             self.x_calibration = x_calibration
             self.ds_temperature_model.set_calibration_data(ds_img, x_calibration)
             
@@ -394,6 +422,14 @@ class TemperatureModel(QtCore.QObject):
         standard_data = ds_group['standard_spectrum'][...]
         self.ds_temperature_model.calibration_parameter.set_standard_spectrum(Spectrum(standard_data[0, :],
                                                                                      standard_data[1, :]))
+        if 'subtract_bg'in ds_group['standard_spectrum'].attrs:
+                use_calibration_bg = bool(ds_group['standard_spectrum'].attrs['subtract_bg'])
+                self.use_insitu_calibration_background = use_calibration_bg
+
+        self.ds_temperature_model.subtract_inistu_data_background = use_data_bg
+        self.us_temperature_model.subtract_inistu_data_background = use_data_bg
+        self.ds_temperature_model.subtract_inistu_calibration_background = use_calibration_bg
+        self.us_temperature_model.subtract_inistu_calibration_background = use_calibration_bg
 
         try:
             self.ds_temperature_model.calibration_parameter.standard_file_name = \
@@ -434,6 +470,11 @@ class TemperatureModel(QtCore.QObject):
         standard_data = us_group['standard_spectrum'][...]
         self.us_temperature_model.calibration_parameter.set_standard_spectrum(Spectrum(standard_data[0, :],
                                                                                      standard_data[1, :]))
+        
+        if 'subtract_bg'in us_group['image'].attrs:
+                use_data_bg = bool(us_group['image'].attrs['subtract_bg'])
+                self.use_insitu_data_background = use_data_bg
+
         try:
             self.us_temperature_model.calibration_parameter.standard_file_name = \
                 us_group['standard_spectrum'].attrs['filename']
@@ -770,6 +811,8 @@ class SingleTemperatureModel(QtCore.QObject):
         #self.within_limit = None
 
         self.temperature_fit_function = fit_black_body_function_wien
+        self.subtract_inistu_data_background = True
+        self.subtract_inistu_calibration_background = True
 
         self._data_img = None
         self._data_img_x_calibration = None
@@ -893,9 +936,10 @@ class SingleTemperatureModel(QtCore.QObject):
         if self._data_img is not None:
             _data_img_as_array = np.asarray(self._data_img)
             roi = self.roi_data_manager.get_roi(self.ind, self._data_img_dimension)
-            roi_bg = self.roi_data_manager.get_roi(self.ind+2, self._data_img_dimension)
-            roi_bg.x_max = roi.x_max
-            roi_bg.x_min = roi.x_min
+            if self.subtract_inistu_data_background:
+                roi_bg = self.roi_data_manager.get_roi(self.ind+2, self._data_img_dimension)
+                roi_bg.x_max = roi.x_max
+                roi_bg.x_min = roi.x_min
 
             roi_img = get_roi_img(_data_img_as_array, roi)
             within_limit = self.columns_within_limit(roi_img)
@@ -906,10 +950,11 @@ class SingleTemperatureModel(QtCore.QObject):
             data_x = self._data_img_x_calibration[int(roi.x_min):int(roi.x_max) + 1]
             data_y = get_roi_sum(_data_img_as_array, roi)
             
-            data_y_bg = get_roi_sum(_data_img_as_array, roi_bg)
-
+            
             self.data_roi_max = get_roi_max(_data_img_as_array, roi)
-            data_y = data_y - data_y_bg
+            if self.subtract_inistu_data_background:
+                data_y_bg = get_roi_sum(_data_img_as_array, roi_bg)
+                data_y = data_y - data_y_bg
             
             
             self.data_spectrum.data = data_x, data_y
@@ -918,15 +963,19 @@ class SingleTemperatureModel(QtCore.QObject):
     def _update_calibration_spectrum(self):
         if self.calibration_img is not None:
             roi = self.roi_data_manager.get_roi(self.ind, self._calibration_img_dimension)
-            roi_bg = self.roi_data_manager.get_roi(self.ind+2, self._calibration_img_dimension)
-            roi_bg.x_max = roi.x_max
-            roi_bg.x_min = roi.x_min
+            if self.subtract_inistu_calibration_background:
+                roi_bg = self.roi_data_manager.get_roi(self.ind+2, self._calibration_img_dimension)
+                roi_bg.x_max = roi.x_max
+                roi_bg.x_min = roi.x_min
 
             calibration_x = self._calibration_img_x_calibration[int(roi.x_min):int(roi.x_max) + 1]
             calibration_y = get_roi_sum(self._calibration_img, roi)
-            calibration_bg = get_roi_sum(self._calibration_img, roi_bg)
+            
 
-            self.calibration_spectrum.data = calibration_x, calibration_y - calibration_bg
+            if self.subtract_inistu_calibration_background:
+                calibration_bg = get_roi_sum(self._calibration_img, roi_bg)
+                calibration_y = calibration_y - calibration_bg
+            self.calibration_spectrum.data = calibration_x, calibration_y 
 
     def _update_corrected_spectrum(self):
         if len(self.data_spectrum) == 0:

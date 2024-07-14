@@ -48,8 +48,9 @@ import numpy as np
 from numpy.polynomial.polynomial import polyval
 from dateutil import parser
 
+from .DataModel import DataModel
 
-class SpeFile(object):
+class SpeFile(DataModel):
     def __init__(self, filename, debug=False):
         """Opens the PI SPE file and loads its content
 
@@ -58,15 +59,14 @@ class SpeFile(object):
         directory
         """
         """"""
+        DataModel.__init__(self, debug)
         self.filename = filename
         self.debug = debug
         self._fid = open(filename, 'rb')
         self._read_parameter()
         self._read_img()
         self._fid.close()
-        self.gain = 1
-        self.image1File = ''
-        self.image2File = ''
+        
 
     def _read_parameter(self):
         """Reads in size and datatype. Decides whether it should check in the binary
@@ -367,46 +367,9 @@ class SpeFile(object):
             img = self._read_at(pos, self._xdim * self._ydim, np.uint32)
         return img.reshape((self._ydim, self._xdim))
 
-    def get_index_from(self, wavelength):
-        """
-        calculating image index for a given index
-        :param wavelength: wavelength in nm
-        :return: index
-        """
-        result = []
-        xdata = self.x_calibration
-        try:
-            for w in wavelength:
-                try:
-                    base_ind = max(max(np.where(xdata <= w)))
-                    if base_ind < len(xdata) - 1:
-                        result.append(int(np.round((w - xdata[base_ind]) / \
-                                                   (xdata[base_ind + 1] - xdata[base_ind]) \
-                                                   + base_ind)))
-                    else:
-                        result.append(base_ind)
-                except:
-                    result.append(0)
-            return np.array(result)
-        except TypeError:
-            base_ind = max(max(np.where(xdata <= wavelength)))
-            return int(np.round((wavelength - xdata[base_ind]) / \
-                                (xdata[base_ind + 1] - xdata[base_ind]) \
-                                + base_ind))
-
-    def get_wavelength_from(self, index):
-        if isinstance(index, list):
-            result = []
-            for c in index:
-                result.append(self.x_calibration[c])
-            return np.array(result)
-        else:
-            return self.x_calibration[index]
+    
 
 
-    def get_dimension(self):
-        """Returns (xdim, ydim)"""
-        return (self._xdim, self._ydim)
 
     def get_roi(self):
         """Returns the ROI which was defined by WinSpec or Lightfield for datacollection"""
