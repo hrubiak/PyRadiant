@@ -33,7 +33,10 @@ from ..model.helper.HelperModule import get_partial_index , get_partial_value
 from .. widget.TemperatureSpectrumWidget import dataHistoryWidget
 
 try:
+    print('importing')
+
     import epics
+    print('imported')
 except:
     epics = None
 
@@ -378,6 +381,7 @@ class TemperatureController(QtCore.QObject):
         self.widget.settings_cb.blockSignals(True)
         self.widget.settings_cb.setCurrentIndex(current_index)
         self.widget.settings_cb.blockSignals(False)
+        self.use_background_update()
 
     def use_background_update(self):
         self.widget.use_backbround_calibration_cb.blockSignals(True)

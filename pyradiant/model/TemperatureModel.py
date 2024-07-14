@@ -409,6 +409,8 @@ class TemperatureModel(QtCore.QObject):
             if 'subtract_bg'in ds_group['image'].attrs:
                 use_data_bg = bool(ds_group['image'].attrs['subtract_bg'])
                 self.use_insitu_data_background = use_data_bg
+                self.ds_temperature_model.subtract_inistu_data_background = use_data_bg
+                self.us_temperature_model.subtract_inistu_data_background = use_data_bg
 
             self.x_calibration = x_calibration
             self.ds_temperature_model.set_calibration_data(ds_img, x_calibration)
@@ -423,13 +425,12 @@ class TemperatureModel(QtCore.QObject):
         self.ds_temperature_model.calibration_parameter.set_standard_spectrum(Spectrum(standard_data[0, :],
                                                                                      standard_data[1, :]))
         if 'subtract_bg'in ds_group['standard_spectrum'].attrs:
-                use_calibration_bg = bool(ds_group['standard_spectrum'].attrs['subtract_bg'])
-                self.use_insitu_calibration_background = use_calibration_bg
+            use_calibration_bg = bool(ds_group['standard_spectrum'].attrs['subtract_bg'])
+            self.use_insitu_calibration_background = use_calibration_bg
 
-        self.ds_temperature_model.subtract_inistu_data_background = use_data_bg
-        self.us_temperature_model.subtract_inistu_data_background = use_data_bg
-        self.ds_temperature_model.subtract_inistu_calibration_background = use_calibration_bg
-        self.us_temperature_model.subtract_inistu_calibration_background = use_calibration_bg
+            
+            self.ds_temperature_model.subtract_inistu_calibration_background = use_calibration_bg
+            self.us_temperature_model.subtract_inistu_calibration_background = use_calibration_bg
 
         try:
             self.ds_temperature_model.calibration_parameter.standard_file_name = \
