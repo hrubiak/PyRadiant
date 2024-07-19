@@ -88,6 +88,7 @@ class RoiWidget(QtWidgets.QWidget):
         self.roi_gbs = []
         self.create_roi_gbs()
         self._roi_v_bs_layout.addLayout(self._roi_gbs_layout)
+        self._roi_v_bs_layout.addWidget(QtWidgets.QLabel('Subtract in-situ background'))
         self.use_backbround_data_cb = QtWidgets.QCheckBox('- Data background')
         self._roi_v_bs_layout.addWidget(self.use_backbround_data_cb)
         self.use_backbround_data_cb.setChecked(True)
