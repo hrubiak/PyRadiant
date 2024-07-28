@@ -1,4 +1,5 @@
 conda create --name PyRadiant_env python=3.12
+pip install --upgrade pip
 activate python_3.12_env
 pip install PyQt6
 pip install pyqtgraph
@@ -7,3 +8,7 @@ pip install pyepics
 pip install scipy
 pip install h5py
 pip install python-dateutil
+pip install xmltodict
+pip install opencv-python-headless
+pip install tifffile
+pip install natsort
