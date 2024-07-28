@@ -32,15 +32,9 @@ import numpy as np
 from ..model.helper.HelperModule import get_partial_index , get_partial_value
 from .. widget.TemperatureSpectrumWidget import dataHistoryWidget
 
-try:
-    print('importing')
-
-    import epics
-    print('imported')
-except:
-    epics = None
-
-
+from .. import EPICS_AVAILABLE
+if EPICS_AVAILABLE:
+    from epics import caput, camonitor, camonitor_clear
 
 class TemperatureController(QtCore.QObject):
 
@@ -66,23 +60,21 @@ class TemperatureController(QtCore.QObject):
         self.data_history_widget.temperatures_plot_widget.update_time_lapse_ds_temperature_txt('Downstream')
         self.data_history_widget.temperatures_plot_widget.update_time_lapse_us_temperature_txt('Upstream')
 
-        self.setup_epics_dialog = SetupEpicsDialog(self.widget)
-
         self._exp_working_dir = ''
         self._setting_working_dir = ''
 
         self.live_data = False # this is True when AD checkbox is checked and an area detector connection is established, otherwise it's False
         self._AD_watcher = None
-        '''if epics != None:
-            self.connect_to_area_detector()'''
-
-
+        if  EPICS_AVAILABLE:
+            self.setup_epics_dialog = SetupEpicsDialog(self.widget)
+        else:
+            self.widget.epics_gb.hide()
 
         self._create_autoprocess_system()
         self.create_signals()
 
     def connect_to_area_detector(self):
-        if epics != None:
+        if EPICS_AVAILABLE:
             ad_on = self.widget.connect_to_ad_cb.isChecked()
             if ad_on:
                 if self._AD_watcher is None:
@@ -472,10 +464,10 @@ class TemperatureController(QtCore.QObject):
         self.widget.temperature_spectrum_widget.update_ds_roi_max_txt(self.model.ds_temperature_model.data_roi_max)
 
         if self.widget.connect_to_epics_cb.isChecked():
-            if epics is not None:
+            if EPICS_AVAILABLE:
                 ds_temp_pv = eps.epics_settings['ds_last_temp']
                 if ds_temp_pv is not None and not ds_temp_pv == '' and not ds_temp_pv == 'None':
-                    epics.caput(ds_temp_pv, self.model.ds_temperature)
+                    caput(ds_temp_pv, self.model.ds_temperature)
                 
 
     def us_calculations_changed(self):
@@ -506,10 +498,10 @@ class TemperatureController(QtCore.QObject):
         self.widget.temperature_spectrum_widget.update_us_roi_max_txt(self.model.us_temperature_model.data_roi_max)
 
         if self.widget.connect_to_epics_cb.isChecked():
-            if epics is not None:
+            if EPICS_AVAILABLE:
                 us_temp_pv = eps.epics_settings['us_last_temp']
                 if us_temp_pv is not None and not us_temp_pv =='' and not us_temp_pv == 'None':
-                    epics.caput(us_temp_pv, self.model.us_temperature)
+                    caput(us_temp_pv, self.model.us_temperature)
                 
 
     def update_time_lapse(self):
@@ -641,18 +633,19 @@ class TemperatureController(QtCore.QObject):
         self.setup_temperature_file_folder_monitor()
 
     def setup_temperature_file_folder_monitor(self):
-        if epics is not None and eps.epics_settings['T_folder'] is not None \
+        if EPICS_AVAILABLE and eps.epics_settings['T_folder'] is not None \
                 and eps.epics_settings['T_folder'] != 'None':
-            epics.camonitor_clear(eps.epics_settings['T_folder'])
-            epics.camonitor(eps.epics_settings['T_folder'], callback=self.temperature_file_folder_changed)
+            camonitor_clear(eps.epics_settings['T_folder'])
+            camonitor(eps.epics_settings['T_folder'], callback=self.temperature_file_folder_changed)
 
     def temperature_file_folder_changed(self, *args, **kwargs):
         if self.widget.connect_to_epics_cb.isChecked() and self.widget.autoprocess_cb.isChecked():
             self.temperature_folder_changed.emit()
 
     def temperature_folder_changed_emitted(self):
-        self._exp_working_dir = epics.caget(eps.epics_settings['T_folder'], as_string=True)
-        self._directory_watcher.path = self._exp_working_dir
+        if EPICS_AVAILABLE:
+            self._exp_working_dir = caget(eps.epics_settings['T_folder'], as_string=True)
+            self._directory_watcher.path = self._exp_working_dir
 
     def setup_epics_pb_clicked(self):
         self.setup_epics_dialog.ok_btn.setEnabled(True)

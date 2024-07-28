@@ -33,6 +33,13 @@ resources_path = os.path.join(os.path.dirname(__file__), 'resources')
 icons_path = os.path.join(resources_path, 'icons')
 style_path = os.path.join(resources_path, 'style')
 
+EPICS_AVAILABLE = False
+try:
+    from epics import PV, caget, camonitor, camonitor_clear
+    EPICS_AVAILABLE = True
+except:
+    pass
+
 from .controller.MainController import MainController
 
 

@@ -21,7 +21,11 @@ import os
 import time, copy
 import numpy as np
 from PyQt6 import QtCore
-from epics import PV, caget
+from ... import EPICS_AVAILABLE 
+
+if EPICS_AVAILABLE:
+    from epics import PV, caget
+
 from .DataModel import DataModel
 
 
@@ -79,6 +83,8 @@ class ADWatcher(DataModel, QtCore.QObject):
         QtCore.QObject.__init__(self)
         
         self.initialized = False
+        if not EPICS_AVAILABLE:
+            return
         self.img = None
         self.file_path_monitor = None
         self.file_type = file_type
@@ -157,15 +163,16 @@ class ADWatcher(DataModel, QtCore.QObject):
     def record_name(self, new_record_name):
         
         ## monitor epics pvs
-        file_path_pv_name = new_record_name + ':cam1:FullFileName_RBV'
-        image_pv_name = new_record_name + ':image1:ArrayData'
-        self.pvs = {}
-        self.pvs['file_path'] = PV(file_path_pv_name)
-        self.pvs['image'] = PV(image_pv_name)
-        if self.file_path_monitor != None:
-            self.file_path_monitor.unSetPVmonitor()
-        self.file_path_monitor = epicsMonitor(self.pvs['file_path'], self.handle_AD_callback, autostart=False)
-        self._record_name = new_record_name
+        if EPICS_AVAILABLE:
+            file_path_pv_name = new_record_name + ':cam1:FullFileName_RBV'
+            image_pv_name = new_record_name + ':image1:ArrayData'
+            self.pvs = {}
+            self.pvs['file_path'] = PV(file_path_pv_name)
+            self.pvs['image'] = PV(image_pv_name)
+            if self.file_path_monitor != None:
+                self.file_path_monitor.unSetPVmonitor()
+            self.file_path_monitor = epicsMonitor(self.pvs['file_path'], self.handle_AD_callback, autostart=False)
+            self._record_name = new_record_name
 
     def activate(self):
         """
