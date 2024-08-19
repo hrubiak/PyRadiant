@@ -406,7 +406,7 @@ class RoiImageWidget(QtWidgets.QWidget):
         super(RoiImageWidget, self).__init__(*args, **kwargs)
         self.roi_num = roi_num
         self.roi_colors = roi_colors
-        self.rect = None
+        self.rectangle = None
         self.pg_widget = pg.GraphicsLayoutWidget()
         self.pg_layout = self.pg_widget.ci
         self.pg_layout.setContentsMargins(0, 10, 15, 0)
@@ -451,12 +451,12 @@ class RoiImageWidget(QtWidgets.QWidget):
         self.add_rois()
         self.modify_mouse_behavior()
 
-    def set_wavelength_calibration(self, rect):
+    def set_wavelength_calibration(self, rectangle):
         
-        if self.rect != rect :
-            self.rect = rect
-            self.pg_img_item.setRect(*rect)
-            self.bottom_axis.setRange(rect[0], rect[0]+rect[1])
+        if self.rectangle != rectangle:
+            self.rectangle = rectangle
+            self.pg_img_item.setRect(*rectangle)
+            self.bottom_axis.setRange(rectangle[0], rectangle[0]+rectangle[1])
 
     def add_rois(self):
         self.rois = []
@@ -472,9 +472,9 @@ class RoiImageWidget(QtWidgets.QWidget):
         for roi in self.rois:
             roi_pos_x = roi.pos()[0]
             roi_size_x = roi.size()[0]
-            if self.rect != None:
-                roi_pos_x =   (roi_pos_x-self.rect[0]) *self.pg_img_item.image.shape[0] /self.rect[2]
-                roi_size_x = roi_size_x / self.rect[2]*self.pg_img_item.image.shape[0]
+            if self.rectangle != None:
+                roi_pos_x =   (roi_pos_x-self.rectangle[0]) *self.pg_img_item.image.shape[0] /self.rectangle[2]
+                roi_size_x = roi_size_x / self.rectangle[2]*self.pg_img_item.image.shape[0]
             limit = [int(round(roi_pos_x)), int(round(roi_pos_x + roi_size_x)),
                                roi.pos()[1], roi.pos()[1] + roi.size()[1]]
             roi_limits.append(limit)
@@ -508,9 +508,9 @@ class RoiImageWidget(QtWidgets.QWidget):
         pos = [roi_limits[0], roi_limits[2]]
         size = [roi_limits[1] - roi_limits[0],
                                 roi_limits[3] - roi_limits[2]]
-        if self.rect != None:
-            pos[0] = int(round(self.rect[0] + pos[0] /self.pg_img_item.image.shape[0] *self.rect[2]))
-            size[0] = int(round(size[0] * (self.rect[2]/self.pg_img_item.image.shape[0])))
+        if self.rectangle != None:
+            pos[0] = int(round(self.rectangle[0] + pos[0] /self.pg_img_item.image.shape[0] *self.rectangle[2]))
+            size[0] = int(round(size[0] * (self.rectangle[2]/self.pg_img_item.image.shape[0])))
         
         self.rois[ind].blockSignals(True)
         self.rois[ind].setPos(pos)
@@ -531,11 +531,11 @@ class RoiImageWidget(QtWidgets.QWidget):
     def plot_image(self, data):
         
         self.pg_img_item.setImage(data)
-        if self.rect != None:
-            x_min = self.rect[0]
-            x_max = self.rect[0]+ self.rect[2]
-            y_min = self.rect[1]
-            y_max = self.rect[1]+ self.rect[3]
+        if self.rectangle != None:
+            x_min = self.rectangle[0]
+            x_max = self.rectangle[0]+ self.rectangle[2]
+            y_min = self.rectangle[1]
+            y_max = self.rectangle[1]+ self.rectangle[3]
             self.pg_viewbox.setLimits(xMin=x_min, xMax=x_max,
                                     yMin=y_min, yMax=y_max)
         else:
