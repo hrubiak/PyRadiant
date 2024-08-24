@@ -4,7 +4,7 @@ activate python_3.12_env
 pip install PyQt6
 pip install pyqtgraph
 pip install pyqtdarktheme==2.1.0 --ignore-requires-python
-pip install pyepics
+pip install pyepics ( this is optional )
 pip install scipy
 pip install h5py
 pip install python-dateutil
