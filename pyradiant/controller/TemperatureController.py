@@ -457,7 +457,7 @@ class TemperatureController(QtCore.QObject):
             self.widget.temperature_spectrum_widget.plot_ds_fit(*self.model.ds_fit_spectrum.data)
         else:
             self.widget.temperature_spectrum_widget.plot_ds_fit([],[])
-        self.widget.roi_widget.specra_widget.plot_ds_data(*self.model.ds_temperature_model.data_spectrum.data)
+        self.widget.roi_widget.specra_widget.plot_ds_data(*self.model.ds_temperature_model.response.data)
 
         self.widget.temperature_spectrum_widget.update_ds_temperature_txt(self.model.ds_temperature,
                                                            self.model.ds_temperature_error)
@@ -491,7 +491,7 @@ class TemperatureController(QtCore.QObject):
             self.widget.temperature_spectrum_widget.plot_us_fit(*self.model.us_fit_spectrum.data)
         else:
             self.widget.temperature_spectrum_widget.plot_us_fit([],[])
-        self.widget.roi_widget.specra_widget.plot_us_data(*self.model.us_temperature_model.data_spectrum.data)
+        self.widget.roi_widget.specra_widget.plot_us_data(*self.model.us_temperature_model.response.data)
 
         self.widget.temperature_spectrum_widget.update_us_temperature_txt(self.model.us_temperature,
                                                            self.model.us_temperature_error)

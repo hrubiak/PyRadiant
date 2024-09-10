@@ -810,6 +810,7 @@ class SingleTemperatureModel(QtCore.QObject):
         self.calibration_spectrum = Spectrum([], [])
         self.corrected_spectrum = Spectrum([], [])
         #self.within_limit = None
+        self.response = Spectrum([],[])
 
         self.temperature_fit_function = fit_black_body_function_wien
         self.subtract_inistu_data_background = True
@@ -986,7 +987,7 @@ class SingleTemperatureModel(QtCore.QObject):
         if len(self.calibration_spectrum._x) == len(self.data_spectrum._x):
             x, _ = self.data_spectrum.data
             lamp_spectrum = self.calibration_parameter.get_lamp_spectrum(x)
-            self.corrected_spectrum = calculate_real_spectrum(self.data_spectrum,
+            self.corrected_spectrum, self.response = calculate_real_spectrum(self.data_spectrum,
                                                               self.calibration_spectrum,
                                                               lamp_spectrum)
             self.corrected_spectrum.mask = self.data_spectrum.mask
@@ -1034,9 +1035,11 @@ class SingleTemperatureModel(QtCore.QObject):
 def calculate_real_spectrum(data_spectrum, calibration_spectrum, standard_spectrum):
     response_y = calibration_spectrum._y / standard_spectrum._y
     response_y[np.where(response_y == 0)] = np.nan
+    response = Spectrum(data_spectrum._x, response_y)
+    
     corrected_y = data_spectrum._y / response_y
     corrected_y = corrected_y / np.max(corrected_y) * np.max(data_spectrum._y)
-    return Spectrum(data_spectrum._x, corrected_y)
+    return Spectrum(data_spectrum._x, corrected_y), response
 
 
 def fit_black_body_function(spectrum):
