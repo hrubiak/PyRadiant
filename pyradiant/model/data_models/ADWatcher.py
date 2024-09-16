@@ -86,57 +86,36 @@ class ADWatcher(DataModel, QtCore.QObject):
         if not EPICS_AVAILABLE:
             return
         self.img = None
-        self.file_path_monitor = None
+        self._record_name = None
+        self.num_images_monitor = None
         self.file_type = file_type
         self.n_detectors = 1 # may support multiple detectors in the future, only 1 is implemented for now
-        self.record_name = record_name
-        pv_name = record_name+ ':cam1:Model_RBV'
+        self.detector = 'NA'
+        self.exposure_time = 0
+        self.num_frames = 1
+        self.grating = 'NA'
+        self._xdim = 0
+        self._ydim = 0
+        self.debug = debug
+        self.gain = 1
+        self.num_frames = 1
+        self.x_calibration = x_calibration
+
+        pv_name = str(record_name) + ':cam1:Model_RBV'
         check_pv = caget(pv_name, as_string=True, timeout=2, connection_timeout=2)
         if check_pv != None:
-            pvs = {'cam1': 
-                        {
-                        'Manufacturer_RBV': None,
-                        'Model_RBV' : None,
-                        'LFGrating_RBV' : None,
-                        'LFGratingWL_RBV' : None,
-                        'AcquireTime_RBV': None,
-                        'LFGain_RBV': None,
-                        'LFExitPort_RBV': None,
-                        'LFIntensifierGain_RBV': None,
-                        'TemperatureActual_RBV': None},
-            
-                    'image1' : {'ArrayData': None,
-                                'ArraySize0_RBV': None,
-                                'ArraySize1_RBV': None,
-                                'ArraySize2_RBV': None,
-                                'DataType_RBV': None,
-                                'NDimensions_RBV': None,
-                                'ColorMode_RBV': None   
-                                },
-                }
-            self.pvs = []
-            for i in range(self.n_detectors):
-                self.pvs.append(copy.deepcopy(pvs))
-                for group in self.pvs[i].keys():
-                    for pv in self.pvs[i][group].keys():
-                        
-                        pv_name = self.record_name+':'+str(group[:-1])+str(i+1) + ':' + pv
-                        self.pvs[i][group][pv] = PV(pv_name)
-            self.detector = 'NA'
-            self.exposure_time = 0
-            self.num_frames = 1
-            self.grating = 'NA'
-            self._xdim = 0
-            self._ydim = 0
-            self.debug = debug
-            self.gain = 1
-
+            self.record_name =str(record_name)
+        else:
+            return
+        
+        try:
             self.update_data()
-            self.num_frames = 1
-            self.x_calibration = x_calibration
-            if activate:
-                self.activate()
-            self.initialized = True
+        except:
+            return
+        
+        if activate:
+            self.activate()
+        self.initialized = True
 
     def update_data(self): 
         ArrayData = self.pvs[0]['image1']['ArrayData'].get()
@@ -161,36 +140,68 @@ class ADWatcher(DataModel, QtCore.QObject):
 
     @record_name.setter
     def record_name(self, new_record_name):
+        pvs = {'cam1': 
+                    {
+                    'Manufacturer_RBV': None,
+                    'Model_RBV' : None,
+                    'LFGrating_RBV' : None,
+                    'LFGratingWL_RBV' : None,
+                    'AcquireTime_RBV': None,
+                    'LFGain_RBV': None,
+                    'LFExitPort_RBV': None,
+                    'LFIntensifierGain_RBV': None,
+                    'TemperatureActual_RBV': None,
+                    'NumImagesCounter_RBV': None},
         
+                'image1' : {'ArrayData': None,
+                            'ArraySize0_RBV': None,
+                            'ArraySize1_RBV': None,
+                            'ArraySize2_RBV': None,
+                            'DataType_RBV': None,
+                            'NDimensions_RBV': None,
+                            'ColorMode_RBV': None   
+                            },
+                    }
+        self.pvs = []
+        for i in range(self.n_detectors):
+            self.pvs.append(copy.deepcopy(pvs))
+            for group in self.pvs[i].keys():
+                for pv in self.pvs[i][group].keys():
+                    
+                    pv_name = new_record_name+':'+str(group[:-1])+str(i+1) + ':' + pv
+                    self.pvs[i][group][pv] = PV(pv_name)
         ## monitor epics pvs
-        if EPICS_AVAILABLE:
-            file_path_pv_name = new_record_name + ':cam1:FullFileName_RBV'
-            image_pv_name = new_record_name + ':image1:ArrayData'
-            self.pvs = {}
-            self.pvs['file_path'] = PV(file_path_pv_name)
-            self.pvs['image'] = PV(image_pv_name)
-            if self.file_path_monitor != None:
-                self.file_path_monitor.unSetPVmonitor()
-            self.file_path_monitor = epicsMonitor(self.pvs['file_path'], self.handle_AD_callback, autostart=False)
-            self._record_name = new_record_name
+    
+        file_path_pv_name = new_record_name + ':cam1:FullFileName_RBV'
+        image_pv_name = new_record_name + ':image1:ArrayData'
+        numImagesCounter_pv = new_record_name + ':cam1:NumImagesCounter_RBV'
+        #self.pvs = {}
+        self.pvs[0]['file_path'] = PV(file_path_pv_name)
+        self.pvs[0]['image'] = PV(image_pv_name)
+        self.pvs[0]['numImagesCounter'] = PV(numImagesCounter_pv)
+        if self.num_images_monitor != None:
+            self.num_images_monitor.unSetPVmonitor()
+        self.num_images_monitor = epicsMonitor(self.pvs[0]['numImagesCounter'], self.handle_AD_callback, autostart=False)
+        self._record_name = new_record_name
 
     def activate(self):
         """
         activates the watcher to emit signals when new data is available
         """
-        if self.file_path_monitor != None:
-            self.file_path_monitor.SetPVmonitor()
+        if self.num_images_monitor != None:
+            self.num_images_monitor.SetPVmonitor()
 
     def deactivate(self):
         """
         deactivates the watcher so it will not emit a signal when new data is available
         """
-        if self.file_path_monitor != None:
-            self.file_path_monitor.unSetPVmonitor()
+        if self.num_images_monitor != None:
+            self.num_images_monitor.unSetPVmonitor()
 
     def handle_AD_callback(self, Status):
         if len(Status):
-            self.file_added.emit(Status)
+            file = self.pvs[0]['file_path'].get(as_string=True)
+            self.file_added.emit(file)
             
 class epicsMonitor(QtCore.QObject):
     callback_triggered = QtCore.pyqtSignal(str)
