@@ -34,7 +34,7 @@ from .. widget.TemperatureSpectrumWidget import dataHistoryWidget
 
 from .. import EPICS_AVAILABLE
 if EPICS_AVAILABLE:
-    from epics import caput, camonitor, camonitor_clear
+    from epics import caput, camonitor, camonitor_clear, caget
 
 class TemperatureController(QtCore.QObject):
 
