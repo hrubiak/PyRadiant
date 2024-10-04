@@ -1,6 +1,6 @@
 conda create --name PyRadiant_env python=3.12
 pip install --upgrade pip
-activate python_3.12_env
+activate PyRadiant_env
 pip install PyQt6
 pip install pyqtgraph
 pip install pyqtdarktheme==2.1.0 --ignore-requires-python
