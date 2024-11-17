@@ -141,11 +141,11 @@ class TemperatureController(QtCore.QObject):
         self.widget.setup_epics_pb.clicked.connect(self.setup_epics_pb_clicked)
 
         # model signals
-        self.model.data_changed.connect(self.data_changed)
+        self.model.data_changed_signal.connect(self.data_changed_signal_callback)
         self.model.ds_calculations_changed.connect(self.ds_calculations_changed)
         self.model.us_calculations_changed.connect(self.us_calculations_changed)
 
-        self.model.data_changed.connect(self.update_time_lapse)
+        self.model.data_changed_signal.connect(self.update_time_lapse)
         self.model.ds_calculations_changed.connect(self.update_time_lapse)
         self.model.us_calculations_changed.connect(self.update_time_lapse)
 
@@ -384,7 +384,7 @@ class TemperatureController(QtCore.QObject):
         self.widget.use_backbround_data_cb.blockSignals(False)
 
 
-    def data_changed(self):
+    def data_changed_signal_callback(self):
         self.widget.roi_widget.plot_img(self.model.data_img)
         if self.model.x_calibration is not None and self.model.data_img is not None:
             wl_calibration = self.model.x_calibration

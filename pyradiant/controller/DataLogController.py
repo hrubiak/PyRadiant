@@ -68,7 +68,7 @@ class DataLogController(QtCore.QObject):
         #self.widget.file_dragged_in.connect(self.file_dragged_in) 
 
         # model signals
-        self.temperature_model.data_changed.connect(self.data_changed_callback)
+        self.temperature_model.data_changed_signal.connect(self.data_changed_callback)
         self.temperature_model.ds_calculations_changed.connect(self.ds_calculations_changed_callback)
         self.temperature_model.us_calculations_changed.connect(self.us_calculations_changed_callback)
 

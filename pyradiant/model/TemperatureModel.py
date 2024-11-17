@@ -42,7 +42,7 @@ LOG_HEADER = '# File\tPath\tT_DS\tT_US\tT_DS_error\tT_US_error\tDetector\tExposu
 
 
 class TemperatureModel(QtCore.QObject):
-    data_changed = QtCore.pyqtSignal()
+    data_changed_signal = QtCore.pyqtSignal()
     ds_calculations_changed = QtCore.pyqtSignal()
     us_calculations_changed = QtCore.pyqtSignal()
 
@@ -78,7 +78,7 @@ class TemperatureModel(QtCore.QObject):
 
     def data_changed_emit(self):
         self.write_to_log()
-        self.data_changed.emit()
+        self.data_changed_signal.emit()
 
     def ds_calculations_changed_emit(self):
         self.ds_calculations_changed.emit()
