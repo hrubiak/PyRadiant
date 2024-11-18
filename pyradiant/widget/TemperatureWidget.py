@@ -162,6 +162,7 @@ class TemperatureWidget(QtWidgets.QWidget):
 
         self.load_next_frame_btn = self.control_widget.file_gb.load_next_frame_btn
         self.load_previous_frame_btn = self.control_widget.file_gb.load_previous_frame_btn
+        
         self.frame_num_txt = self.control_widget.file_gb.frame_txt
         self.frame_widget = self.control_widget.file_gb.frame_control_widget
 

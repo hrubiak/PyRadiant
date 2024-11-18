@@ -108,6 +108,7 @@ class TemperatureController(QtCore.QObject):
         self.widget.browse_by_time_rb.clicked.connect(self.toggle_browse_mode)
         self.widget.load_next_frame_btn.clicked.connect(self.model.load_next_img_frame)
         self.widget.load_previous_frame_btn.clicked.connect(self.model.load_previous_img_frame)
+        self.widget.frame_num_txt.textChanged.connect( self.frame_num_txt_callback)
         self.widget.autoprocess_cb.toggled.connect(self.auto_process_cb_toggled)
 
         self.connect_click_function(self.widget.save_data_btn, self.save_data_btn_clicked)
@@ -166,7 +167,10 @@ class TemperatureController(QtCore.QObject):
         self.widget.use_backbround_data_cb.toggled.connect(self.use_backbround_cb_callback)
         self.widget.use_backbround_calibration_cb.toggled.connect(self.use_backbround_cb_callback)
 
-
+    def frame_num_txt_callback(self):
+        num =  int(self.widget.frame_num_txt.text())
+        if num >= 1 and num <= self.model.data_img_file.num_frames:
+            self.model.load_any_img_frame(num)
 
     def connect_click_function(self, emitter, function):
         emitter.clicked.connect(function)

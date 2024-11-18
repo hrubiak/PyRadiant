@@ -164,6 +164,10 @@ class TemperatureModel(QtCore.QObject):
 
     def load_previous_img_frame(self):
         return self.set_img_frame_number_to(self.current_frame - 1)
+    
+    def load_any_img_frame(self, num):
+        
+        return self.set_img_frame_number_to(num)
 
     def set_img_frame_number_to(self, frame_number):
         if frame_number < 0 or frame_number >= self.data_img_file.num_frames:
