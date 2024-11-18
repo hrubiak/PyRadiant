@@ -108,7 +108,7 @@ class TemperatureController(QtCore.QObject):
         self.widget.browse_by_time_rb.clicked.connect(self.toggle_browse_mode)
         self.widget.load_next_frame_btn.clicked.connect(self.model.load_next_img_frame)
         self.widget.load_previous_frame_btn.clicked.connect(self.model.load_previous_img_frame)
-        self.widget.frame_num_txt.textChanged.connect( self.frame_num_txt_callback)
+        self.widget.frame_num_txt.editingFinished.connect( self.frame_num_txt_callback)
         self.widget.autoprocess_cb.toggled.connect(self.auto_process_cb_toggled)
 
         self.connect_click_function(self.widget.save_data_btn, self.save_data_btn_clicked)
@@ -421,7 +421,9 @@ class TemperatureController(QtCore.QObject):
             else:
                 self.widget.frame_widget.setVisible(False)
                 self.widget.temperature_spectrum_widget.show_time_lapse_plot(False)
+            self.widget.frame_num_txt.blockSignals(True)
             self.widget.frame_num_txt.setText(str(self.model.current_frame + 1))
+            self.widget.frame_num_txt.blockSignals(False)
             
             self.widget.graph_info_lbl.setText(self.model.file_info)
         else:
