@@ -146,9 +146,7 @@ class TemperatureController(QtCore.QObject):
         self.model.ds_calculations_changed.connect(self.ds_calculations_changed)
         self.model.us_calculations_changed.connect(self.us_calculations_changed)
 
-        self.model.data_changed_signal.connect(self.update_time_lapse)
-        self.model.ds_calculations_changed.connect(self.update_time_lapse)
-        self.model.us_calculations_changed.connect(self.update_time_lapse)
+        
 
         self.widget.roi_widget.rois_changed.connect(self.widget_rois_changed)
         self.widget.roi_widget.wl_range_changed.connect(self.widget_wl_range_changed_callback)
@@ -190,6 +188,24 @@ class TemperatureController(QtCore.QObject):
         else:
             self.disconnect_to_area_detector()
 
+
+    def process_multiframe(self):
+        # hack, refactor later:
+        # Since the entire timelapse calculation is costly,
+        # it should only get recalculated when the actual file changes, 
+        # or any setting changes
+        # - not when only the frame number is updated.
+
+        # for not this function is called from several places:
+        # file is loaded
+        # next or previous file is loaded
+        # Area Detector data is updated
+
+        if self.model.data_img_file is not None:
+            num_frames = self.model.data_img_file.num_frames
+            if num_frames>1:
+                self.update_time_lapse()
+
     def load_data_file(self, filenames=None):
         if isinstance(filenames, str):
             filenames = [filenames]
@@ -203,17 +219,17 @@ class TemperatureController(QtCore.QObject):
                     self._exp_working_dir = os.path.dirname(str(filename))
                     self.model.load_data_image(str(filename))
                     self._directory_watcher.path = self._exp_working_dir
+                    # hack, refactor later:
+                    self.process_multiframe()
                     print('Loaded File: ', filename)
                 else:
                     print('file not found: ' + str(filename))
 
     def load_data_file_ad(self, filename=None):
         if isinstance(filename, str):
-         
-        
             self.model.load_data_image_ad(self._AD_watcher)
-          
-              
+            # hack, refactor later:
+            self.process_multiframe()
 
     def file_dragged_in(self,files):
         self.load_data_file(filenames=files)
@@ -225,6 +241,9 @@ class TemperatureController(QtCore.QObject):
         else:
             mode = 'time'
         self.model.load_next_data_image(mode)
+        
+        # hack, refactor later:
+        self.process_multiframe()
 
     def load_previous_data_image(self):
         
@@ -233,6 +252,9 @@ class TemperatureController(QtCore.QObject):
         else:
             mode = 'time'
         self.model.load_previous_data_image(mode)
+
+        # hack, refactor later:
+        self.process_multiframe()
         
     def toggle_browse_mode(self):
         
@@ -440,7 +462,7 @@ class TemperatureController(QtCore.QObject):
         mtime = self.model.mtime
         self.widget.mtime.setText('Timestamp: '+ str(mtime))
         
-        
+    
 
     def ds_calculations_changed(self):
         if self.model.ds_calibration_filename is not None:
@@ -511,24 +533,31 @@ class TemperatureController(QtCore.QObject):
                 
 
     def update_time_lapse(self):
+        # this actually fits all the frames so be careful calling this willy nilly
         us_temperature, us_temperature_error, ds_temperature, ds_temperature_error = self.model.fit_all_frames()
         self.widget.temperature_spectrum_widget.plot_ds_time_lapse(range(1, len(ds_temperature)+1), ds_temperature)
         self.widget.temperature_spectrum_widget.plot_us_time_lapse(range(1, len(us_temperature)+1), us_temperature)
 
         if len(ds_temperature):
-            out = np.mean(ds_temperature), np.std(ds_temperature)
+            ds_temperature_arr = np.asarray(ds_temperature, dtype=float)
+            ds_t = ds_temperature_arr[ds_temperature_arr > 500]
+            ds_t = ds_t[ds_t < 20000]
+            out = np.mean(ds_t), np.std(ds_t)
         else:
             out = np.nan, np.nan
         self.widget.temperature_spectrum_widget.update_time_lapse_ds_temperature_txt(*out)
             
         if len(us_temperature):
-            out = np.mean(us_temperature), np.std(us_temperature)
+            us_temperature_arr = np.asarray(us_temperature, dtype=float)
+            us_t = us_temperature_arr[us_temperature_arr > 500]
+            us_t = us_t[us_t < 20000]
+            out = np.mean(us_t), np.std(us_t)
         else:
             out = np.nan, np.nan
         self.widget.temperature_spectrum_widget.update_time_lapse_us_temperature_txt(*out)
 
-        if len(us_temperature) and len(ds_temperature):
-            out = np.mean(ds_temperature + us_temperature), np.std(ds_temperature + us_temperature)
+        if len(ds_t) and len(us_t):
+            out = np.mean(np.concatenate((ds_t, us_t))), np.std(np.concatenate((ds_t , us_t)))
         else:
             out = np.nan, np.nan
         self.widget.temperature_spectrum_widget.update_time_lapse_combined_temperature_txt(*out )

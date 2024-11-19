@@ -41,7 +41,7 @@ class FileGroupBox(QtWidgets.QGroupBox):
         self._second_row_widget_layout = QtWidgets.QHBoxLayout(self._second_row_widget)
         self._second_row_widget_layout.setContentsMargins(0, 0, 0, 0)
         self._second_row_widget_layout.setSpacing(0)
-        self._second_row_widget_layout.addWidget(self.dirname_lbl)
+        #self._second_row_widget_layout.addWidget(self.dirname_lbl)
 
         self._second_row_widget_layout.addWidget(QtWidgets.QLabel(os.path.sep))
         self._second_row_widget_layout.addWidget(self.filename_lbl)

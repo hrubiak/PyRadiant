@@ -135,7 +135,7 @@ class TemperatureModel(QtCore.QObject):
         self.mtime = self.get_last_modified_time(filename)
         self.data_changed_emit()
 
-
+        
     
     def get_last_modified_time(self, file_path):
         # Get the modification time in seconds since the epoch
@@ -1007,23 +1007,24 @@ class SingleTemperatureModel(QtCore.QObject):
     ##################################################################
     def fit_data(self):
         okay = False
-        if self.corrected_spectrum.mask is not None:
-            count_true = np.count_nonzero(self.corrected_spectrum.mask)
-            #print('count_true '+ str(count_true))
-            if count_true > 20:
-                counts = self.data_spectrum.data[1]
-                average_counts = sum(counts)/len(counts)
-                #print(average_counts)
-                if len(self.corrected_spectrum):
-                    
-                    if average_counts >3 :
-                        #now = time.time()
-                        self.temperature, self.temperature_error, self.fit_spectrum, self.scaling = \
-                            self.temperature_fit_function(self.corrected_spectrum)
-                        okay = True
-                        #later = time.time()
-                        #elapsed = later - now
-                        #print('fit time = ' + str(elapsed))
+        if self.corrected_spectrum.x.shape[0]>0 and self.corrected_spectrum.y.shape[0]>0:
+            if self.corrected_spectrum.mask is not None:
+                count_true = np.count_nonzero(self.corrected_spectrum.mask)
+                #print('count_true '+ str(count_true))
+                if count_true > 20:
+                    counts = self.data_spectrum.data[1]
+                    average_counts = sum(counts)/len(counts)
+                    #print(average_counts)
+                    if len(self.corrected_spectrum):
+                        
+                        if average_counts >3 :
+                            #now = time.time()
+                            self.temperature, self.temperature_error, self.fit_spectrum, self.scaling = \
+                                self.temperature_fit_function(self.corrected_spectrum)
+                            okay = True
+                            #later = time.time()
+                            #elapsed = later - now
+                            #print('fit time = ' + str(elapsed))
 
         if not okay:
             self.temperature = 0
