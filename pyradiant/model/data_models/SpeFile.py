@@ -401,8 +401,6 @@ class SpeFile(DataModel):
             img = self._read_at(pos, self._xdim * self._ydim, np.uint32)
         return img.reshape((self._ydim, self._xdim))
 
-    
-
 
 
     def get_roi(self, idx=0):
