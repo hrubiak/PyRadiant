@@ -78,10 +78,10 @@ class SpeFile(DataModel):
             # file
             self._read_parameter_from_header()
         else:
-            try:
-                self._read_parameter_from_dom()
-            except: # if fails for any reason, try reading from the header
-                self._read_parameter_from_header()
+            
+            self._read_parameter_from_dom()
+            #except: # if fails for any reason, try reading from the header
+            #self._read_parameter_from_header()
 
     def _read_size(self):
         """reads the dimensions of the Model from the header into the object
@@ -272,23 +272,50 @@ class SpeFile(DataModel):
         roi_x,roi_y, roi_width, roi_height"""
         try:
             self.roi_modus = str(self.dom.getElementsByTagName('ReadoutControl')[0]. \
-                                 getElementsByTagName('RegionsOfInterest')[0]. \
-                                 getElementsByTagName('Selection')[0]. \
-                                 childNodes[0].toxml())
+                                    getElementsByTagName('RegionsOfInterest')[0]. \
+                                    getElementsByTagName('Selection')[0]. \
+                                    childNodes[0].toxml())
             if self.roi_modus == 'CustomRegions':
-                self.roi_dom = self.dom.getElementsByTagName('ReadoutControl')[0]. \
+                roi_doms = self.dom.getElementsByTagName('ReadoutControl')[0]. \
                     getElementsByTagName('RegionsOfInterest')[0]. \
                     getElementsByTagName('CustomRegions')[0]. \
-                    getElementsByTagName('RegionOfInterest')[0]
-                self.roi_dom_width = self.dom.getElementsByTagName('DataFormat')[0]. \
-                    getElementsByTagName('DataBlock')[0]. \
-                    getElementsByTagName('DataBlock')[0]
-                self.roi_x = int(self.roi_dom.attributes['x'].value)
-                self.roi_y = int(self.roi_dom.attributes['y'].value)
-                self.roi_width = int(self.roi_dom_width.attributes['width'].value)
-                self.roi_height = int(self.roi_dom.attributes['height'].value)
-                self.roi_x_binning = int(self.roi_dom.attributes['xBinning'].value)
-                self.roi_y_binning = int(self.roi_dom.attributes['yBinning'].value)
+                    getElementsByTagName('RegionOfInterest')
+                self.num_rois = len(roi_doms)
+                if self.num_rois>1:
+                    self.num_rois = len(roi_doms)
+                    self.roi_dom_width= []
+                    self.roi_x = []
+                    self.roi_y = []
+                    self.roi_width = []
+                    self.roi_height = []
+                    self.roi_x_binning = []
+                    self.roi_y_binning = []
+                    roi_dom_widths = self.dom.getElementsByTagName('DataFormat')[0]. \
+                            getElementsByTagName('DataBlock')[0]. \
+                            getElementsByTagName('DataBlock')
+                    for idx, roi_dom in enumerate(roi_doms):
+                        self.roi_dom_width.append(roi_dom_widths[idx])
+
+                        self.roi_x.append(int(roi_dom.attributes['x'].value))
+                        self.roi_y.append(int(roi_dom.attributes['y'].value))
+                        self.roi_width.append(int(roi_dom.attributes['width'].value))
+                        self.roi_height.append(int(roi_dom.attributes['height'].value))
+                        self.roi_x_binning.append(int(roi_dom.attributes['xBinning'].value))
+                        self.roi_y_binning.append(int(roi_dom.attributes['yBinning'].value))
+
+                elif self.num_rois ==1:
+                    roi_dom_widths = self.dom.getElementsByTagName('DataFormat')[0]. \
+                            getElementsByTagName('DataBlock')[0]. \
+                            getElementsByTagName('DataBlock')
+                    
+                    self.roi_dom_width = roi_dom_widths[0]
+
+                    self.roi_x = int(roi_dom.attributes['x'].value)
+                    self.roi_y = int(roi_dom.attributes['y'].value)
+                    self.roi_width = int(roi_dom.attributes['width'].value)
+                    self.roi_height = int(roi_dom.attributes['height'].value)
+                    self.roi_x_binning = int(roi_dom.attributes['xBinning'].value)
+                    self.roi_y_binning = int(roi_dom.attributes['yBinning'].value)
             elif self.roi_modus == 'FullSensor':
                 self.roi_x = 0
                 self.roi_y = 0
@@ -324,7 +351,14 @@ class SpeFile(DataModel):
 
     def _select_wavelength_from_roi(self):
         try:
-            self.x_calibration = self.x_calibration[self.roi_x: self.roi_x + self.roi_width]
+            if hasattr(self, 'num_rois'):
+
+                if self.num_rois ==1:
+                    self.x_calibration = self.x_calibration[self.roi_x: self.roi_x + self.roi_width]
+                elif self.num_rois >1 :
+                    self.x_calibration = self.x_calibration[self.roi_x[0]: self.roi_x[0] + self.roi_width[0]]
+            else:
+                self.x_calibration = self.x_calibration[self.roi_x: self.roi_x + self.roi_width]
         except AttributeError:
             print("SPE File bad!")
 
@@ -371,8 +405,12 @@ class SpeFile(DataModel):
 
 
 
-    def get_roi(self):
+    def get_roi(self, idx=0):
         """Returns the ROI which was defined by WinSpec or Lightfield for datacollection"""
+        if hasattr(self, 'num_rois'):
+            if self.num_rois > 1:
+                return [self.roi_x[idx], self.roi_x[idx] + self.roi_width[idx] - 1,
+                        self.roi_y[idx], self.roi_y[idx] + self.roi_height[idx] - 1]
         return [self.roi_x, self.roi_x + self.roi_width - 1,
                 self.roi_y, self.roi_y + self.roi_height - 1]
 
