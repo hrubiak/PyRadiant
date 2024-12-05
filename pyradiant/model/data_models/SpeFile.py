@@ -402,11 +402,11 @@ class SpeFile(DataModel):
                         self._xdim = self.sensor_width
 
     def _get_val(self, obj, idx=0):
-        if isinstance(obj, list):
+        if isinstance(obj, (list, tuple, dict, set)):
             return obj[idx]
-        elif isinstance(obj, (int, float)):
+        else:
             return obj
-        else: return None
+    
 
     def _read_frame(self, pos=None):
         """Reads in a frame at a specific binary position. The following parameters have to
@@ -448,6 +448,17 @@ class SpeFile(DataModel):
                         posn = posn + roi_size
                        
                         subset_reshaped = subset.reshape((roi_height, roi_width))
+                        if roi_x_binning > 1 and  roi_x_binning <= self.sensor_height:
+                            # Number of times each row should be repeated
+                            k = roi_x_binning
+                            # Create the new array of shape (k*m, n)
+                            subset_reshaped = np.repeat(subset_reshaped, k, axis=0)
+                        if roi_y_binning > 1 and roi_y_binning <= self.sensor_width:
+                            # Number of times each row should be repeated
+                            k = roi_y_binning
+                            # Create the new array of shape (m, k*n)
+                            subset_reshaped = np.repeat(subset_reshaped, k, axis=1)
+
                         img_full[roi_y:roi_y+roi_height,roi_x:roi_x+roi_width]= subset_reshaped[:,:]
                     #print(f'self.sensor_height, self.sensor_width {(self.sensor_height, self.sensor_width)}')
                
