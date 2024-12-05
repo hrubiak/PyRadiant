@@ -618,9 +618,12 @@ class TemperatureModel(QtCore.QObject):
     # updating roi values
     @property
     def ds_roi(self):
-        try:
-            return self.roi_data_manager.get_roi(0, self.data_img_file.get_dimension())
-        except AttributeError:
+        if self.data_img_file is not None:
+            try:
+                return self.roi_data_manager.get_roi(0, self.data_img_file.get_dimension())
+            except AttributeError:
+                return Roi([0, 0, 0, 0])
+        else:
             return Roi([0, 0, 0, 0])
 
     @ds_roi.setter

@@ -399,6 +399,10 @@ class SpeFile(DataModel):
             img = self._read_at(pos, self._xdim * self._ydim, np.uint16)
         elif self._data_type == 8:
             img = self._read_at(pos, self._xdim * self._ydim, np.uint32)
+
+        if hasattr(self, 'num_rois'):
+            if self.num_rois >=1:
+                pass
         return img.reshape((self._ydim, self._xdim))
 
 
