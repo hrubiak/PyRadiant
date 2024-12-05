@@ -54,6 +54,9 @@ class TemperatureController(QtCore.QObject):
         #self.model: TemperatureModel
         self.model = model
 
+        self.max_allowed_T = 20000
+        self.min_allowed_T = 500
+
         #self.data_history_widget: dataHistoryWidget
         self.data_history_widget = data_history_widget
         self.data_history_widget.setWindowTitle('Temperature Log')
@@ -541,8 +544,8 @@ class TemperatureController(QtCore.QObject):
         out = np.nan, np.nan
         if len(ds_temperature):
             ds_temperature_arr = np.asarray(ds_temperature, dtype=float)
-            ds_t = ds_temperature_arr[ds_temperature_arr > 500]
-            ds_t = ds_t[ds_t < 20000]
+            ds_t = ds_temperature_arr[ds_temperature_arr > self.min_allowed_T]
+            ds_t = ds_t[ds_t < self.max_allowed_T]
             if len(ds_t):
                 out = np.mean(ds_t), np.std(ds_t)
         
@@ -551,8 +554,8 @@ class TemperatureController(QtCore.QObject):
             
         if len(us_temperature):
             us_temperature_arr = np.asarray(us_temperature, dtype=float)
-            us_t = us_temperature_arr[us_temperature_arr > 500]
-            us_t = us_t[us_t < 20000]
+            us_t = us_temperature_arr[us_temperature_arr > self.min_allowed_T]
+            us_t = us_t[us_t < self.max_allowed_T]
             out = np.nan, np.nan
             if len(us_t):
                 out = np.mean(us_t), np.std(us_t)
