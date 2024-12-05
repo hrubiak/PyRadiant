@@ -538,22 +538,25 @@ class TemperatureController(QtCore.QObject):
         self.widget.temperature_spectrum_widget.plot_ds_time_lapse(range(1, len(ds_temperature)+1), ds_temperature)
         self.widget.temperature_spectrum_widget.plot_us_time_lapse(range(1, len(us_temperature)+1), us_temperature)
 
+        out = np.nan, np.nan
         if len(ds_temperature):
             ds_temperature_arr = np.asarray(ds_temperature, dtype=float)
             ds_t = ds_temperature_arr[ds_temperature_arr > 500]
             ds_t = ds_t[ds_t < 20000]
-            out = np.mean(ds_t), np.std(ds_t)
-        else:
-            out = np.nan, np.nan
+            if len(ds_t):
+                out = np.mean(ds_t), np.std(ds_t)
+        
+            
         self.widget.temperature_spectrum_widget.update_time_lapse_ds_temperature_txt(*out)
             
         if len(us_temperature):
             us_temperature_arr = np.asarray(us_temperature, dtype=float)
             us_t = us_temperature_arr[us_temperature_arr > 500]
             us_t = us_t[us_t < 20000]
-            out = np.mean(us_t), np.std(us_t)
-        else:
             out = np.nan, np.nan
+            if len(us_t):
+                out = np.mean(us_t), np.std(us_t)
+        
         self.widget.temperature_spectrum_widget.update_time_lapse_us_temperature_txt(*out)
 
         if len(ds_t) and len(us_t):
