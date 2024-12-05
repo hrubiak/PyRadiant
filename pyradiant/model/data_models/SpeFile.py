@@ -43,10 +43,10 @@ RH: Updated March 25, 2024
 
 import datetime
 from xml.dom.minidom import parseString
-
+from dateutil import parser
 import numpy as np
 from numpy.polynomial.polynomial import polyval
-from dateutil import parser
+
 
 from .DataModel import DataModel
 
@@ -111,6 +111,7 @@ class SpeFile(DataModel):
         self._create_dom_from_xml()
         self._read_date_time_from_dom()
         self._read_calibration_from_dom()
+        self._read_sensor_information_from_dom()
         self._read_detector_from_dom()
         self._read_exposure_from_dom()
         self._read_grating_from_dom()
@@ -210,6 +211,18 @@ class SpeFile(DataModel):
         else:
             self.x_calibration = []
 
+    def _read_sensor_information_from_dom(self):
+        """Reads the x calibration of the image from the xml footer and saves 
+        it in the x_calibration field"""
+        spe_format = self.dom.childNodes[0]
+        calibrations = spe_format.getElementsByTagName('Calibrations')[0]
+        sensor_info_elements = calibrations.getElementsByTagName('SensorInformation')
+        # Check if the element is found and extract the width attribute
+        if sensor_info_elements:
+            sensor_info = sensor_info_elements[0]  # Assume the first match is the target
+            self.sensor_width = int(sensor_info.getAttribute("width"))
+            self.sensor_height = int(sensor_info.getAttribute("height"))
+
     def _read_exposure_from_dom(self):
         """Reads th exposure time of the experiment into the exposure_time field"""
         if len(self.dom.getElementsByTagName('Experiment')) != 1:  # check if it is a real v3.0 file
@@ -304,6 +317,7 @@ class SpeFile(DataModel):
                         self.roi_y_binning.append(int(roi_dom.attributes['yBinning'].value))
 
                 elif self.num_rois ==1:
+                    roi_dom = roi_doms[0]
                     roi_dom_widths = self.dom.getElementsByTagName('DataFormat')[0]. \
                             getElementsByTagName('DataBlock')[0]. \
                             getElementsByTagName('DataBlock')
@@ -376,9 +390,16 @@ class SpeFile(DataModel):
         if self.num_frames > 1:
             img_temp = []
             img_temp.append(self.img)
+            print(f'self.num_frames {self.num_frames}')
             for n in range(self.num_frames - 1):
+                
                 img_temp.append(self._read_frame())
             self.img = img_temp
+            if hasattr(self, 'num_rois'):
+                if self.num_rois >=1:
+                    if hasattr(self, 'sensor_width'):
+                        self._ydim = self.sensor_height
+                        self._xdim = self.sensor_width
 
     def _read_frame(self, pos=None):
         """Reads in a frame at a specific binary position. The following parameters have to
@@ -390,19 +411,42 @@ class SpeFile(DataModel):
         if pos == None:
             pos = self._fid.tell()
         if self._data_type == 0:
-            img = self._read_at(pos, self._xdim * self._ydim, np.float32)
+            dtype = np.float32
         elif self._data_type == 1:
-            img = self._read_at(pos, self._xdim * self._ydim, np.int32)
+            dtype = np.int32
         elif self._data_type == 2:
-            img = self._read_at(pos, self._xdim * self._ydim, np.int16)
+            dtype = np.int16
         elif self._data_type == 3:
-            img = self._read_at(pos, self._xdim * self._ydim, np.uint16)
+            dtype = np.uint16
         elif self._data_type == 8:
-            img = self._read_at(pos, self._xdim * self._ydim, np.uint32)
+            dtype = np.uint32
+
+        img = self._read_at(pos, self._xdim * self._ydim, dtype)
 
         if hasattr(self, 'num_rois'):
             if self.num_rois >=1:
-                pass
+                if hasattr(self, 'sensor_width'):
+                    img_full = np.zeros((self.sensor_height, self.sensor_width), dtype=dtype)
+                    posn = 0
+                    for idx in range(self.num_rois):
+                        roi_x = int(self.roi_x[idx])
+                        roi_y = int(self.roi_y[idx])
+                        roi_width = int(self.roi_width[idx])
+                        roi_height = int(self.roi_height[idx])
+                        roi_x_binning = self.roi_x_binning[idx]
+                        roi_y_binning = self.roi_y_binning[idx]
+                        roi_size = roi_width*roi_height
+                        #print(f' roi_x {roi_x},  roi_y {roi_y}, roi_width {roi_width}, roi_height {roi_height}')
+                        subset = img[posn:posn+roi_size]
+                        posn = posn + roi_size
+                       
+                        subset_reshaped = subset.reshape((roi_height, roi_width))
+                        img_full[roi_y:roi_y+roi_height,roi_x:roi_x+roi_width]= subset_reshaped[:,:]
+                    #print(f'self.sensor_height, self.sensor_width {(self.sensor_height, self.sensor_width)}')
+               
+                    return img_full
+                
+        #print(f'self._ydim, self._xdim {(self._ydim, self._xdim)}')
         return img.reshape((self._ydim, self._xdim))
 
 
