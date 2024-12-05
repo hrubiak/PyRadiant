@@ -401,6 +401,13 @@ class SpeFile(DataModel):
                         self._ydim = self.sensor_height
                         self._xdim = self.sensor_width
 
+    def _get_val(self, obj, idx=0):
+        if isinstance(obj, list):
+            return obj[idx]
+        elif isinstance(obj, (int, float)):
+            return obj
+        else: return None
+
     def _read_frame(self, pos=None):
         """Reads in a frame at a specific binary position. The following parameters have to
         be predefined before calling this function:
@@ -429,12 +436,12 @@ class SpeFile(DataModel):
                     img_full = np.zeros((self.sensor_height, self.sensor_width), dtype=dtype)
                     posn = 0
                     for idx in range(self.num_rois):
-                        roi_x = int(self.roi_x[idx])
-                        roi_y = int(self.roi_y[idx])
-                        roi_width = int(self.roi_width[idx])
-                        roi_height = int(self.roi_height[idx])
-                        roi_x_binning = self.roi_x_binning[idx]
-                        roi_y_binning = self.roi_y_binning[idx]
+                        roi_x = int(self._get_val(self.roi_x, idx))
+                        roi_y = int(self._get_val(self.roi_y, idx))
+                        roi_width = int(self._get_val(self.roi_width, idx))
+                        roi_height = int(self._get_val(self.roi_height, idx))
+                        roi_x_binning = int(self._get_val(self.roi_x_binning, idx))
+                        roi_y_binning = int(self._get_val(self.roi_y_binning, idx))
                         roi_size = roi_width*roi_height
                         #print(f' roi_x {roi_x},  roi_y {roi_y}, roi_width {roi_width}, roi_height {roi_height}')
                         subset = img[posn:posn+roi_size]
