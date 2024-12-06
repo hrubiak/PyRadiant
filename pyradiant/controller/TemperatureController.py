@@ -538,28 +538,32 @@ class TemperatureController(QtCore.QObject):
     def update_time_lapse(self):
         # this actually fits all the frames so be careful calling this willy nilly
         us_temperature, us_temperature_error, ds_temperature, ds_temperature_error = self.model.fit_all_frames()
-        self.widget.temperature_spectrum_widget.plot_ds_time_lapse(range(1, len(ds_temperature)+1), ds_temperature)
-        self.widget.temperature_spectrum_widget.plot_us_time_lapse(range(1, len(us_temperature)+1), us_temperature)
 
         out = np.nan, np.nan
         if len(ds_temperature):
-            ds_temperature_arr = np.asarray(ds_temperature, dtype=float)
-            ds_t = ds_temperature_arr[ds_temperature_arr > self.min_allowed_T]
-            ds_t = ds_t[ds_t < self.max_allowed_T]
+            ds_temperature_arr = np.array(ds_temperature)
+            ds_temperature_error_arr = np.array(ds_temperature_error)
+            select_ds  = (ds_temperature_arr > self.min_allowed_T) & (ds_temperature_arr < self.max_allowed_T) & (ds_temperature_error_arr < 200)
+            print(f'select_ds {select_ds}')
+            ds_t = ds_temperature_arr[select_ds]
+            print(f'ds_t {ds_t}')
             if len(ds_t):
                 out = np.mean(ds_t), np.std(ds_t)
-        
-            
+            ds_temperature_plot_data = ds_temperature_arr[:]
+            ds_temperature_plot_data[~select_ds] = 0
+        self.widget.temperature_spectrum_widget.plot_ds_time_lapse(range(1, len(ds_temperature_plot_data)+1), ds_temperature_plot_data)
         self.widget.temperature_spectrum_widget.update_time_lapse_ds_temperature_txt(*out)
             
         if len(us_temperature):
-            us_temperature_arr = np.asarray(us_temperature, dtype=float)
-            us_t = us_temperature_arr[us_temperature_arr > self.min_allowed_T]
-            us_t = us_t[us_t < self.max_allowed_T]
-            out = np.nan, np.nan
+            us_temperature_arr = np.array(us_temperature)
+            us_temperature_error_arr = np.array(us_temperature_error)
+            select_us  = (us_temperature_arr > self.min_allowed_T) & (us_temperature_arr < self.max_allowed_T) & (us_temperature_error_arr < 200)
+            us_t = us_temperature_arr[select_us]
             if len(us_t):
                 out = np.mean(us_t), np.std(us_t)
-        
+            us_temperature_plot_data = us_temperature_arr[:]
+            us_temperature_plot_data[~select_us] = 0
+        self.widget.temperature_spectrum_widget.plot_us_time_lapse(range(1, len(us_temperature_plot_data)+1), us_temperature_plot_data)
         self.widget.temperature_spectrum_widget.update_time_lapse_us_temperature_txt(*out)
 
         if len(ds_t) and len(us_t):
