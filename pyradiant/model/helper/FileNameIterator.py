@@ -78,6 +78,7 @@ class FileNameIterator(QtCore.QObject):
         self._order_file_list()
 
     def get_next_filename(self, mode='number'):
+        print(mode)
         if self.complete_path is None:
             return None
         if mode == 'time':
