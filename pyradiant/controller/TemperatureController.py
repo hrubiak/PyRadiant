@@ -132,6 +132,9 @@ class TemperatureController(QtCore.QObject):
         self.connect_click_function(self.widget.ds_load_standard_file_btn, self.load_ds_standard_file)
         self.connect_click_function(self.widget.us_load_standard_file_btn, self.load_us_standard_file)
 
+        self.connect_click_function(self.widget.ds_save_standard_file_btn, self.save_ds_standard_file)
+        self.connect_click_function(self.widget.us_save_standard_file_btn, self.save_us_standard_file)
+
         self.widget.ds_temperature_txt.editingFinished.connect(self.ds_temperature_txt_changed)
         self.widget.us_temperature_txt.editingFinished.connect(self.us_temperature_txt_changed)
 
@@ -318,6 +321,24 @@ class TemperatureController(QtCore.QObject):
         if filename != '':
             self._exp_working_dir = os.path.dirname(filename)
             self.model.load_us_standard_spectrum(filename)
+
+    def save_ds_standard_file(self, filename=None):
+        if filename is None or filename is False:
+            filename = save_file_dialog(self.widget, caption="Save Downstream Standard Spectrum",
+                                        directory=self._exp_working_dir)
+
+        if filename != '':
+            self._exp_working_dir = os.path.dirname(filename)
+            self.model.save_ds_standard_spectrum(filename)
+
+    def save_us_standard_file(self, filename=None):
+        if filename is None or filename is False:
+            filename = save_file_dialog(self.widget, caption="Save Upstream Standard Spectrum",
+                                        directory=self._exp_working_dir)
+
+        if filename != '':
+            self._exp_working_dir = os.path.dirname(filename)
+            self.model.save_us_standard_spectrum(filename)
 
     def save_setting_file(self, filename=None):
         if filename is None or filename is False:

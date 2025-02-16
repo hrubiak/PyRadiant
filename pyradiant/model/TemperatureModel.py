@@ -325,6 +325,12 @@ class TemperatureModel(QtCore.QObject):
         self.us_temperature_model.load_standard_spectrum(filename)
         self.us_calculations_changed_emit()
 
+    def save_ds_standard_spectrum(self, filename):
+        self.ds_temperature_model.save_standard_spectrum(filename)
+
+    def save_us_standard_spectrum(self, filename):
+        self.us_temperature_model.save_standard_spectrum(filename)
+
     def set_ds_calibration_modus(self, modus):
         self.ds_temperature_model.set_calibration_modus(modus)
         self.ds_calculations_changed_emit()
@@ -897,9 +903,7 @@ class SingleTemperatureModel(QtCore.QObject):
 
         self.temperature = np.nan
         self.temperature_error = np.nan
-        self.fit_spectrum = Spectrum([], [])
-        #self.data_changed_stm.emit()
-
+       
     # setting standard interface
     #########################################################################
     def load_standard_spectrum(self, filename):
@@ -907,6 +911,11 @@ class SingleTemperatureModel(QtCore.QObject):
         self._update_all_spectra()
         self.fit_data()
         #self.data_changed_stm.emit()
+
+    def save_standard_spectrum(self, filename):
+        self.calibration_parameter.set_standard_spectrum(self.corrected_spectrum)
+        self.calibration_parameter.save_standard_spectrum(filename)
+  
 
     def set_calibration_modus(self, modus):
         self.calibration_parameter.set_modus(modus)
@@ -1123,6 +1132,11 @@ class CalibrationParameter(object):
         self._standard_y = data.T[1]
 
         self.standard_file_name = filename
+
+    def save_standard_spectrum(self, filename):
+        spectrum = self.get_standard_spectrum()
+        data = np.transpose(np.asarray([spectrum.x,spectrum.y]))
+        np.savetxt(filename,data)
 
     def get_lamp_y(self, wavelength):
         if self.modus == 0:

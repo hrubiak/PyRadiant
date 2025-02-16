@@ -183,6 +183,10 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.us_standard_rb = self.calibration_section.upstream_gb.standard_rb
         self.ds_load_standard_file_btn = self.calibration_section.downstream_gb.load_standard_btn
         self.us_load_standard_file_btn = self.calibration_section.upstream_gb.load_standard_btn
+
+        self.ds_save_standard_file_btn = self.calibration_section.downstream_gb.save_standard_btn
+        self.us_save_standard_file_btn = self.calibration_section.upstream_gb.save_standard_btn
+
         self.ds_standard_filename_lbl = self.calibration_section.downstream_gb.standard_file_lbl
         self.us_standard_filename_lbl = self.calibration_section.upstream_gb.standard_file_lbl
         self.ds_temperature_txt = self.calibration_section.downstream_gb.temperature_txt
@@ -383,6 +387,7 @@ class CalibrationGB(QtWidgets.QGroupBox):
         self.standard_rb = QtWidgets.QRadioButton('Standard Spectrum')
         self.load_standard_btn = QtWidgets.QPushButton('...')
         self.standard_file_lbl = QtWidgets.QLabel('Select File...')
+        self.save_standard_btn = QtWidgets.QPushButton('Save Standard')
 
         self._layout.addWidget(self.load_file_btn, 0, 0, 1, 3)
         self._layout.addWidget(self.file_lbl, 0, 3)
@@ -392,6 +397,8 @@ class CalibrationGB(QtWidgets.QGroupBox):
         self._layout.addWidget(self.load_standard_btn, 2, 1, 1, 2)
         self._layout.addWidget(self.standard_rb, 2, 3)
         self._layout.addWidget(self.standard_file_lbl, 3, 3)
+
+        self._layout.addWidget(self.save_standard_btn, 4, 0, 1, 2)
 
         self.setLayout(self._layout)
         self.style_widgets()
