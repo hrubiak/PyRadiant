@@ -240,7 +240,7 @@ class TemperatureController(QtCore.QObject):
     def load_next_data_image(self):
         
         if self.widget.browse_by_name_rb.isChecked():
-            mode = 'name'
+            mode = 'number'
         else:
             mode = 'time'
         self.model.load_next_data_image(mode)
@@ -251,7 +251,7 @@ class TemperatureController(QtCore.QObject):
     def load_previous_data_image(self):
         
         if self.widget.browse_by_name_rb.isChecked():
-            mode = 'name'
+            mode = 'number'
         else:
             mode = 'time'
         self.model.load_previous_data_image(mode)

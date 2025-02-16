@@ -20,7 +20,7 @@
 import os
 import time
 from PyQt6 import QtCore
-
+import re
 
 class FileNameIterator(QtCore.QObject):
     # TODO create an File Index and then just get the next files according to this.
@@ -77,8 +77,114 @@ class FileNameIterator(QtCore.QObject):
         self.file_list = self._get_files_list()
         self._order_file_list()
 
+
+    
+
     def get_next_filename(self, mode='number'):
-        print(mode)
+        # updated Feb 15, 2025 by chatgpt
+        if self.complete_path is None:
+            return None
+
+        if mode == 'number':
+            # Split the current file path into directory and filename.
+            directory, file_str = os.path.split(self.complete_path)
+            filename, file_type_str = get_file_and_extension(file_str)
+            
+            # Extract the ending number from the filename.
+            file_number_str = FileNameIterator._get_ending_number(filename)
+            try:
+                file_number = int(file_number_str)
+            except ValueError:
+                return None
+
+            # Get the base part of the filename (everything before the number)
+            file_base_str = filename[:-len(file_number_str)]
+
+            # Build a regex pattern to match files with the same base and extension.
+            # For example, if file_base_str is "T " and extension is "spe",
+            # the pattern will match "T 201.spe", "T 203.spe", etc.
+            pattern = re.compile(r'^' + re.escape(file_base_str) + r'(\d+)\.' + re.escape(file_type_str) + r'$')
+            
+            matching_files = []
+            # List all files in the directory and check for matches.
+            for f in os.listdir(directory):
+                m = pattern.match(f)
+                if m:
+                    num = int(m.group(1))
+                    matching_files.append((num, f))
+            
+            # Sort the files based on the numeric part.
+            matching_files.sort(key=lambda x: x[0])
+            
+            # Look for the first file with a number greater than the current file number.
+            for num, f in matching_files:
+                if num > file_number:
+                    new_complete_path = os.path.join(directory, f)
+                    self.complete_path = new_complete_path
+                    return new_complete_path
+            return None
+
+        elif mode == 'time':
+            # (Your original time-based logic remains unchanged.)
+            time_stat = os.path.getmtime(self.complete_path)
+            if not self.ordered_file_list:
+                return None
+            cur_ind = self.ordered_file_list.index((time_stat, self.complete_path))
+            try:
+                self.complete_path = self.ordered_file_list[cur_ind + 1][1]
+                return self.complete_path
+            except IndexError:
+                return None
+
+    def get_previous_filename(self, mode='number'):
+        # updated Feb 15, 2025 by chatgpt
+        if self.complete_path is None:
+            return None
+
+        if mode == 'number':
+            directory, file_str = os.path.split(self.complete_path)
+            filename, file_type_str = get_file_and_extension(file_str)
+            file_number_str = FileNameIterator._get_ending_number(filename)
+            try:
+                file_number = int(file_number_str)
+            except ValueError:
+                return None
+
+            file_base_str = filename[:-len(file_number_str)]
+            pattern = re.compile(r'^' + re.escape(file_base_str) + r'(\d+)\.' + re.escape(file_type_str) + r'$')
+            
+            matching_files = []
+            for f in os.listdir(directory):
+                m = pattern.match(f)
+                if m:
+                    num = int(m.group(1))
+                    matching_files.append((num, f))
+            
+            matching_files.sort(key=lambda x: x[0])
+            
+            # To get the previous file, iterate in reverse and pick the first number less than the current one.
+            for num, f in reversed(matching_files):
+                if num < file_number:
+                    new_complete_path = os.path.join(directory, f)
+                    self.complete_path = new_complete_path
+                    return new_complete_path
+            return None
+
+        elif mode == 'time':
+            time_stat = os.path.getmtime(self.complete_path)
+            if not self.ordered_file_list:
+                return None
+            cur_ind = self.ordered_file_list.index((time_stat, self.complete_path))
+            if cur_ind > 0:
+                try:
+                    self.complete_path = self.ordered_file_list[cur_ind - 1][1]
+                    return self.complete_path
+                except IndexError:
+                    return None
+
+
+    '''def get_next_filename(self, mode='number'):
+
         if self.complete_path is None:
             return None
         if mode == 'time':
@@ -161,7 +267,7 @@ class FileNameIterator(QtCore.QObject):
             if os.path.exists(new_complete_path):
                 self.complete_path = new_complete_path
                 return new_complete_path
-            return None
+            return None'''
 
     def update_filename(self, new_filename):
         self.complete_path = os.path.abspath(new_filename)
