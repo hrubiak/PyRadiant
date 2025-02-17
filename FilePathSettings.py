@@ -1,6 +1,6 @@
 
-LH_PATH_WINDOWS = '\\\\pantera\\data\\16idb\\Data\\2024-2\\LH'
-experiment_name = '20240926-Ir-wire-run11'
+LH_PATH_WINDOWS = '\\\\pantera\\data\\16idb\\Data\\2025-1'
+experiment_name = '20250214-exxxxxx'
 
 LF_PV = '16LF1'
 Up_cam_PV = '16SP1'
@@ -39,7 +39,7 @@ T_path = os.path.join(exp_path,'T')
 T_path_spe = os.path.join(T_path,'spe')
 T_path_tif = os.path.join(T_path,'tif')
 
-T_filename = copy.copy(experiment_name)
+HS_path = os.path.join(exp_path,'HS')
 
 img_path = os.path.join(exp_path,'Images')
 img_path_dn = os.path.join(img_path,'Dn')
@@ -57,6 +57,7 @@ img_path_up_jpg = os.path.join(img_path_up,'jpg')
 all_folders = [LH_PATH_WINDOWS,
                 exp_path,
                 T_path,
+                HS_path,
                 T_path_spe,
                 T_path_tif,
                 img_path,
