@@ -1112,6 +1112,7 @@ class CalibrationParameter(object):
         self.standard_file_name = 'Select File...'
 
     def set_modus(self, modus):
+        modus = int(modus)
         self.modus = modus
 
     def set_temperature(self, temperature):
