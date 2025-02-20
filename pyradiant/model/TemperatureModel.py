@@ -297,7 +297,7 @@ class TemperatureModel(QtCore.QObject):
         #self.ds_calibration_img_file = SpeFile(filename)
         
         self.ds_calibration_filename = filename
-        self.ds_temperature_model.set_calibration_data(self.ds_calibration_img_file.img,
+        self.ds_temperature_model.set_calibration_data(self.ds_calibration_img_file,
                                                        self.ds_calibration_img_file.x_calibration)
         self.ds_calculations_changed_emit()
 
@@ -311,7 +311,7 @@ class TemperatureModel(QtCore.QObject):
 
         #self.us_calibration_img_file = SpeFile(filename)
         self.us_calibration_filename = filename
-        self.us_temperature_model.set_calibration_data(self.us_calibration_img_file.img,
+        self.us_temperature_model.set_calibration_data(self.us_calibration_img_file,
                                                        self.us_calibration_img_file.x_calibration)
         self.us_calculations_changed_emit()
 
@@ -800,11 +800,24 @@ class TemperatureModel(QtCore.QObject):
         for frame_ind in range(self.data_img_file.num_frames):
             self.set_img_frame_number_to(frame_ind)
             # self.fit_data()
-            us_temperature.append(self.us_temperature_model.temperature)
-            ds_temperature.append(self.ds_temperature_model.temperature)
+            us_counts = int(self.us_temperature_model.total_counts)
+            ds_counts = int(self.ds_temperature_model.total_counts)
+            max_counts = int(np.amax(np.asarray([us_counts,ds_counts])))
+            us_sufficient_counts = us_counts > (0.1*max_counts)
+            ds_sufficient_counts = ds_counts > (0.1*max_counts)
 
-            us_temperature_error.append(self.us_temperature_model.temperature_error)
-            ds_temperature_error.append(self.ds_temperature_model.temperature_error)
+            if us_sufficient_counts and self.us_temperature_model.temperature_error<30:
+                us_temperature.append(self.us_temperature_model.temperature)
+                us_temperature_error.append(self.us_temperature_model.temperature_error)
+            else:
+                us_temperature.append(0)
+                us_temperature_error.append(0)
+            if ds_sufficient_counts and self.ds_temperature_model.temperature_error<30:
+                ds_temperature.append(self.ds_temperature_model.temperature)
+                ds_temperature_error.append(self.ds_temperature_model.temperature_error)
+            else:
+                ds_temperature.append(0)
+                ds_temperature_error.append(0)
 
         self.set_img_frame_number_to(cur_frame)
         self.blockSignals(False)
@@ -867,14 +880,27 @@ class SingleTemperatureModel(QtCore.QObject):
     def calibration_img(self):
         return self._calibration_img
 
-    def set_calibration_data(self, img_data, x_calibration):
-        
+    def set_calibration_data(self, img_data_file, x_calibration):
+        if hasattr(img_data_file,'img'):
+            img_data = img_data_file.img
+        else:
+            img_data =  img_data_file
+       
+        calibration_frames = [8,20]
         self._calibration_img_x_calibration = x_calibration
         if type(img_data) == list:
-            self._calibration_img = img_data[0]
+            
+            img_data_selected = img_data[calibration_frames[0]:calibration_frames[1]]
+            # Stack and average along the first dimension of the list
+            average_array = np.mean(img_data_selected, axis=0)
+            self._calibration_img = average_array
         else:
             if len(img_data.shape) == 3:
-                self._calibration_img = img_data[0]
+                img_data_selected = img_data[calibration_frames[0]:calibration_frames[1]]
+                # Stack and average along the first dimension of the list
+                average_array = np.mean(img_data_selected, axis=0)
+                self._calibration_img = average_array
+
             else:
                 self._calibration_img = img_data    
 
@@ -974,7 +1000,7 @@ class SingleTemperatureModel(QtCore.QObject):
                 data_y_bg = get_roi_sum(_data_img_as_array, roi_bg)
                 data_y = data_y - data_y_bg
             
-            
+            self.total_counts = np.sum(data_y)
             self.data_spectrum.data = data_x, data_y
             self.data_spectrum.mask = within_limit
 
@@ -1070,7 +1096,8 @@ def fit_black_body_function(spectrum):
         T_err = np.sqrt(cov[0, 0])
 
         return T, T_err, Spectrum(spectrum._x, black_body_function(spectrum._x, param[0], param[1])), scaling
-    except (RuntimeError, TypeError, ValueError):
+    except Exception as e:
+        print(f"Fit failed with error: {e}")
         return np.nan, np.nan, Spectrum([], []), np.nan
     
 def fit_black_body_function_wien(spectrum):

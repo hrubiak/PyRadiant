@@ -436,6 +436,9 @@ class TemperatureController(QtCore.QObject):
 
     def data_changed_signal_callback(self):
         self.widget.roi_widget.plot_img(self.model.data_img)
+        if self.model.data_img_file is not None:
+            if hasattr(self.model.data_img_file,'raw_ccd'):
+                self.widget.roi_widget.plot_raw_ccd(self.model.data_img_file.raw_ccd)
         if self.model.x_calibration is not None and self.model.data_img is not None:
             wl_calibration = self.model.x_calibration
             #x_dim = self.model.data_img.shape[1]
@@ -509,7 +512,7 @@ class TemperatureController(QtCore.QObject):
             self.widget.temperature_spectrum_widget.plot_ds_fit(*self.model.ds_fit_spectrum.data)
         else:
             self.widget.temperature_spectrum_widget.plot_ds_fit([],[])
-        self.widget.roi_widget.specra_widget.plot_ds_data(*self.model.ds_temperature_model.response.data)
+        self.widget.roi_widget.specra_widget.plot_ds_data(*self.model.ds_temperature_model.data_spectrum.data)
 
         self.widget.temperature_spectrum_widget.update_ds_temperature_txt(self.model.ds_temperature,
                                                            self.model.ds_temperature_error)
@@ -543,7 +546,7 @@ class TemperatureController(QtCore.QObject):
             self.widget.temperature_spectrum_widget.plot_us_fit(*self.model.us_fit_spectrum.data)
         else:
             self.widget.temperature_spectrum_widget.plot_us_fit([],[])
-        self.widget.roi_widget.specra_widget.plot_us_data(*self.model.us_temperature_model.response.data)
+        self.widget.roi_widget.specra_widget.plot_us_data(*self.model.us_temperature_model.data_spectrum.data)
 
         self.widget.temperature_spectrum_widget.update_us_temperature_txt(self.model.us_temperature,
                                                            self.model.us_temperature_error)
@@ -565,9 +568,9 @@ class TemperatureController(QtCore.QObject):
             ds_temperature_arr = np.array(ds_temperature)
             ds_temperature_error_arr = np.array(ds_temperature_error)
             select_ds  = (ds_temperature_arr > self.min_allowed_T) & (ds_temperature_arr < self.max_allowed_T) & (ds_temperature_error_arr < 200)
-            print(f'select_ds {select_ds}')
+            #print(f'select_ds {select_ds}')
             ds_t = ds_temperature_arr[select_ds]
-            print(f'ds_t {ds_t}')
+            #print(f'ds_t {ds_t}')
             if len(ds_t):
                 out = np.mean(ds_t), np.std(ds_t)
             ds_temperature_plot_data = ds_temperature_arr[:]

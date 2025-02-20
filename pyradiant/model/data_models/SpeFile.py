@@ -387,6 +387,7 @@ class SpeFile(DataModel):
 
     def _read_img(self):
         self.img = self._read_frame(4100)
+        self.kinetics_mode = False
         if self.num_frames > 1:
             img_temp = []
             img_temp.append(self.img)
@@ -394,13 +395,20 @@ class SpeFile(DataModel):
             for n in range(self.num_frames - 1):
                 
                 img_temp.append(self._read_frame())
+
+            # Stack them vertically
+            self.raw_ccd = np.vstack(img_temp)
+            if self._ydim == 64 and self.num_frames == 32: # this is a hack for PIMAX4, fix later
+                self.kinetics_mode = True
+            
             self.img = img_temp
             if hasattr(self, 'num_rois'):
                 if self.num_rois >=1:
                     if hasattr(self, 'sensor_width'):
                         self._ydim = self.sensor_height
                         self._xdim = self.sensor_width
-
+        else:
+            self.raw_ccd = np.copy(self.img)
     def _get_val(self, obj, idx=0):
         if isinstance(obj, (list, tuple, dict, set)):
             return obj[idx]

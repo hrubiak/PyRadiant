@@ -65,6 +65,7 @@ class RoiWidget(QtWidgets.QWidget):
         self._main_vertical_layout.setSpacing(5)
 
         self.img_widget = RoiImageWidget(roi_num=roi_num, roi_colors=roi_colors)
+        self.ccd_widget = RoiImageWidget(roi_num=0, roi_colors=[])
         self.specra_widget = RoiSpectraWidget()
 
         self.left_tab_widget = QtWidgets.QTabWidget()
@@ -72,7 +73,7 @@ class RoiWidget(QtWidgets.QWidget):
         self.left_tab_widget.setCurrentIndex(0)
         self.left_tab_widget.addTab(self.specra_widget, '1D')
         self.left_tab_widget.addTab(self.img_widget, '2D')
-        
+        self.left_tab_widget.addTab(self.ccd_widget, 'Raw ccd')
 
 
         self.wl_range_widget = wavelengthRangeGB()
@@ -185,6 +186,10 @@ class RoiWidget(QtWidgets.QWidget):
     def plot_img(self, img_data):
         if img_data is not None:
             self.img_widget.plot_image(img_data.T)
+
+    def plot_raw_ccd(self, ccd_data):
+        if ccd_data is not None:
+            self.ccd_widget.plot_image(ccd_data.T)
 
     def add_item(self, pg_item):
         self.img_widget.pg_viewbox.addItem(pg_item)
