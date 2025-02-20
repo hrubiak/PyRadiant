@@ -894,17 +894,23 @@ class SingleTemperatureModel(QtCore.QObject):
         else:
             img_data =  img_data_file
        
-        calibration_frames = [8,20]
+        
         self._calibration_img_x_calibration = x_calibration
         if type(img_data) == list:
-            
-            img_data_selected = img_data[calibration_frames[0]:calibration_frames[1]]
+            if len(img_data) == 32:
+                calibration_frames = [8,20]
+                img_data_selected = img_data[calibration_frames[0]:calibration_frames[1]]
+            else:
+                img_data_selected = img_data[:]
             # Stack and average along the first dimension of the list
             average_array = np.mean(img_data_selected, axis=0)
             self._calibration_img = average_array
         else:
             if len(img_data.shape) == 3:
-                img_data_selected = img_data[calibration_frames[0]:calibration_frames[1]]
+                if img_data.shape[0] == 32:
+                    img_data_selected = img_data[calibration_frames[0]:calibration_frames[1]]
+                else:
+                    img_data_selected = img_data[:]
                 # Stack and average along the first dimension of the list
                 average_array = np.mean(img_data_selected, axis=0)
                 self._calibration_img = average_array
