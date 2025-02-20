@@ -227,9 +227,10 @@ class TemperatureController(QtCore.QObject):
                     self._directory_watcher.path = self._exp_working_dir
                     # hack, refactor later:
                     self.process_multiframe()
-                    print('Loaded File: ', filename)
+                    #print('Loaded File: ', filename)
                 else:
-                    print('file not found: ' + str(filename))
+                    pass
+                    #print('file not found: ' + str(filename))
 
     def load_data_file_ad(self, filename=None):
         if isinstance(filename, str):
@@ -485,6 +486,8 @@ class TemperatureController(QtCore.QObject):
 
         self.ds_calculations_changed()
         self.us_calculations_changed()
+
+        self.widget.temperature_spectrum_widget.normalize_range()
         
         mtime = self.model.mtime
         self.widget.mtime.setText('Timestamp: '+ str(mtime))
@@ -492,6 +495,14 @@ class TemperatureController(QtCore.QObject):
     
 
     def ds_calculations_changed(self):
+        curr_frame = self.model.current_frame
+        ds_fit_ok = True
+        if hasattr(self.model, 'ds_temperatures'):
+            ds_temperatures = self.model.ds_temperatures
+            if curr_frame>=0 and curr_frame<len(ds_temperatures):
+                ds_fit_ok = ds_temperatures[curr_frame] > 0
+      
+
         if self.model.ds_calibration_filename is not None:
             self.widget.ds_calibration_filename_lbl.setText(str(os.path.basename(self.model.ds_calibration_filename)))
         else:
@@ -506,16 +517,20 @@ class TemperatureController(QtCore.QObject):
         else:
             ds_plot_spectrum = self.model.ds_data_spectrum
 
+        
         self.widget.temperature_spectrum_widget.plot_ds_data(*ds_plot_spectrum.data,mask=ds_plot_spectrum.mask)
         self.widget.temperature_spectrum_widget.plot_ds_masked_data(*ds_plot_spectrum.data,mask=ds_plot_spectrum.mask)
-        if self.model.ds_temperature != 0:
+        if self.model.ds_temperature != 0 and ds_fit_ok:
             self.widget.temperature_spectrum_widget.plot_ds_fit(*self.model.ds_fit_spectrum.data)
+            self.widget.temperature_spectrum_widget.update_ds_temperature_txt(self.model.ds_temperature,
+                                                           self.model.ds_temperature_error)
         else:
             self.widget.temperature_spectrum_widget.plot_ds_fit([],[])
+            self.widget.temperature_spectrum_widget.update_ds_temperature_txt(0,
+                                                           0)
         self.widget.roi_widget.specra_widget.plot_ds_data(*self.model.ds_temperature_model.data_spectrum.data)
 
-        self.widget.temperature_spectrum_widget.update_ds_temperature_txt(self.model.ds_temperature,
-                                                           self.model.ds_temperature_error)
+        
         self.widget.temperature_spectrum_widget.update_ds_roi_max_txt(self.model.ds_temperature_model.data_roi_max)
 
         if self.widget.connect_to_epics_cb.isChecked():
@@ -526,6 +541,13 @@ class TemperatureController(QtCore.QObject):
                 
 
     def us_calculations_changed(self):
+        curr_frame = self.model.current_frame
+        us_fit_ok = True
+        if hasattr(self.model, 'us_temperatures'):
+            us_temperatures = self.model.us_temperatures
+            if curr_frame>=0 and curr_frame<len(us_temperatures):
+                us_fit_ok = us_temperatures[curr_frame] > 0
+ 
         if self.model.us_calibration_filename is not None:
             self.widget.us_calibration_filename_lbl.setText(str(os.path.basename(self.model.us_calibration_filename)))
         else:
@@ -542,14 +564,17 @@ class TemperatureController(QtCore.QObject):
 
         self.widget.temperature_spectrum_widget.plot_us_data(*us_plot_spectrum.data,mask=us_plot_spectrum.mask)
         self.widget.temperature_spectrum_widget.plot_us_masked_data(*us_plot_spectrum.data,mask=us_plot_spectrum.mask)
-        if self.model.us_temperature != 0:
+        if self.model.us_temperature != 0 and us_fit_ok:
             self.widget.temperature_spectrum_widget.plot_us_fit(*self.model.us_fit_spectrum.data)
+            self.widget.temperature_spectrum_widget.update_us_temperature_txt(self.model.us_temperature,
+                                                           self.model.us_temperature_error)
         else:
             self.widget.temperature_spectrum_widget.plot_us_fit([],[])
+            self.widget.temperature_spectrum_widget.update_us_temperature_txt(0,
+                                                           0)
         self.widget.roi_widget.specra_widget.plot_us_data(*self.model.us_temperature_model.data_spectrum.data)
 
-        self.widget.temperature_spectrum_widget.update_us_temperature_txt(self.model.us_temperature,
-                                                           self.model.us_temperature_error)
+        
         self.widget.temperature_spectrum_widget.update_us_roi_max_txt(self.model.us_temperature_model.data_roi_max)
 
         if self.widget.connect_to_epics_cb.isChecked():

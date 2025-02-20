@@ -111,6 +111,9 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._ds_plot.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
         self._pg_ds_layout.addItem(self._ds_plot)
         self._pg_ds_layout_widget.addItem(self._pg_ds_layout)
+
+        self.ds_mx = 2
+        self.us_mx = 2
         
         self.plots_widget = QtWidgets.QWidget()
         self._plots_widget_layout = QtWidgets.QGridLayout(self.plots_widget)
@@ -248,31 +251,41 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         #self._time_lapse_plot.mouse_moved.connect(self.mouse_moved)
 
     def plot_ds_data(self, x, y, mask=None):
+      
         if len(x)>0:
             mx = np.amax(y)*1.1
         else:
             mx = 1.1
         if mx < 2:
             mx = 2
+        self.ds_mx = mx
+
         if mask is not None:
             #x[~mask] = np.nan
             y[~mask] = np.nan
-        self._ds_view_box.setYRange(-1,mx)
+        
         
         self._ds_data_item.setData(x, y)
 
     def plot_us_data(self, x, y, mask):
+    
         if len(x)>0:
             mx = np.amax(y)*1.1
         else:
             mx = 1.1
         if mx < 2:
             mx = 2
+        self.us_mx = mx
         if mask is not None:
             #x[~mask] = np.nan
             y[~mask] = np.nan
-        self._us_view_box.setYRange(-1,mx)
+        
         self._us_data_item.setData(x, y)
+
+    def normalize_range(self):
+        mx = max(self.ds_mx,self.us_mx)
+        self._us_view_box.setYRange(-1,mx)
+        self._ds_view_box.setYRange(-1,mx)
 
     def plot_ds_masked_data(self, x, y, mask=None):
        

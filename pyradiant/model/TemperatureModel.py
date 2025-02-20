@@ -76,6 +76,11 @@ class TemperatureModel(QtCore.QObject):
         self.ds_temperature_model = SingleTemperatureModel(0, self.roi_data_manager)
         self.us_temperature_model = SingleTemperatureModel(1, self.roi_data_manager)
 
+        self.us_temperatures = []
+        self.us_temperatures_errors = []
+        self.ds_temperatures = []
+        self.ds_temperatures_errors = []
+
     def data_changed_emit(self):
         self.write_to_log()
         self.data_changed_signal.emit()
@@ -799,7 +804,7 @@ class TemperatureModel(QtCore.QObject):
 
         for frame_ind in range(self.data_img_file.num_frames):
             self.set_img_frame_number_to(frame_ind)
-            # self.fit_data()
+           
             us_counts = int(self.us_temperature_model.total_counts)
             ds_counts = int(self.ds_temperature_model.total_counts)
             max_counts = int(np.amax(np.asarray([us_counts,ds_counts])))
@@ -821,7 +826,10 @@ class TemperatureModel(QtCore.QObject):
 
         self.set_img_frame_number_to(cur_frame)
         self.blockSignals(False)
-
+        self.us_temperatures = us_temperature
+        self.us_temperatures_errors = us_temperature_error
+        self.ds_temperatures = ds_temperature
+        self.ds_temperatures_errors = ds_temperature_error
         return us_temperature, us_temperature_error, ds_temperature, ds_temperature_error
 
 

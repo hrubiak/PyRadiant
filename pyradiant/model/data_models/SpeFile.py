@@ -391,7 +391,7 @@ class SpeFile(DataModel):
         if self.num_frames > 1:
             img_temp = []
             img_temp.append(self.img)
-            print(f'self.num_frames {self.num_frames}')
+            #print(f'self.num_frames {self.num_frames}')
             for n in range(self.num_frames - 1):
                 
                 img_temp.append(self._read_frame())
