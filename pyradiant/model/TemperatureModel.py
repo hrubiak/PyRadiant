@@ -28,7 +28,7 @@ import h5py
 import math
 import datetime
 import time
-
+from .data_models.DataModel import DataModel
 from .Spectrum import Spectrum
 from .RoiData import RoiDataManager, Roi, get_roi_max, get_roi_sum, get_roi_img
 from .data_models.SpeFile import SpeFile
@@ -63,6 +63,8 @@ class TemperatureModel(QtCore.QObject):
 
         self.use_insitu_data_background = True
         self.use_insitu_calibration_background = True
+
+        
 
         self.x_calibration = None
 
@@ -302,9 +304,13 @@ class TemperatureModel(QtCore.QObject):
         #self.ds_calibration_img_file = SpeFile(filename)
         
         self.ds_calibration_filename = filename
+        self.ds_set_calibration_data()
+        self.ds_calculations_changed_emit()
+
+    def ds_set_calibration_data(self):
         self.ds_temperature_model.set_calibration_data(self.ds_calibration_img_file,
                                                        self.ds_calibration_img_file.x_calibration)
-        self.ds_calculations_changed_emit()
+        
 
     def load_us_calibration_image(self, filename):
         # Get the extension
@@ -316,12 +322,21 @@ class TemperatureModel(QtCore.QObject):
 
         #self.us_calibration_img_file = SpeFile(filename)
         self.us_calibration_filename = filename
+
+        
+        self.us_set_calibration_data()
+        self.us_calculations_changed_emit()
+
+    def us_set_calibration_data(self):
         self.us_temperature_model.set_calibration_data(self.us_calibration_img_file,
                                                        self.us_calibration_img_file.x_calibration)
-        self.us_calculations_changed_emit()
+        
 
     # setting standard interface
     #########################################################################
+        
+   
+
     def load_ds_standard_spectrum(self, filename):
         self.ds_temperature_model.load_standard_spectrum(filename)
         self.ds_calculations_changed_emit()
@@ -428,9 +443,18 @@ class TemperatureModel(QtCore.QObject):
                 self.us_temperature_model.subtract_inistu_data_background = use_data_bg
 
             self.x_calibration = x_calibration
+
+            self.ds_calibration_img_file = DataModel()
+            self.ds_calibration_img_file.img = ds_img
+            self.ds_calibration_img_file.x_calibration = self.x_calibration
+            self.ds_calibration_img_file.filename = self.ds_calibration_filename
+
+
             self.ds_temperature_model.set_calibration_data(ds_img, x_calibration)
             
             self.ds_temperature_model._update_all_spectra()
+
+
         else:
             self.ds_temperature_model.reset_calibration_data()
             self.ds_calibration_filename = None
@@ -497,6 +521,11 @@ class TemperatureModel(QtCore.QObject):
         except AttributeError:
             self.us_temperature_model.calibration_parameter.standard_file_name = \
                 us_group['standard_spectrum'].attrs['filename']
+            
+        self.us_calibration_img_file = DataModel()
+        self.us_calibration_img_file.img = us_img
+        self.us_calibration_img_file.x_calibration = self.x_calibration
+        self.us_calibration_img_file.filename = self.us_calibration_filename
 
         self.us_temperature_model.calibration_parameter.set_modus(us_group['modus'][...])
         self.us_temperature_model.calibration_parameter.set_temperature(us_group['temperature'][...])
@@ -869,6 +898,8 @@ class SingleTemperatureModel(QtCore.QObject):
         self.scaling = np.nan
         self.fit_spectrum = Spectrum([], [])
 
+        self.calibration_frames=[None,None]
+
     @property
     def data_img(self):
         return self._data_img
@@ -887,8 +918,12 @@ class SingleTemperatureModel(QtCore.QObject):
     @property
     def calibration_img(self):
         return self._calibration_img
+    
+
 
     def set_calibration_data(self, img_data_file, x_calibration):
+        calibration_frames=self.calibration_frames
+
         if hasattr(img_data_file,'img'):
             img_data = img_data_file.img
         else:
@@ -897,20 +932,13 @@ class SingleTemperatureModel(QtCore.QObject):
         
         self._calibration_img_x_calibration = x_calibration
         if type(img_data) == list:
-            if len(img_data) == 32:
-                calibration_frames = [8,20]
-                img_data_selected = img_data[calibration_frames[0]:calibration_frames[1]]
-            else:
-                img_data_selected = img_data[:]
+            img_data_selected = img_data[calibration_frames[0]:calibration_frames[1]+1]
             # Stack and average along the first dimension of the list
             average_array = np.mean(img_data_selected, axis=0)
             self._calibration_img = average_array
         else:
             if len(img_data.shape) == 3:
-                if img_data.shape[0] == 32:
-                    img_data_selected = img_data[calibration_frames[0]:calibration_frames[1]]
-                else:
-                    img_data_selected = img_data[:]
+                img_data_selected = img_data[calibration_frames[0]:calibration_frames[1]+1]
                 # Stack and average along the first dimension of the list
                 average_array = np.mean(img_data_selected, axis=0)
                 self._calibration_img = average_array
@@ -950,7 +978,8 @@ class SingleTemperatureModel(QtCore.QObject):
         self.calibration_parameter.load_standard_spectrum(filename)
         self._update_all_spectra()
         self.fit_data()
-        #self.data_changed_stm.emit()
+
+    
 
     def save_standard_spectrum(self, filename):
         self.calibration_parameter.set_standard_spectrum(self.corrected_spectrum)
@@ -961,13 +990,11 @@ class SingleTemperatureModel(QtCore.QObject):
         self.calibration_parameter.set_modus(modus)
         self._update_all_spectra()
         self.fit_data()
-        #self.data_changed_stm.emit()
 
     def set_calibration_temperature(self, temperature):
         self.calibration_parameter.set_temperature(temperature)
         self._update_all_spectra()
         self.fit_data()
-        #self.data_changed_stm.emit()
 
     # Spectrum calculations
     #########################################################################
@@ -1158,6 +1185,8 @@ class CalibrationParameter(object):
 
     def set_temperature(self, temperature):
         self.temperature = temperature
+
+    
 
     def load_standard_spectrum(self, filename):
         try:

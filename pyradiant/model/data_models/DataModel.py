@@ -25,6 +25,7 @@ class DataModel():
         super().__init__()
         self.debug = debug
         self.img = None
+        self.raw_ccd = None
         self.x_calibration = None
         self.filename = ''
         self.detector = 'Undetermined'

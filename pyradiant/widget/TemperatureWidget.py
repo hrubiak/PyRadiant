@@ -176,6 +176,10 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.load_us_calibration_file_btn = self.calibration_section.upstream_gb.load_file_btn
         self.ds_calibration_filename_lbl = self.calibration_section.downstream_gb.file_lbl
         self.us_calibration_filename_lbl = self.calibration_section.upstream_gb.file_lbl
+        self.ds_calibration_start_frame = self.calibration_section.downstream_gb.start_frame
+        self.us_calibration_start_frame = self.calibration_section.upstream_gb.start_frame
+        self.ds_calibration_end_frame = self.calibration_section.downstream_gb.end_frame
+        self.us_calibration_end_frame = self.calibration_section.upstream_gb.end_frame
 
         self.ds_temperature_rb = self.calibration_section.downstream_gb.temperature_rb
         self.us_temperature_rb = self.calibration_section.upstream_gb.temperature_rb
@@ -389,6 +393,11 @@ class CalibrationGB(QtWidgets.QGroupBox):
         self.standard_file_lbl = QtWidgets.QLabel('Select File...')
         self.save_standard_btn = QtWidgets.QPushButton('Save Standard')
 
+        self.start_frame_lbl = QtWidgets.QLabel('Start frame')
+        self.end_frame_lbl = QtWidgets.QLabel('End frame')
+        self.start_frame = IntegerTextField('1')
+        self.end_frame = IntegerTextField('1')
+
         self._layout.addWidget(self.load_file_btn, 0, 0, 1, 3)
         self._layout.addWidget(self.file_lbl, 0, 3)
         self._layout.addWidget(self.temperature_txt, 1, 0, 1, 2)
@@ -397,8 +406,11 @@ class CalibrationGB(QtWidgets.QGroupBox):
         self._layout.addWidget(self.load_standard_btn, 2, 1, 1, 2)
         self._layout.addWidget(self.standard_rb, 2, 3)
         self._layout.addWidget(self.standard_file_lbl, 3, 3)
-
-        self._layout.addWidget(self.save_standard_btn, 4, 0, 1, 2)
+        self._layout.addWidget(self.start_frame_lbl, 4, 0, 1,2)
+        self._layout.addWidget(self.start_frame, 4, 2, 1,2)
+        self._layout.addWidget(self.end_frame_lbl, 5, 0, 1,2)
+        self._layout.addWidget(self.end_frame,5, 2,1,2)
+        self._layout.addWidget(self.save_standard_btn, 6, 0, 1, 2)
 
         self.setLayout(self._layout)
         self.style_widgets()

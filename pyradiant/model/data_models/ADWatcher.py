@@ -86,6 +86,7 @@ class ADWatcher(DataModel, QtCore.QObject):
         if not EPICS_AVAILABLE:
             return
         self.img = None
+        self.raw_ccd = None
         self._record_name = None
         self.num_images_monitor = None
         self.file_type = file_type
@@ -125,6 +126,7 @@ class ADWatcher(DataModel, QtCore.QObject):
         if NDimensions == 2 and ArraySize0 != 0 and ArraySize1 != 0:
             reshaped_arr = ArrayData.reshape((ArraySize1, ArraySize0))
             self.img = reshaped_arr.astype(np.uint16)
+            self.raw_ccd = self.img
             [self._ydim, self._xdim] = self.img.shape
             self.detector = self.pvs[0]['cam1']['Model_RBV'].get(as_string=True)
             self.exposure_time = self.pvs[0]['cam1']['AcquireTime_RBV'].get()

@@ -120,6 +120,7 @@ class SpeFile(DataModel):
         self._select_wavelength_from_roi()
         self._read_num_frames_from_header()
         self._read_num_combined_frames_from_dom()
+        self._read_readout_control_from_dom()
 
     def _read_date_time_from_header(self):
         """Reads the collection time from the header into the date_time field"""
@@ -210,6 +211,45 @@ class SpeFile(DataModel):
             self.x_calibration = np.array([float(i.split(',')[0]) for i in x_calibration])
         else:
             self.x_calibration = []
+
+    def _read_readout_control_from_dom(self):
+        """
+        Reads the 'WindowHeight' value inside the 'Kinetics' element and the 'Mode'
+        value inside the 'ReadoutControl' element from self.dom.
+        
+        Returns:
+            tuple: (window_height, mode) as strings (or None if not found).
+        """
+        # Get the first ReadoutControl element.
+        readout_controls = self.dom.getElementsByTagName("ReadoutControl")
+        if not readout_controls:
+            print("ReadoutControl element not found.")
+            return None, None
+
+        readout_control = readout_controls[0]
+
+        # Get the Mode element within ReadoutControl.
+        mode_nodes = readout_control.getElementsByTagName("Mode")
+        if mode_nodes and mode_nodes[0].firstChild:
+            mode = mode_nodes[0].firstChild.nodeValue.strip()
+        else:
+            mode = None
+
+        # Get the Kinetics element within ReadoutControl.
+        kinetics_nodes = readout_control.getElementsByTagName("Kinetics")
+        if kinetics_nodes:
+            kinetics = kinetics_nodes[0]
+            # Get the WindowHeight element within Kinetics.
+            window_height_nodes = kinetics.getElementsByTagName("WindowHeight")
+            if window_height_nodes and window_height_nodes[0].firstChild:
+                window_height = window_height_nodes[0].firstChild.nodeValue.strip()
+            else:
+                window_height = None
+        else:
+            window_height = None
+
+        self.readout_mode = mode
+        self.kinetics_window_height = int(window_height)
 
     def _read_sensor_information_from_dom(self):
         """Reads the x calibration of the image from the xml footer and saves 
@@ -387,7 +427,7 @@ class SpeFile(DataModel):
 
     def _read_img(self):
         self.img = self._read_frame(4100)
-        self.kinetics_mode = False
+        
         if self.num_frames > 1:
             img_temp = []
             img_temp.append(self.img)
@@ -398,8 +438,7 @@ class SpeFile(DataModel):
 
             # Stack them vertically
             self.raw_ccd = np.vstack(img_temp)
-            if self._ydim == 64 and self.num_frames == 32: # this is a hack for PIMAX4, fix later
-                self.kinetics_mode = True
+            
             
             self.img = img_temp
             if hasattr(self, 'num_rois'):

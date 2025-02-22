@@ -126,6 +126,11 @@ class TemperatureController(QtCore.QObject):
         self.connect_click_function(self.widget.load_ds_calibration_file_btn, self.load_ds_calibration_file)
         self.connect_click_function(self.widget.load_us_calibration_file_btn, self.load_us_calibration_file)
 
+        self.widget.us_calibration_start_frame.editingFinished.connect(self.us_calibration_frame_range_callback)
+        self.widget.ds_calibration_start_frame.editingFinished.connect(self.ds_calibration_frame_range_callback)
+        self.widget.us_calibration_end_frame.editingFinished.connect(self.us_calibration_frame_range_callback)
+        self.widget.ds_calibration_end_frame.editingFinished.connect(self.ds_calibration_frame_range_callback)
+
         self.widget.ds_standard_rb.toggled.connect(self.model.set_ds_calibration_modus)
         self.widget.us_standard_rb.toggled.connect(self.model.set_us_calibration_modus)
 
@@ -278,6 +283,9 @@ class TemperatureController(QtCore.QObject):
 
         if filename != '':
             self._exp_working_dir = os.path.dirname(filename)
+            ds_start_frame = int(self.widget.ds_calibration_start_frame.text())
+            ds_end_frame = int(self.widget.ds_calibration_end_frame.text())
+            self.model.ds_temperature_model.calibration_frames = [ds_start_frame,ds_end_frame]
             self.model.load_ds_calibration_image(filename)
 
     def load_us_calibration_file(self, filename=None):
@@ -287,7 +295,26 @@ class TemperatureController(QtCore.QObject):
 
         if filename != '':
             self._exp_working_dir = os.path.dirname(filename)
+
+            us_start_frame = int(self.widget.us_calibration_start_frame.text())
+            us_end_frame = int(self.widget.us_calibration_end_frame.text())
+            self.model.us_temperature_model.calibration_frames = [us_start_frame,us_end_frame]
+
             self.model.load_us_calibration_image(filename)
+
+    def us_calibration_frame_range_callback(self, *args):
+        us_start_frame = int(self.widget.us_calibration_start_frame.text())
+        us_end_frame = int(self.widget.us_calibration_end_frame.text())
+        self.model.us_temperature_model.calibration_frames = [us_start_frame,us_end_frame]
+        self.model.us_set_calibration_data()
+
+    def ds_calibration_frame_range_callback(self, *args):
+        ds_start_frame = int(self.widget.ds_calibration_start_frame.text())
+        ds_end_frame = int(self.widget.ds_calibration_end_frame.text())
+        self.model.ds_temperature_model.calibration_frames = [ds_start_frame,ds_end_frame]
+       
+        self.model.ds_set_calibration_data()
+
 
     def ds_temperature_txt_changed(self):
         new_temperature = float(str(self.widget.ds_temperature_txt.text()))
