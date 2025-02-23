@@ -85,8 +85,7 @@ class ADWatcher(DataModel, QtCore.QObject):
         self.initialized = False
         if not EPICS_AVAILABLE:
             return
-        self.img = None
-        self.raw_ccd = None
+
         self._record_name = None
         self.num_images_monitor = None
         self.file_type = file_type
