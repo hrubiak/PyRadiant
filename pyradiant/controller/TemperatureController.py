@@ -176,6 +176,12 @@ class TemperatureController(QtCore.QObject):
         self.widget.use_backbround_data_cb.toggled.connect(self.use_backbround_cb_callback)
         self.widget.use_backbround_calibration_cb.toggled.connect(self.use_backbround_cb_callback)
 
+        self.widget.two_color_btn.clicked.connect(self.two_color_display_toggle_callback)
+
+    def two_color_display_toggle_callback(self):
+        self.us_calculations_changed()
+        self.ds_calculations_changed()
+
     def frame_num_txt_callback(self):
         num =  int(self.widget.frame_num_txt.text())
         if num >= 1 and num <= self.model.data_img_file.num_frames:
@@ -544,13 +550,21 @@ class TemperatureController(QtCore.QObject):
         else:
             ds_plot_spectrum = self.model.ds_data_spectrum
 
-        
-        self.widget.temperature_spectrum_widget.plot_ds_data(*ds_plot_spectrum.data,mask=ds_plot_spectrum.mask)
-        self.widget.temperature_spectrum_widget.plot_ds_masked_data(*ds_plot_spectrum.data,mask=ds_plot_spectrum.mask)
+        if self.widget.two_color_btn.isChecked() and self.model.ds_temperature != 0 and ds_fit_ok:
+            lam, temp = self.model.ds_2_color_temp
+            self.widget.temperature_spectrum_widget.plot_ds_data(lam, temp)
+        else:
+            self.widget.temperature_spectrum_widget.plot_ds_data(*ds_plot_spectrum.data,mask=ds_plot_spectrum.mask)
+            self.widget.temperature_spectrum_widget.plot_ds_masked_data(*ds_plot_spectrum.data,mask=ds_plot_spectrum.mask)
         if self.model.ds_temperature != 0 and ds_fit_ok:
-            self.widget.temperature_spectrum_widget.plot_ds_fit(*self.model.ds_fit_spectrum.data)
+            if not self.widget.two_color_btn.isChecked():
+                self.widget.temperature_spectrum_widget.plot_ds_fit(*self.model.ds_fit_spectrum.data)
+            else:
+                self.widget.temperature_spectrum_widget.plot_ds_fit([],[])
             self.widget.temperature_spectrum_widget.update_ds_temperature_txt(self.model.ds_temperature,
                                                            self.model.ds_temperature_error)
+           
+            
         else:
             self.widget.temperature_spectrum_widget.plot_ds_fit([],[])
             self.widget.temperature_spectrum_widget.update_ds_temperature_txt(0,
@@ -588,13 +602,22 @@ class TemperatureController(QtCore.QObject):
             us_plot_spectrum = self.model.us_corrected_spectrum
         else:
             us_plot_spectrum = self.model.us_data_spectrum
-
-        self.widget.temperature_spectrum_widget.plot_us_data(*us_plot_spectrum.data,mask=us_plot_spectrum.mask)
-        self.widget.temperature_spectrum_widget.plot_us_masked_data(*us_plot_spectrum.data,mask=us_plot_spectrum.mask)
+        if self.widget.two_color_btn.isChecked() and self.model.us_temperature != 0 and us_fit_ok:
+            lam, temp = self.model.us_2_color_temp
+            self.widget.temperature_spectrum_widget.plot_us_data(lam, temp)
+        else:
+            self.widget.temperature_spectrum_widget.plot_us_data(*us_plot_spectrum.data,mask=us_plot_spectrum.mask)
+            self.widget.temperature_spectrum_widget.plot_us_masked_data(*us_plot_spectrum.data,mask=us_plot_spectrum.mask)
         if self.model.us_temperature != 0 and us_fit_ok:
-            self.widget.temperature_spectrum_widget.plot_us_fit(*self.model.us_fit_spectrum.data)
+            if not self.widget.two_color_btn.isChecked():
+                self.widget.temperature_spectrum_widget.plot_us_fit(*self.model.us_fit_spectrum.data)
+            else:
+                self.widget.temperature_spectrum_widget.plot_us_fit([],[])
             self.widget.temperature_spectrum_widget.update_us_temperature_txt(self.model.us_temperature,
                                                            self.model.us_temperature_error)
+            
+            lam, temp = self.model.us_2_color_temp
+
         else:
             self.widget.temperature_spectrum_widget.plot_us_fit([],[])
             self.widget.temperature_spectrum_widget.update_us_temperature_txt(0,

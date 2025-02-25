@@ -202,6 +202,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.save_data_btn = self.control_widget.output_gb.save_data_btn
         self.save_graph_btn = self.control_widget.output_gb.save_graph_btn
         self.data_history_btn = self.control_widget.file_gb.data_history_btn
+        self.two_color_btn = self.control_widget.file_gb.two_color_btn
 
         self.settings_cb = self.settings_gb.settings_cb
 

@@ -15,6 +15,7 @@ import os.path
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.ndimage import gaussian_filter1d
 
 ### Define constants
 h = 6.626e-34   #planck
@@ -24,14 +25,27 @@ kB = 1.38e-23   #boltzmann
 ### Opening the data
 filePath = '/Users/hrubiak/GitHub/PyRadiant/2colour_pyrometry/tempData/'   # Specify where the files live
 fileName = '2colour_pyrometry/tempData/downstream.txt' #input('Which file:')    # Ask the user which filed to open
-dataFile = '/Users/hrubiak/GitHub/PyRadiant/2colour_pyrometry/tempData/upstream.txt' 
+dataFile = '/Users/ross/GitHub/T-view/2colour_pyrometry/tempData/upstream.txt' 
 
 rawWav = np.loadtxt(dataFile)[:, 0]                 # make ndarray of raw wavelength data
 rawSpec = np.loadtxt(dataFile)[:, 1]                # make ndarray of raw intensity data
+rawPlot = plt.plot(rawWav,rawSpec)
+# Pad the averaged y values to avoid edge artifacts
+pad_width = 15  # Adjust padding as needed
+padded_y = np.pad(rawSpec, pad_width, mode='edge')
+
+# Apply Gaussian filter
+sigma = 15  # Adjust sigma as needed
+filtered_y = gaussian_filter1d(padded_y, sigma=sigma)
+
+# Trim the padded values
+filtered_y = filtered_y[pad_width:-pad_width]
+
+#rawSpec = filtered_y
 
 ### plot the raw spectrum before any handling
-# rawPlot = plt.plot(rawWav,rawSpec)
-# plt.show()
+rawPlot = plt.plot(rawWav,rawSpec)
+plt.show()
 
 ### interpolate the data
 intWav = np.linspace(min(rawWav), max(rawWav), 1024)    # make a new wavelength axis

@@ -36,7 +36,7 @@ from .data_models.H5File import H5File
 from .helper import FileNameIterator
 from .radiation import fit_linear, wien_pre_transform, m_to_T, m_b_wien
 from .helper.HelperModule import get_partial_index, get_partial_value
-
+from .TwoColor import calculate_2_color
 T_LOG_FILE = 'T_log.txt'
 LOG_HEADER = '# File\tPath\tT_DS\tT_US\tT_DS_error\tT_US_error\tDetector\tExposure Time [sec]\tGain\tscaling_DS\tscaling_US\tcounts_DS\tcounts_US\n'
 
@@ -804,6 +804,14 @@ class TemperatureModel(QtCore.QObject):
     @property
     def us_roi_max(self):
         return self.us_temperature_model.data_roi_max
+    
+    @property
+    def ds_2_color_temp(self):
+        return self.ds_temperature_model.get2color()
+    
+    @property
+    def us_2_color_temp(self):
+        return self.us_temperature_model.get2color()
 
     # TODO: Think aboout refactoring this function away from here
     def get_wavelength_from(self, index):
@@ -1110,8 +1118,19 @@ class SingleTemperatureModel(QtCore.QObject):
             self.temperature_error = 0
             self.fit_spectrum = Spectrum([],[])
                 
+    def get2color(self):
+        temp = None
+        if self.corrected_spectrum.x.shape[0]>0 and self.corrected_spectrum.y.shape[0]>0:
+            if self.corrected_spectrum.mask is not None:
+                count_true = np.count_nonzero(self.corrected_spectrum.mask)
+                #print('count_true '+ str(count_true))
+                if count_true > 20:
+                    wav = self.corrected_spectrum.x
+                    spec = self.corrected_spectrum.y
+                    lam1, temp = calculate_2_color(wav,spec)
 
-
+        return lam1, temp
+    
 # HELPER FUNCTIONS
 ###############################################
 ###############################################

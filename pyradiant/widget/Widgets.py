@@ -108,12 +108,14 @@ class FileGroupBox(QtWidgets.QGroupBox):
         self._file_control_layout.addSpacerItem(HorizontalSpacerItem())
         
         self.data_history_btn = QtWidgets.QPushButton("T Log")
+        self.two_color_btn = QtWidgets.QPushButton("2 Color")
+        self.two_color_btn.setCheckable(True)
         data_history_icon = QIcon()
         data_history_icon.addFile(os.path.join(resources_path,'style','timeline.svg'))
         self.data_history_btn.setIcon(data_history_icon)
 
         self._file_control_layout.addWidget(self.data_history_btn)
-        
+        self._file_control_layout.addWidget(self.two_color_btn)
         
         self.frame_control_widget = QtWidgets.QWidget()
 

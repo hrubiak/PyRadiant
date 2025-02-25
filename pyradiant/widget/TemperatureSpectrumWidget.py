@@ -267,7 +267,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         
         self._ds_data_item.setData(x, y)
 
-    def plot_us_data(self, x, y, mask):
+    def plot_us_data(self, x, y, mask=None):
     
         if len(x)>0:
             mx = np.amax(y)*1.1
