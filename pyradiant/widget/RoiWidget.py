@@ -544,7 +544,9 @@ class RoiImageWidget(QtWidgets.QWidget):
             self.pg_viewbox.setLimits(xMin=x_min, xMax=x_max,
                                     yMin=y_min, yMax=y_max)
         else:
-            x_max, y_max = data.shape
+            x_max = data.shape[0]
+            y_max = data.shape[1]
+            #x_max, y_max = data.shape
             self.pg_viewbox.setLimits(xMin=0, xMax=x_max,
                                     yMin=0, yMax=y_max)
 

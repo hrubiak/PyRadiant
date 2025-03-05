@@ -221,6 +221,7 @@ class TemperatureController(QtCore.QObject):
         if self.model.data_img_file is not None:
             num_frames = self.model.data_img_file.num_frames
             if num_frames>1:
+                
                 self.update_time_lapse()
 
     def load_data_file(self, filenames=None):
@@ -482,6 +483,7 @@ class TemperatureController(QtCore.QObject):
             h = self.model.data_img.shape[0]
             
             self.widget.roi_widget.img_widget.set_wavelength_calibration((x,y,w,h))
+        rois = self.model.get_roi_data_list()
         self.widget.roi_widget.set_rois(self.model.get_roi_data_list())
         self.widget.roi_widget.set_wl_range(self.model.wl_range)
         
@@ -556,8 +558,8 @@ class TemperatureController(QtCore.QObject):
         else:
             self.widget.temperature_spectrum_widget.plot_ds_data(*ds_plot_spectrum.data,mask=ds_plot_spectrum.mask)
             self.widget.temperature_spectrum_widget.plot_ds_masked_data(*ds_plot_spectrum.data,mask=ds_plot_spectrum.mask)
-        if self.model.ds_temperature != 0 and ds_fit_ok:
-            if not self.widget.two_color_btn.isChecked():
+        if self.model.ds_temperature != 0 and ds_fit_ok and self.model.ds_temperature_error <= self.model.error_limit:
+            if not self.widget.two_color_btn.isChecked() :
                 self.widget.temperature_spectrum_widget.plot_ds_fit(*self.model.ds_fit_spectrum.data)
             else:
                 self.widget.temperature_spectrum_widget.plot_ds_fit([],[])
@@ -608,8 +610,9 @@ class TemperatureController(QtCore.QObject):
         else:
             self.widget.temperature_spectrum_widget.plot_us_data(*us_plot_spectrum.data,mask=us_plot_spectrum.mask)
             self.widget.temperature_spectrum_widget.plot_us_masked_data(*us_plot_spectrum.data,mask=us_plot_spectrum.mask)
-        if self.model.us_temperature != 0 and us_fit_ok:
-            if not self.widget.two_color_btn.isChecked():
+        if self.model.us_temperature != 0 and us_fit_ok and self.model.us_temperature_error <= self.model.error_limit:
+            if not self.widget.two_color_btn.isChecked() :
+                
                 self.widget.temperature_spectrum_widget.plot_us_fit(*self.model.us_fit_spectrum.data)
             else:
                 self.widget.temperature_spectrum_widget.plot_us_fit([],[])
@@ -642,7 +645,7 @@ class TemperatureController(QtCore.QObject):
         if len(ds_temperature):
             ds_temperature_arr = np.array(ds_temperature)
             ds_temperature_error_arr = np.array(ds_temperature_error)
-            select_ds  = (ds_temperature_arr > self.min_allowed_T) & (ds_temperature_arr < self.max_allowed_T) & (ds_temperature_error_arr < 200)
+            select_ds  = (ds_temperature_arr > self.min_allowed_T) & (ds_temperature_arr < self.max_allowed_T) & (ds_temperature_error_arr < self.model.error_limit)
             #print(f'select_ds {select_ds}')
             ds_t = ds_temperature_arr[select_ds]
             #print(f'ds_t {ds_t}')
@@ -656,7 +659,7 @@ class TemperatureController(QtCore.QObject):
         if len(us_temperature):
             us_temperature_arr = np.array(us_temperature)
             us_temperature_error_arr = np.array(us_temperature_error)
-            select_us  = (us_temperature_arr > self.min_allowed_T) & (us_temperature_arr < self.max_allowed_T) & (us_temperature_error_arr < 200)
+            select_us  = (us_temperature_arr > self.min_allowed_T) & (us_temperature_arr < self.max_allowed_T) & (us_temperature_error_arr < self.model.error_limit)
             us_t = us_temperature_arr[select_us]
             if len(us_t):
                 out = np.mean(us_t), np.std(us_t)

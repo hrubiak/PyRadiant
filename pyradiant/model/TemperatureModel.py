@@ -38,7 +38,7 @@ from .radiation import fit_linear, wien_pre_transform, m_to_T, m_b_wien
 from .helper.HelperModule import get_partial_index, get_partial_value
 from .TwoColor import calculate_2_color
 T_LOG_FILE = 'T_log.txt'
-LOG_HEADER = '# File\tPath\tT_DS\tT_US\tT_DS_error\tT_US_error\tDetector\tExposure Time [sec]\tGain\tscaling_DS\tscaling_US\tcounts_DS\tcounts_US\n'
+LOG_HEADER = '# File\tFrame\tPath\tT_DS\tT_US\tT_DS_error\tT_US_error\tDetector\tExposure Time [sec]\tGain\tscaling_DS\tscaling_US\tcounts_DS\tcounts_US\n'
 
 
 class TemperatureModel(QtCore.QObject):
@@ -83,8 +83,10 @@ class TemperatureModel(QtCore.QObject):
         self.ds_temperatures = []
         self.ds_temperatures_errors = []
 
-    def data_changed_emit(self):
-        self.write_to_log()
+        self.error_limit = 80
+
+    def data_changed_emit(self, frame):
+        self.write_to_log(frame)
         self.data_changed_signal.emit()
 
     def ds_calculations_changed_emit(self):
@@ -93,16 +95,16 @@ class TemperatureModel(QtCore.QObject):
     def us_calculations_changed_emit(self):
         self.us_calculations_changed.emit()
 
-    def write_to_log(self):
+    def write_to_log(self, frame):
         if self.log_file is not None:
-            self.write_to_log_file()
+            self.write_to_log_file(frame)
 
     def clear_log(self):
         if self.log_file is not None:
             self.log_file.truncate(0)
             self.log_file.seek(0)
             self.log_file.write(LOG_HEADER)
-            self.data_changed_emit()
+            self.data_changed_emit(self.current_frame)
 
     def get_log_file_path(self):
         if self.filename != None:
@@ -132,15 +134,18 @@ class TemperatureModel(QtCore.QObject):
             elif file_extension == '.h5':
                 self.data_img_file = H5File(filename,self.x_calibration)
 
+
         if self.data_img_file.num_frames > 1:
-            self._data_img = self.data_img_file.img[0]
-            self.current_frame = 0
+            if not (self.current_frame >= 0 and self.current_frame< self.data_img_file.num_frames):
+                self.current_frame = 0
+            self._data_img = self.data_img_file.img[self.current_frame]
         else:
+            self.current_frame = 0
             self._data_img = self.data_img_file.img
         self._update_temperature_models_data()
         self._filename_iterator.update_filename(filename)
         self.mtime = self.get_last_modified_time(filename)
-        self.data_changed_emit()
+        self.data_changed_emit(self.current_frame)
 
         
     
@@ -182,7 +187,7 @@ class TemperatureModel(QtCore.QObject):
         self.current_frame = frame_number
         self._data_img = self.data_img_file.img[frame_number]
         self._update_temperature_models_data()
-        self.data_changed_emit()
+        self.data_changed_emit(self.current_frame)
         return True
 
     def create_log_file(self, file_path):
@@ -201,35 +206,43 @@ class TemperatureModel(QtCore.QObject):
         if self.log_file != None:
             self.log_file. close()
 
-    def write_to_log_file(self):
+  
+
+    def write_to_log_file(self, frame):
         if not math.isnan(self.ds_temperature):
             ds_temp = str(int(self.ds_temperature))
         else:
-            ds_temp = 'NaN'
+            ds_temp = '0'
         if not math.isnan(self.us_temperature):
             us_temp = str(int(self.us_temperature))
         else:
-            us_temp = 'NaN'
+            us_temp = '0'
 
         if not math.isnan(self.ds_temperature_error):
             ds_temperature_error = str(int(self.ds_temperature_error))
+            if self.ds_temperature_error > self.error_limit:
+                ds_temp= '0'
+                ds_temperature_error = '0'
         else:
-            ds_temperature_error = 'NaN'
+            ds_temperature_error = '0'
         if not math.isnan(self.us_temperature_error):
             us_temperature_error = str(int(self.us_temperature_error))
+            if self.us_temperature_error > self.error_limit:
+                us_temp= '0'
+                us_temperature_error = '0'
         else:
-            us_temperature_error = 'NaN'
+            us_temperature_error = '0'
 
         if not math.isnan(self.ds_scaling):
             ds_scaling = format(self.ds_scaling, ".3e")
         else:
-            ds_scaling = 'NaN'
+            ds_scaling = '0'
         if not math.isnan(self.us_scaling):
             us_scaling = format(self.us_scaling, ".3e")
         else:
-            us_scaling = 'NaN'    
-
-        log_data = (os.path.basename(self.filename), os.path.dirname(self.filename), ds_temp, us_temp,
+            us_scaling = '0'    
+        frame_s = str(frame + 1)
+        log_data = (os.path.basename(self.filename), frame_s, os.path.dirname(self.filename), ds_temp, us_temp,
                     ds_temperature_error, us_temperature_error,
                     self.data_img_file.detector, str(self.data_img_file.exposure_time),str(self.data_img_file.gain), 
                     ds_scaling, us_scaling, 
@@ -243,7 +256,7 @@ class TemperatureModel(QtCore.QObject):
         if function_type == 'wien' or function_type == 'plank':
             self.temperature_fit_function_str = function_type
             self._update_temperature_models_data()
-            self.data_changed_emit()
+            self.data_changed_emit(self.current_frame)
 
     def set_use_insitu_background(self, use_data_background,use_calibration_background):
         if use_data_background != self.use_insitu_data_background or use_calibration_background !=self.use_insitu_calibration_background:
@@ -258,7 +271,7 @@ class TemperatureModel(QtCore.QObject):
             
             self._update_temperature_models_data()
             
-            self.data_changed_emit()
+            self.data_changed_emit(self.current_frame)
 
     def _update_temperature_models_data(self):
 
@@ -279,7 +292,7 @@ class TemperatureModel(QtCore.QObject):
     def data_img(self, value):
         self._data_img = value
         self._update_temperature_models_data()
-        self.data_changed_emit()
+        self.data_changed_emit(self.current_frame)
 
     def has_data(self):
         return self._data_img is not None
@@ -478,9 +491,9 @@ class TemperatureModel(QtCore.QObject):
             self.ds_temperature_model.calibration_parameter.standard_file_name = \
                 ds_group['standard_spectrum'].attrs['filename']
 
-        modus = ds_group['modus'][...]
+        modus = int(ds_group['modus'][...])
         self.ds_temperature_model.calibration_parameter.set_modus(modus)
-        temperature = ds_group['temperature'][...]
+        temperature = float(ds_group['temperature'][...])
         self.ds_temperature_model.calibration_parameter.set_temperature(temperature)
 
         us_group = f['upstream_calibration']
@@ -527,8 +540,10 @@ class TemperatureModel(QtCore.QObject):
         self.us_calibration_img_file.x_calibration = self.x_calibration
         self.us_calibration_img_file.filename = self.us_calibration_filename
 
-        self.us_temperature_model.calibration_parameter.set_modus(us_group['modus'][...])
-        self.us_temperature_model.calibration_parameter.set_temperature(us_group['temperature'][...])
+        modus = int(us_group['modus'][...])
+        self.us_temperature_model.calibration_parameter.set_modus(modus)
+        temperature = float(us_group['temperature'][...])
+        self.us_temperature_model.calibration_parameter.set_temperature(temperature)
 
         self.ds_temperature_model._update_all_spectra()
         self.us_temperature_model._update_all_spectra()
@@ -538,7 +553,7 @@ class TemperatureModel(QtCore.QObject):
 
         #self.us_calculations_changed_emit()
         #self.ds_calculations_changed_emit()
-        self.data_changed_emit()
+        self.data_changed_emit(self.current_frame)
 
     def save_txt(self, filename):
         """
@@ -658,16 +673,17 @@ class TemperatureModel(QtCore.QObject):
     # updating roi values
     @property
     def ds_roi(self):
-        if self.data_img_file is not None:
-            try:
-                return self.roi_data_manager.get_roi(0, self.data_img_file.get_dimension())
-            except AttributeError:
-                return Roi([0, 0, 0, 0])
-        else:
+        try:
+            dim = self.data_img_file.get_dimension()
+            roi = self.roi_data_manager.get_roi(0, self.data_img_file.get_dimension())
+            return roi
+        except:
             return Roi([0, 0, 0, 0])
+        
 
     @ds_roi.setter
     def ds_roi(self, ds_limits):
+    
         self.roi_data_manager.set_roi(0, self.data_img_file.get_dimension(), ds_limits)
         self.ds_temperature_model._update_all_spectra()
         self.ds_temperature_model.fit_data()
@@ -676,7 +692,9 @@ class TemperatureModel(QtCore.QObject):
     @property
     def us_roi(self):
         try:
-            return self.roi_data_manager.get_roi(1, self.data_img_file.get_dimension())
+            dim = self.data_img_file.get_dimension()
+            roi = self.roi_data_manager.get_roi(1, self.data_img_file.get_dimension())
+            return roi
         except:
             return Roi([0, 0, 0, 0])
 
@@ -848,13 +866,13 @@ class TemperatureModel(QtCore.QObject):
             us_sufficient_counts = us_counts > (0.1*max_counts)
             ds_sufficient_counts = ds_counts > (0.1*max_counts)
 
-            if us_sufficient_counts and self.us_temperature_model.temperature_error<30:
+            if us_sufficient_counts and self.us_temperature_model.temperature_error<=self.error_limit:
                 us_temperature.append(self.us_temperature_model.temperature)
                 us_temperature_error.append(self.us_temperature_model.temperature_error)
             else:
                 us_temperature.append(0)
                 us_temperature_error.append(0)
-            if ds_sufficient_counts and self.ds_temperature_model.temperature_error<30:
+            if ds_sufficient_counts and self.ds_temperature_model.temperature_error<=self.error_limit:
                 ds_temperature.append(self.ds_temperature_model.temperature)
                 ds_temperature_error.append(self.ds_temperature_model.temperature_error)
             else:
@@ -940,13 +958,20 @@ class SingleTemperatureModel(QtCore.QObject):
         
         self._calibration_img_x_calibration = x_calibration
         if type(img_data) == list:
-            img_data_selected = img_data[calibration_frames[0]:calibration_frames[1]+1]
+            if calibration_frames[0] is not None and calibration_frames[1] is not None:
+
+                img_data_selected = img_data[calibration_frames[0]:calibration_frames[1]+1]
+            else:
+                img_data_selected = img_data[:]
             # Stack and average along the first dimension of the list
             average_array = np.mean(img_data_selected, axis=0)
             self._calibration_img = average_array
         else:
             if len(img_data.shape) == 3:
-                img_data_selected = img_data[calibration_frames[0]:calibration_frames[1]+1]
+                if calibration_frames[0] is not None and calibration_frames[1] is not None:
+                    img_data_selected = img_data[calibration_frames[0]:calibration_frames[1]+1]
+                else:
+                    img_data_selected = img_data[:]
                 # Stack and average along the first dimension of the list
                 average_array = np.mean(img_data_selected, axis=0)
                 self._calibration_img = average_array

@@ -441,13 +441,15 @@ class SpeFile(DataModel):
             
             
             self.img = img_temp
-            if hasattr(self, 'num_rois'):
-                if self.num_rois >=1:
-                    if hasattr(self, 'sensor_width'):
-                        self._ydim = self.sensor_height
-                        self._xdim = self.sensor_width
         else:
             self.raw_ccd = np.copy(self.img)
+        if hasattr(self, 'num_rois'):
+            if self.num_rois >=1:
+                if hasattr(self, 'sensor_width'):
+                    self._ydim = self.sensor_height
+                    self._xdim = self.sensor_width
+        
+        
     def _get_val(self, obj, idx=0):
         if isinstance(obj, (list, tuple, dict, set)):
             return obj[idx]
