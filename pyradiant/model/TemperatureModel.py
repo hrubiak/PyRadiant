@@ -129,7 +129,7 @@ class TemperatureModel(QtCore.QObject):
             area_detector.update_data()
             self.data_img_file = area_detector
         else:
-            if file_extension == '.spe':
+            if file_extension == '.spe' or file_extension == '.SPE':
                 self.data_img_file = SpeFile(filename)
             elif file_extension == '.h5':
                 self.data_img_file = H5File(filename,self.x_calibration)
@@ -192,13 +192,17 @@ class TemperatureModel(QtCore.QObject):
 
     def create_log_file(self, file_path):
         if len(file_path):
-            
-            try:
-                self.log_file = open(os.path.join(file_path, T_LOG_FILE), 'a')
+            if self.log_file is not None:
+                if hasattr(self.log_file, 'closed'):
+                    if not self.log_file.closed:
+                        self.log_file.close()
+            lof_file_path = os.path.join(file_path, T_LOG_FILE)
+            try: 
+                self.log_file = open(lof_file_path, 'a')
                 self.log_file.write(LOG_HEADER)
-                #self.log_file.close()
                 return self.log_file
             except PermissionError:
+                self.log_file =  None
                 return None
         return None
         
@@ -1182,7 +1186,7 @@ def fit_black_body_function(spectrum):
 
         return T, T_err, Spectrum(spectrum._x, black_body_function(spectrum._x, param[0], param[1])), scaling
     except Exception as e:
-        print(f"Fit failed with error: {e}")
+        #print(f"Fit failed with error: {e}")
         return np.nan, np.nan, Spectrum([], []), np.nan
     
 def fit_black_body_function_wien(spectrum):

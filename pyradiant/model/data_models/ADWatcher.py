@@ -21,9 +21,9 @@ import os
 import time, copy
 import numpy as np
 from PyQt6 import QtCore
-from ... import EPICS_AVAILABLE 
+from ... import EPICS_INSTALLED 
 
-if EPICS_AVAILABLE:
+if EPICS_INSTALLED:
     from epics import PV, caget
 
 from .DataModel import DataModel
@@ -83,7 +83,7 @@ class ADWatcher(DataModel, QtCore.QObject):
         QtCore.QObject.__init__(self)
         
         self.initialized = False
-        if not EPICS_AVAILABLE:
+        if not EPICS_INSTALLED:
             return
 
         self._record_name = None

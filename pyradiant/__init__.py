@@ -33,18 +33,30 @@ resources_path = os.path.join(os.path.dirname(__file__), 'resources')
 icons_path = os.path.join(resources_path, 'icons')
 style_path = os.path.join(resources_path, 'style')
 
-EPICS_AVAILABLE = False
+EPICS_INSTALLED = False
 try:
-    from epics import PV, caget, camonitor, camonitor_clear
-    EPICS_AVAILABLE = True
+    from epics import PV, caget, camonitor, camonitor_clear, ca, pv
+    import socket
+    import gc
+    EPICS_INSTALLED = True
 except:
     pass
 
 from .controller.MainController import MainController
 
+def cleanup_ca():
+    print("Shutting down CA threads and closing sockets...")
+    # Finalize PyEpics Channel Access
+    ca.finalize_libca()
+    # Force garbage collection
+    gc.collect()
+    # Check if any sockets remain open
+    for obj in gc.get_objects():
+        if isinstance(obj, socket.socket):
+            #print(f"Unclosed socket detected: {obj}")
+            obj.close()  # Force close lingering sockets
 
 def run_pyradiant():
-
     qdarktheme.enable_hi_dpi()
     app = QtWidgets.QApplication(sys.argv)
 
@@ -53,4 +65,6 @@ def run_pyradiant():
   
     controller = MainController(app)
     controller.show_window()
+    if EPICS_INSTALLED:
+        app.aboutToQuit.connect(cleanup_ca)  # Ensure cleanup happens on exit
     sys.exit(app.exec())

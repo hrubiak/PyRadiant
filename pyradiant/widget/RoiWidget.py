@@ -73,7 +73,7 @@ class RoiWidget(QtWidgets.QWidget):
         self.left_tab_widget.setCurrentIndex(0)
         self.left_tab_widget.addTab(self.specra_widget, '1D')
         self.left_tab_widget.addTab(self.img_widget, '2D')
-        self.left_tab_widget.addTab(self.ccd_widget, 'Raw ccd')
+        self.left_tab_widget.addTab(self.ccd_widget, 'RAW')
 
 
         self.wl_range_widget = wavelengthRangeGB()
