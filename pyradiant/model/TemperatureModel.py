@@ -46,7 +46,7 @@ class TemperatureModel(QtCore.QObject):
     ds_calculations_changed = QtCore.pyqtSignal()
     us_calculations_changed = QtCore.pyqtSignal()
     log_file_updated_signal = QtCore.pyqtSignal(dict)
-
+    log_file_loaded_signal = QtCore.pyqtSignal()
     def __init__(self):
         super(TemperatureModel, self).__init__()
 
@@ -130,7 +130,9 @@ class TemperatureModel(QtCore.QObject):
         if area_detector == None:
             if not self.filename or not os.path.dirname(self.filename) == os.path.dirname(filename):
 
-                self.create_log_file(os.path.dirname(filename))
+                lf = self.create_log_file(os.path.dirname(filename))
+                if lf is not None:
+                    self.log_file_loaded_signal.emit()
             self.filename = filename
             # Get the extension
             _, file_extension = os.path.splitext(filename)
@@ -217,7 +219,7 @@ class TemperatureModel(QtCore.QObject):
                         self.log_file.close()
             norm_file_path = os.path.normpath(file_path)
             if os.access(norm_file_path, os.W_OK):
-                fname = T_LOG_FILE + '_' + self.get_filesystem_safe_datetime() + '.txt'
+                fname = T_LOG_FILE + '.txt'
                 log_file_path = os.path.normpath(os.path.join(file_path, fname))
                 try: 
                     self.log_file = open(log_file_path, 'a')

@@ -62,19 +62,11 @@ class DataLogController(QtCore.QObject):
     def create_signals(self):
         # File signals
         #self.connect_click_function(self.widget.load_data_log_file_btn, self.load_data_log_file)
-
-
-        # File drag and drop
-        #self.widget.file_dragged_in.connect(self.file_dragged_in) 
-
+        self.temperature_model.log_file_loaded_signal.connect(self.load_log_from_file)
         # model signals
         self.temperature_model.set_log_callback(self.log_file_updated_callback)
         
-        '''self.temperature_model.data_changed_signal.connect(self.data_changed_callback)
-        self.temperature_model.ds_calculations_changed.connect(self.ds_calculations_changed_callback)
-        self.temperature_model.us_calculations_changed.connect(self.us_calculations_changed_callback)
-        '''
-
+   
     def connect_click_function(self, emitter, function):
         emitter.clicked.connect(function)
         
@@ -114,7 +106,7 @@ class DataLogController(QtCore.QObject):
     def file_dragged_in(self,files):
         pass
 
-    def update_log_display(self):
+    def load_log_from_file(self):
         log_file = self.temperature_model.get_log_file_path()
         if log_file != None:
             if os.path.exists(log_file):
@@ -143,15 +135,6 @@ class DataLogController(QtCore.QObject):
 
         
 
-    def data_changed_callback(self):
-        self.update_log_display()
-
-    def ds_calculations_changed_callback(self):
-        self.update_log_display()
-                
-
-    def us_calculations_changed_callback(self):
-        self.update_log_display()
                 
     def show_widget(self):
         self.widget.raise_widget()

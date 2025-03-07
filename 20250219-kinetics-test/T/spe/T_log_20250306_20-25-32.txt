@@ -1,2 +1,0 @@
-# File	Frame	Path	T_DS	T_US	T_DS_error	T_US_error	Detector	Exposure Time [sec]	Gain	scaling_DS	scaling_US	counts_DS	counts_US
-20250219-kinetics-test_00117.spe	1	/Users/ross/GitHub/T-view/20250219-kinetics-test/T/spe	1401	1238	4	35	PI-MAX4: 1024B/EM	0.046	1	4.736e-07	5.802e-08	8.415e+05	1.791e+04
