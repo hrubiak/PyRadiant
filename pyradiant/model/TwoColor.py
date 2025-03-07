@@ -12,7 +12,7 @@ Created on Tue Jan  7 15:43:34 2025
 
 import time
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d
 
 ### Define constants

@@ -667,6 +667,7 @@ class TemperatureController(QtCore.QObject):
         self.widget.temperature_spectrum_widget.plot_ds_time_lapse(range(1, len(ds_temperature_plot_data)+1), ds_temperature_plot_data)
         self.widget.temperature_spectrum_widget.update_time_lapse_ds_temperature_txt(*out)
             
+        out = np.nan, np.nan
         if len(us_temperature):
             us_temperature_arr = np.array(us_temperature)
             us_temperature_error_arr = np.array(us_temperature_error)
@@ -679,8 +680,10 @@ class TemperatureController(QtCore.QObject):
         self.widget.temperature_spectrum_widget.plot_us_time_lapse(range(1, len(us_temperature_plot_data)+1), us_temperature_plot_data)
         self.widget.temperature_spectrum_widget.update_time_lapse_us_temperature_txt(*out)
 
-        if len(ds_t) and len(us_t):
-            out = np.mean(np.concatenate((ds_t, us_t))), np.std(np.concatenate((ds_t , us_t)))
+        if len(ds_t) or len(us_t):
+            conc = np.concatenate((ds_t, us_t))
+            conc = conc[~np.isnan(conc).all()]
+            out = np.mean(conc), np.std(conc)
         else:
             out = np.nan, np.nan
         self.widget.temperature_spectrum_widget.update_time_lapse_combined_temperature_txt(*out )
