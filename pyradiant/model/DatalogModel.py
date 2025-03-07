@@ -46,21 +46,21 @@ from typing import List
 class DataRecord:
     def __init__(self, **kwargs):
         
-        try:
-            self.File = kwargs.get('# File')
-            self.Path = kwargs.get('Path')
-            self.T_DS = float(kwargs.get('T_DS'))
-            self.T_US = float(kwargs.get('T_US'))
-            self.T_DS_error = float(kwargs.get('T_DS_error'))
-            self.T_US_error = float(kwargs.get('T_US_error'))
-            self.Detector = kwargs.get('Detector')
-            self.Exposure_Time_sec = float(kwargs.get('Exposure Time [sec]'))
-            self.Gain = float(kwargs.get('Gain'))
-            self.scaling_DS = float(kwargs.get('scaling_DS'))
-            self.scaling_US = float(kwargs.get('scaling_US'))
-            self.counts_DS = float(kwargs.get('counts_DS'))
-            self.counts_US = float(kwargs.get('counts_US'))
-        except:
+        
+        self.File = kwargs.get('# File')
+        self.Path = kwargs.get('Path')
+        self.T_DS = float(kwargs.get('T_DS'))
+        self.T_US = float(kwargs.get('T_US'))
+        self.T_DS_error = float(kwargs.get('T_DS_error'))
+        self.T_US_error = float(kwargs.get('T_US_error'))
+        self.Detector = kwargs.get('Detector')
+        self.Exposure_Time_sec = float(kwargs.get('Exposure Time [sec]'))
+        self.Gain = float(kwargs.get('Gain'))
+        self.scaling_DS = float(kwargs.get('scaling_DS'))
+        self.scaling_US = float(kwargs.get('scaling_US'))
+        self.counts_DS = float(kwargs.get('counts_DS'))
+        self.counts_US = float(kwargs.get('counts_US'))
+        '''except:
             self.File = ''
             self.Path = ''
             self.T_DS = np.nan
@@ -73,7 +73,7 @@ class DataRecord:
             self.scaling_DS = np.nan
             self.scaling_US = np.nan
             self.counts_DS = np.nan
-            self.counts_US = np.nan
+            self.counts_US = np.nan'''
 
     def __repr__(self):
         return f"DataRecord({self.File}, {self.Path}, {self.T_DS}, {self.T_US}, {self.T_DS_error}, {self.T_US_error}, {self.Detector}, {self.Exposure_Time_sec}, {self.Gain}, {self.scaling_DS}, {self.scaling_US}, {self.counts_DS}, {self.counts_US})"
@@ -87,7 +87,7 @@ class DatalogModel(QtCore.QObject):
         super().__init__()
 
         self.filename = None
-        self.data_records_groups = []
+        self.data_records_groups = [[]]
 
     def get_temperatures_by_group(self, group):
         if len(self.data_records_groups) > group and group >=0:
@@ -114,6 +114,10 @@ class DatalogModel(QtCore.QObject):
                     data_records.append(record)
                 
         return data_records
+    
+    def add_record(self, record):
+        data_record = DataRecord(**record)
+        self.data_records_groups[0].append(data_record)
     
     def load_last_n_records(self, file_path: str, n: int):
         # Using deque to keep only the last n lines in memory

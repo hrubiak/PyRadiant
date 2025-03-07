@@ -61,23 +61,25 @@ class DataLogController(QtCore.QObject):
 
     def create_signals(self):
         # File signals
-        self.connect_click_function(self.widget.load_data_log_file_btn, self.load_data_log_file)
+        #self.connect_click_function(self.widget.load_data_log_file_btn, self.load_data_log_file)
 
 
         # File drag and drop
         #self.widget.file_dragged_in.connect(self.file_dragged_in) 
 
         # model signals
-        self.temperature_model.data_changed_signal.connect(self.data_changed_callback)
+        self.temperature_model.set_log_callback(self.log_file_updated_callback)
+        
+        '''self.temperature_model.data_changed_signal.connect(self.data_changed_callback)
         self.temperature_model.ds_calculations_changed.connect(self.ds_calculations_changed_callback)
         self.temperature_model.us_calculations_changed.connect(self.us_calculations_changed_callback)
-
+        '''
 
     def connect_click_function(self, emitter, function):
         emitter.clicked.connect(function)
         
-    def close_log(self):
-        self.temperature_model.close_log()
+    '''def close_log(self):
+        self.temperature_model.close_log()'''
 
     def load_data_log_file(self, filename=None):
         
@@ -117,6 +119,29 @@ class DataLogController(QtCore.QObject):
         if log_file != None:
             if os.path.exists(log_file):
                 self.load_data_log_file(filename=log_file)
+
+    def log_file_updated_callback(self, log_dict):
+        self.model.add_record(log_dict)
+       
+        T_DS, T_US = self.model.get_temperatures_by_group(0)
+        #T_DS = T_DS[-200:]
+        #T_US = T_US[-200:]
+        T_DS[T_DS<=MIN_TEMPERATURE] = np.nan
+        T_US[T_US<=MIN_TEMPERATURE] = np.nan
+        T_DS[T_DS >MAX_TEMPERATURE] = np.nan
+        T_US[T_US >MAX_TEMPERATURE] = np.nan
+        
+        x_DS = np.arange(T_DS.shape[0])
+        x_US = np.arange(T_US.shape[0])
+
+        self.widget.temperatures_plot_widget.plot_ds_time_lapse(x_DS, T_DS)
+        self.widget.temperatures_plot_widget.plot_us_time_lapse(x_US, T_US)
+
+        #self.widget.load_data_log_file_lbl.setText(str(filename) )
+        #later  = time.time()
+        #print ('T log update time = ' + str(later-now))
+
+        
 
     def data_changed_callback(self):
         self.update_log_display()

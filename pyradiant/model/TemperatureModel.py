@@ -37,7 +37,7 @@ from .helper import FileNameIterator
 from .radiation import fit_linear, wien_pre_transform, m_to_T, m_b_wien
 from .helper.HelperModule import get_partial_index, get_partial_value
 from .TwoColor import calculate_2_color
-T_LOG_FILE = 'T_log.txt'
+T_LOG_FILE = 'T_log'
 LOG_HEADER = '# File\tFrame\tPath\tT_DS\tT_US\tT_DS_error\tT_US_error\tDetector\tExposure Time [sec]\tGain\tscaling_DS\tscaling_US\tcounts_DS\tcounts_US\n'
 
 
@@ -45,6 +45,7 @@ class TemperatureModel(QtCore.QObject):
     data_changed_signal = QtCore.pyqtSignal()
     ds_calculations_changed = QtCore.pyqtSignal()
     us_calculations_changed = QtCore.pyqtSignal()
+    log_file_updated_signal = QtCore.pyqtSignal(dict)
 
     def __init__(self):
         super(TemperatureModel, self).__init__()
@@ -85,6 +86,11 @@ class TemperatureModel(QtCore.QObject):
 
         self.error_limit = 80
 
+        self.log_callback = None
+
+    def set_log_callback(self, callback_method):
+        self.log_callback = callback_method
+
     def data_changed_emit(self, frame):
         self.write_to_log(frame)
         self.data_changed_signal.emit()
@@ -98,6 +104,7 @@ class TemperatureModel(QtCore.QObject):
     def write_to_log(self, frame):
         if self.log_file is not None:
             self.write_to_log_file(frame)
+            
 
     def clear_log(self):
         if self.log_file is not None:
@@ -107,8 +114,9 @@ class TemperatureModel(QtCore.QObject):
             self.data_changed_emit(self.current_frame)
 
     def get_log_file_path(self):
-        if self.filename != None:
-            log_file_path = os.path.normpath(os.path.join(os.path.dirname(self.filename), T_LOG_FILE))
+        if self.filename is not None and self.log_file is not None:
+
+            log_file_path = self.log_file.name
             return log_file_path
         else:
             return None
@@ -121,6 +129,7 @@ class TemperatureModel(QtCore.QObject):
     def load_data_image(self, filename, area_detector=None):
         if area_detector == None:
             if not self.filename or not os.path.dirname(self.filename) == os.path.dirname(filename):
+
                 self.create_log_file(os.path.dirname(filename))
             self.filename = filename
             # Get the extension
@@ -182,13 +191,23 @@ class TemperatureModel(QtCore.QObject):
         return self.set_img_frame_number_to(num)
 
     def set_img_frame_number_to(self, frame_number):
+        if self.current_frame == frame_number:
+            return False
         if frame_number < 0 or frame_number >= self.data_img_file.num_frames:
             return False
-        self.current_frame = frame_number
+        current_frame = frame_number
+        if current_frame < 0:
+            current_frame = 0
+        self.current_frame = current_frame
         self._data_img = self.data_img_file.img[frame_number]
         self._update_temperature_models_data()
         self.data_changed_emit(self.current_frame)
         return True
+    
+    def get_filesystem_safe_datetime(self):
+        # Format: YYYY-MM-DD_HH-MM-SS
+        # This avoids characters like ":" which are not allowed on Windows.
+        return datetime.datetime.now().strftime("%Y%m%d_%H-%M-%S")
 
     def create_log_file(self, file_path):
         if len(file_path):
@@ -196,14 +215,17 @@ class TemperatureModel(QtCore.QObject):
                 if hasattr(self.log_file, 'closed'):
                     if not self.log_file.closed:
                         self.log_file.close()
-            lof_file_path = os.path.join(file_path, T_LOG_FILE)
-            try: 
-                self.log_file = open(lof_file_path, 'a')
-                self.log_file.write(LOG_HEADER)
-                return self.log_file
-            except PermissionError:
-                self.log_file =  None
-                return None
+            norm_file_path = os.path.normpath(file_path)
+            if os.access(norm_file_path, os.W_OK):
+                fname = T_LOG_FILE + '_' + self.get_filesystem_safe_datetime() + '.txt'
+                log_file_path = os.path.normpath(os.path.join(file_path, fname))
+                try: 
+                    self.log_file = open(log_file_path, 'a')
+                    self.log_file.write(LOG_HEADER)
+                    return self.log_file
+                except PermissionError:
+                    self.log_file =  None
+                    return None
         return None
         
     def close_log(self):
@@ -251,8 +273,14 @@ class TemperatureModel(QtCore.QObject):
                     self.data_img_file.detector, str(self.data_img_file.exposure_time),str(self.data_img_file.gain), 
                     ds_scaling, us_scaling, 
                     format(self.ds_data_spectrum.counts, ".3e"), format(self.us_data_spectrum.counts, ".3e"))
+        
         self.log_file.write('\t'.join(log_data) + '\n')
         self.log_file.flush()
+        # Create a dictionary by zipping keys and values together
+        keys = LOG_HEADER[:-1].split('\t')
+        log_dict = dict(zip(keys, log_data))
+        if self.log_callback is not None:
+            self.log_callback(log_dict)
         time.sleep(0.01) # may help with not missing writes when batch processing
         
 
@@ -854,6 +882,7 @@ class TemperatureModel(QtCore.QObject):
 
         cur_frame = self.current_frame
         self.blockSignals(True)
+        
 
         us_temperature = []
         ds_temperature = []

@@ -134,18 +134,9 @@ class MainController(object):
 
     def closeEvent(self, event):
         self.save_settings()
-        try:
-            self.temperature_controller.roi_controller.view.close()
-        except:
-            pass
+      
         self.main_widget.close()
         self.temperature_controller.close_log()
         event.accept()
 
-    def load_stylesheet(self):
-        WStyle = 'plastique'
-        file = open(os.path.join(self.style_path, "stylesheet.qss"))
-        stylesheet = file.read()
-        self.app.setStyleSheet(stylesheet)
-        file.close()
-        self.app.setStyle(WStyle)
+    

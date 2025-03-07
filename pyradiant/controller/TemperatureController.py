@@ -74,8 +74,14 @@ class TemperatureController(QtCore.QObject):
             self.widget.epics_gb.hide()
         self.epics_available = False
 
+        self.widget.frame_num_txt.clearFocus()
+        self.widget.load_data_file_btn.setFocus()
+
         self._create_autoprocess_system()
         self.create_signals()
+
+        
+        
 
     def connect_to_area_detector(self):
         if self.epics_available:
@@ -184,8 +190,11 @@ class TemperatureController(QtCore.QObject):
         self.ds_calculations_changed()
 
     def frame_num_txt_callback(self):
-        num =  int(self.widget.frame_num_txt.text())
-        if num >= 1 and num <= self.model.data_img_file.num_frames:
+        self.widget.frame_num_txt.clearFocus()
+        num =  int(self.widget.frame_num_txt.text()) -1
+        
+
+        if num >= 0 and num <= self.model.data_img_file.num_frames:
             self.model.load_any_img_frame(num)
 
     def connect_click_function(self, emitter, function):
@@ -509,6 +518,7 @@ class TemperatureController(QtCore.QObject):
                 self.widget.temperature_spectrum_widget.show_time_lapse_plot(False)
             self.widget.frame_num_txt.blockSignals(True)
             self.widget.frame_num_txt.setText(str(self.model.current_frame + 1))
+            self.widget.frame_num_txt.clearFocus()
             self.widget.frame_num_txt.blockSignals(False)
             
             self.widget.graph_info_lbl.setText(self.model.file_info)

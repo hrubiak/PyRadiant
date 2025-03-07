@@ -25,6 +25,7 @@ import os
 from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem
 from .. import resources_path
 
+
 class FileGroupBox(QtWidgets.QGroupBox):
     def __init__(self, *args):
         super().__init__()
@@ -55,6 +56,8 @@ class FileGroupBox(QtWidgets.QGroupBox):
         self.frame_control_widget.hide()
         
         self.setLayout(self._main_layout)
+
+    
 
     def create_file_control_widget(self):
         self.file_control_widget = QtWidgets.QWidget()
