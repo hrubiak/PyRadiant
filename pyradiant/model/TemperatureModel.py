@@ -114,7 +114,7 @@ class TemperatureModel(QtCore.QObject):
             self.data_changed_emit(self.current_frame)
 
     def get_log_file_path(self):
-        if self.filename is not None and self.log_file is not None:
+        if self.log_file is not None:
 
             log_file_path = self.log_file.name
             return log_file_path
