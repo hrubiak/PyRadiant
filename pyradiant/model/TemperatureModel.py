@@ -37,7 +37,7 @@ from .helper import FileNameIterator
 from .radiation import fit_linear, wien_pre_transform, m_to_T, m_b_wien
 from .helper.HelperModule import get_partial_index, get_partial_value
 from .TwoColor import calculate_2_color
-from .helper.settings_txt_load import parse_txt_settings
+
 
 T_LOG_FILE = 'T_log'
 LOG_HEADER = '# File\tFrame\tPath\tT_DS\tT_US\tT_DS_error\tT_US_error\tDetector\tExposure Time [sec]\tGain\tscaling_DS\tscaling_US\tcounts_DS\tcounts_US\n'
@@ -465,15 +465,7 @@ class TemperatureModel(QtCore.QObject):
 
         f.close()
 
-    def load_setting_tview(self, filename):
-
-        data = parse_txt_settings(filename)
-        f = h5py.File(filename, 'w')
-
-        f.create_group('downstream_calibration')
-        f.create_group('upstream_calibration')
-        f.close()
-
+    
     def load_setting(self, filename):
         f = h5py.File(filename, 'r')
         ds_group = f['downstream_calibration']
