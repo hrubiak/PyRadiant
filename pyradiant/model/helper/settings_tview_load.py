@@ -1,7 +1,7 @@
 import re
 import h5py
 
-def parse_txt_settings(file_path):
+def parse_tview_settings(file_path):
     data = {'i': {}, 'd': {}, 's': {}, 'b': {}, 'p': {}}
     current_type = None
     
@@ -39,9 +39,15 @@ def parse_txt_settings(file_path):
     
     return data
 
-def save_setting_h5py( filename):
+data = parse_tview_settings('Ex93.txt')
+for key in data:
+    print(key)
+    for datakey in data[key]:
+        print('  ' + datakey)
 
-        data = parse_txt_settings(filename)
+'''def save_setting_h5py( filename):
+
+        data = parse_tview_settings(filename)
         f = h5py.File(filename, 'w')
 
         f.create_group('downstream_calibration')
@@ -88,4 +94,4 @@ def save_setting_h5py( filename):
             # self.us_temperature_model.calibration_parameter.get_standard_filename()
         us_group['standard_spectrum'].attrs['subtract_bg'] = # self.use_insitu_calibration_background
 
-        f.close()
+        f.close()'''
