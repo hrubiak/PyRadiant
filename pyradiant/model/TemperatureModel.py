@@ -86,7 +86,7 @@ class TemperatureModel(QtCore.QObject):
         self.ds_temperatures = []
         self.ds_temperatures_errors = []
 
-        self.error_limit = 80
+        self.error_limit = 200
 
         self.log_callback = None
 
@@ -335,9 +335,9 @@ class TemperatureModel(QtCore.QObject):
 
     @property
     def file_info(self):
-        out = "Exp. Time: {}s | Grating: {} | Detector: {}".format(round(float(self.data_img_file.exposure_time),6),
+        out = "Exp. Time: {}s | Grating: {} | Detector: {} | Gain: {}".format(round(float(self.data_img_file.exposure_time),6),
                                                                     self.data_img_file.grating,
-                                                                    self.data_img_file.detector)
+                                                                    self.data_img_file.detector,self.data_img_file.EMIccd_gain)
         return out
 
     # calibration image files:
@@ -432,8 +432,11 @@ class TemperatureModel(QtCore.QObject):
                 ds_group['image'].attrs['filename'] = self.ds_calibration_filename
                 ds_group['image'].attrs['x_calibration'] = self.ds_temperature_model._data_img_x_calibration
                 ds_group['image'].attrs['subtract_bg'] = self.use_insitu_data_background
-        ds_group['roi'] = self.ds_roi.as_list()
-        ds_group['roi_bg'] = self.ds_roi_bg.as_list()
+
+        ds_roi_list =  self.ds_roi.as_list()
+        ds_group['roi'] = ds_roi_list
+        ds_roi_bg_list = self.ds_roi_bg.as_list()
+        ds_group['roi_bg'] = ds_roi_bg_list
         ds_group['modus'] = self.ds_temperature_model.calibration_parameter.modus
         ds_group['temperature'] = self.ds_temperature_model.calibration_parameter.temperature
         ds_group['standard_spectrum'] = self.ds_temperature_model.calibration_parameter.get_standard_spectrum().data
@@ -903,8 +906,8 @@ class TemperatureModel(QtCore.QObject):
             us_counts = int(self.us_temperature_model.total_counts)
             ds_counts = int(self.ds_temperature_model.total_counts)
             max_counts = int(np.amax(np.asarray([us_counts,ds_counts])))
-            us_sufficient_counts = us_counts > (0.1*max_counts)
-            ds_sufficient_counts = ds_counts > (0.1*max_counts)
+            us_sufficient_counts = us_counts > (0.075*max_counts)
+            ds_sufficient_counts = ds_counts > (0.075*max_counts)
 
             if us_sufficient_counts and self.us_temperature_model.temperature_error<=self.error_limit:
                 us_temperature.append(self.us_temperature_model.temperature)
@@ -1215,7 +1218,7 @@ def fit_black_body_function(spectrum):
     _x = data[0]
     _y = data[1]
     try:
-        param, cov = curve_fit(black_body_function, _x, _y, p0=[2000, 1e-11])
+        param, cov = curve_fit(black_body_function, _x, _y, p0=[2500, 1e-11])
         T = param[0]
         scaling = param[1]
         T_err = np.sqrt(cov[0, 0])

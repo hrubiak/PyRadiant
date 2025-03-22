@@ -114,6 +114,7 @@ class SpeFile(DataModel):
         self._read_sensor_information_from_dom()
         self._read_detector_from_dom()
         self._read_exposure_from_dom()
+        self._read_gain_from_dom()
         self._read_grating_from_dom()
         self._read_center_wavelength_from_dom()
         self._read_roi_from_dom()
@@ -284,6 +285,29 @@ class SpeFile(DataModel):
                 getElementsByTagName('CollectionParameters')[0]. \
                 getElementsByTagName('Exposure')[0].attributes["value"].value
             self.exposure_time = np.float32(self._exposure_time.split()[0])
+
+    def _read_gain_from_dom(self):
+        """
+        Extracts the <Gain> value from the <EMIccd> element in self.dom.
+        Returns:
+            int: The gain value if found and convertible to an integer, otherwise returns 1.
+        """
+        self.EMIccd_gain = 1
+        # Search for the EMIccd element.
+        emi_elements = self.dom.getElementsByTagName("EMIccd")
+        if emi_elements:
+            emi = emi_elements[0]
+            # Search for the Gain element within EMIccd.
+            gain_nodes = emi.getElementsByTagName("Gain")
+            if gain_nodes and gain_nodes[0].firstChild:
+                gain_str = gain_nodes[0].firstChild.nodeValue.strip()
+                try:
+                    self.EMIccd_gain =  int(gain_str)
+                except ValueError:
+                    # If conversion fails, return the default value.
+                    self.EMIccd_gain = 1
+        # Return the default value if EMIccd or Gain is not found.
+        
 
     def _read_detector_from_dom(self):
         """Reads the detector information from the dom object"""
