@@ -21,7 +21,7 @@ import os
 from PyQt6 import QtCore, QtWidgets, QtGui
 from functools import partial
 
-
+from .ConfigurationWidget import ConfigurationWidget
 from .TemperatureWidget import TemperatureWidget
 
 
@@ -36,24 +36,25 @@ class MainWidget(QtWidgets.QMainWindow):
         self._main_layout = QtWidgets.QVBoxLayout()
         self._main_layout.setContentsMargins(0, 0, 0, 0)
         self._main_layout.setSpacing(0)
+        self.configuration_widget = ConfigurationWidget()
 
-        self.temperature_widget = TemperatureWidget(self)
+
+        self.temperature_widget = TemperatureWidget(self )
      
         
         self._main_layout.addWidget(self.temperature_widget)
-        #self.load_stylesheet()
+
         self._centeral_widget.setLayout(self._main_layout)
         self.setCentralWidget(self._centeral_widget)
         self.resize(1300,700)
-        
-        #self.setWindowIcon(QtGui.QIcon(os.path.join(icons_path, 'pyradiant.ico')))
-
-    
 
 
-if __name__ == '__main__':
+     
+
+'''if __name__ == '__main__':
     app = QtWidgets.QApplication([])
     widget = MainWidget()
     widget.show()
     widget.raise_()
     app.exec()
+'''

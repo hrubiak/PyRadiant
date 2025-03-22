@@ -29,7 +29,7 @@ from ..widget.MainWidget import MainWidget
 from .TemperatureController import TemperatureController
 from .. widget.TemperatureSpectrumWidget import dataHistoryWidget
 from .DataLogController import DataLogController
-
+from .ConfigurationController import ConfigurationController
 from .. import style_path
 
 class MainController(object):
@@ -38,7 +38,7 @@ class MainController(object):
         self.style_path = style_path
         self.main_widget = MainWidget()
         self.data_history_widget = dataHistoryWidget()
-        
+        self.configuration_widget = self.main_widget.configuration_widget
 
         self.main_widget.setWindowTitle('PyRadiant ' + __version__)
 
@@ -48,6 +48,14 @@ class MainController(object):
         self.settings = QtCore.QSettings("PyRadiant", "PyRadiant")
         self.load_settings()
         #self.load_stylesheet()
+        self.configuration_controller = ConfigurationController(
+            configuration_widget=self.main_widget.configuration_widget,
+            temperature_model=self.temperature_model,
+            controllers=[
+                self.temperature_controller,
+                self.datalog_controller
+            ],
+        )
 
     def show_window(self):
         self.main_widget.show()

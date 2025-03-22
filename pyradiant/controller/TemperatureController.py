@@ -22,6 +22,7 @@ import os
 from PyQt6 import QtWidgets, QtCore
 
 from ..widget.TemperatureWidget import TemperatureWidget, SetupEpicsDialog
+from ..widget.ConfigurationWidget import ConfigurationWidget
 from ..widget.Widgets import open_file_dialog, open_files_dialog, save_file_dialog
 from ..model.TemperatureModel import TemperatureModel
 from ..model.helper.FileNameIterator import get_file_and_extension
@@ -88,7 +89,7 @@ class TemperatureController(QtCore.QObject):
             ad_on = self.widget.connect_to_ad_cb.isChecked()
             if ad_on:
                 if self._AD_watcher is None:
-                    x_cal = self.model.x_calibration
+                    x_cal = self.model.current_configuration.x_calibration
                     self._AD_watcher = ADWatcher(record_name=eps.epics_settings['area_detector'], x_calibration=x_cal)
                     if self._AD_watcher.initialized:
                         self._AD_watcher.file_added.connect(self.load_data_file_ad)
@@ -116,8 +117,8 @@ class TemperatureController(QtCore.QObject):
         self.widget.load_previous_data_file_btn.clicked.connect(self.load_previous_data_image)
         self.widget.browse_by_name_rb.clicked.connect(self.toggle_browse_mode)
         self.widget.browse_by_time_rb.clicked.connect(self.toggle_browse_mode)
-        self.widget.load_next_frame_btn.clicked.connect(self.model.load_next_img_frame)
-        self.widget.load_previous_frame_btn.clicked.connect(self.model.load_previous_img_frame)
+        self.widget.load_next_frame_btn.clicked.connect(self.load_next_img_frame_callback)
+        self.widget.load_previous_frame_btn.clicked.connect(self.load_previous_img_frame_callback)
         self.widget.frame_num_txt.editingFinished.connect( self.frame_num_txt_callback)
         self.widget.autoprocess_cb.toggled.connect(self.auto_process_cb_toggled)
 
@@ -138,8 +139,8 @@ class TemperatureController(QtCore.QObject):
         self.widget.us_calibration_end_frame.editingFinished.connect(self.us_calibration_frame_range_callback)
         self.widget.ds_calibration_end_frame.editingFinished.connect(self.ds_calibration_frame_range_callback)
 
-        self.widget.ds_standard_rb.toggled.connect(self.model.set_ds_calibration_modus)
-        self.widget.us_standard_rb.toggled.connect(self.model.set_us_calibration_modus)
+        self.widget.ds_standard_rb.toggled.connect(self.model.current_configuration.set_ds_calibration_modus)
+        self.widget.us_standard_rb.toggled.connect(self.model.current_configuration.set_us_calibration_modus)
 
         self.connect_click_function(self.widget.ds_load_standard_file_btn, self.load_ds_standard_file)
         self.connect_click_function(self.widget.us_load_standard_file_btn, self.load_us_standard_file)
@@ -185,6 +186,15 @@ class TemperatureController(QtCore.QObject):
 
         self.widget.two_color_btn.clicked.connect(self.two_color_display_toggle_callback)
 
+
+    def load_next_img_frame_callback(self):
+        self.model.current_configuration.load_next_img_frame()
+        self.set_frame_text(str(self.model.current_configuration.current_frame + 1))
+
+    def load_previous_img_frame_callback(self):
+        self.model.current_configuration.load_previous_img_frame()
+        self.set_frame_text(str(self.model.current_configuration.current_frame + 1))
+
     def two_color_display_toggle_callback(self):
         self.us_calculations_changed()
         self.ds_calculations_changed()
@@ -194,19 +204,19 @@ class TemperatureController(QtCore.QObject):
         num =  int(self.widget.frame_num_txt.text()) -1
         
 
-        if num >= 0 and num <= self.model.data_img_file.num_frames:
-            self.model.load_any_img_frame(num)
+        if num >= 0 and num <= self.model.current_configuration.data_img_file.num_frames:
+            self.model.current_configuration.load_any_img_frame(num)
 
     def connect_click_function(self, emitter, function):
         emitter.clicked.connect(function)
         
     def close_log(self):
-        self.model.close_log()
+        self.model.current_configuration.close_log()
 
     def use_backbround_cb_callback(self):
         use_data_background = self.widget.use_backbround_data_cb.isChecked()
         use_calibration_background = self.widget.use_backbround_calibration_cb.isChecked()
-        self.model.set_use_insitu_background(use_data_background,use_calibration_background)
+        self.model.current_configuration.set_use_insitu_background(use_data_background,use_calibration_background)
 
 
     def connect_to_ad_cb_callback(self):
@@ -228,8 +238,8 @@ class TemperatureController(QtCore.QObject):
         # next or previous file is loaded
         # Area Detector data is updated
 
-        if self.model.data_img_file is not None:
-            num_frames = self.model.data_img_file.num_frames
+        if self.model.current_configuration.data_img_file is not None:
+            num_frames = self.model.current_configuration.data_img_file.num_frames
             if num_frames>1:
                 
                 self.update_time_lapse()
@@ -245,7 +255,7 @@ class TemperatureController(QtCore.QObject):
             if filename != '':
                 if os.path.isfile(filename):
                     self._exp_working_dir = os.path.dirname(str(filename))
-                    self.model.load_data_image(str(filename))
+                    self.model.current_configuration.load_data_image(str(filename))
                     self._directory_watcher.path = self._exp_working_dir
                     # hack, refactor later:
                     self.process_multiframe()
@@ -256,7 +266,7 @@ class TemperatureController(QtCore.QObject):
 
     def load_data_file_ad(self, filename=None):
         if isinstance(filename, str):
-            self.model.load_data_image_ad(self._AD_watcher)
+            self.model.current_configuration.load_data_image_ad(self._AD_watcher)
             # hack, refactor later:
             self.process_multiframe()
 
@@ -269,7 +279,7 @@ class TemperatureController(QtCore.QObject):
             mode = 'number'
         else:
             mode = 'time'
-        self.model.load_next_data_image(mode)
+        self.model.current_configuration.load_next_data_image(mode)
         
         # hack, refactor later:
         self.process_multiframe()
@@ -280,7 +290,7 @@ class TemperatureController(QtCore.QObject):
             mode = 'number'
         else:
             mode = 'time'
-        self.model.load_previous_data_image(mode)
+        self.model.current_configuration.load_previous_data_image(mode)
 
         # hack, refactor later:
         self.process_multiframe()
@@ -288,9 +298,9 @@ class TemperatureController(QtCore.QObject):
     def toggle_browse_mode(self):
         
         time_mode = self.widget.browse_by_time_rb.isChecked()
-        self.model._filename_iterator.create_timed_file_list = time_mode
+        self.model.current_configuration._filename_iterator.create_timed_file_list = time_mode
         if time_mode:
-            self.model._filename_iterator.update_file_list()
+            self.model.current_configuration._filename_iterator.update_file_list()
         
 
     def load_ds_calibration_file(self, filename=None):
@@ -302,8 +312,8 @@ class TemperatureController(QtCore.QObject):
             self._exp_working_dir = os.path.dirname(filename)
             ds_start_frame = int(self.widget.ds_calibration_start_frame.text())
             ds_end_frame = int(self.widget.ds_calibration_end_frame.text())
-            self.model.ds_temperature_model.calibration_frames = [ds_start_frame,ds_end_frame]
-            self.model.load_ds_calibration_image(filename)
+            self.model.current_configuration.ds_temperature_model.calibration_frames = [ds_start_frame,ds_end_frame]
+            self.model.current_configuration.load_ds_calibration_image(filename)
 
     def load_us_calibration_file(self, filename=None):
         if filename is None or filename is False:
@@ -315,31 +325,31 @@ class TemperatureController(QtCore.QObject):
 
             us_start_frame = int(self.widget.us_calibration_start_frame.text())
             us_end_frame = int(self.widget.us_calibration_end_frame.text())
-            self.model.us_temperature_model.calibration_frames = [us_start_frame,us_end_frame]
+            self.model.current_configuration.us_temperature_model.calibration_frames = [us_start_frame,us_end_frame]
 
-            self.model.load_us_calibration_image(filename)
+            self.model.current_configuration.load_us_calibration_image(filename)
 
     def us_calibration_frame_range_callback(self, *args):
         us_start_frame = int(self.widget.us_calibration_start_frame.text())
         us_end_frame = int(self.widget.us_calibration_end_frame.text())
-        self.model.us_temperature_model.calibration_frames = [us_start_frame,us_end_frame]
-        self.model.us_set_calibration_data()
+        self.model.current_configuration.us_temperature_model.calibration_frames = [us_start_frame,us_end_frame]
+        self.model.current_configuration.us_set_calibration_data()
 
     def ds_calibration_frame_range_callback(self, *args):
         ds_start_frame = int(self.widget.ds_calibration_start_frame.text())
         ds_end_frame = int(self.widget.ds_calibration_end_frame.text())
-        self.model.ds_temperature_model.calibration_frames = [ds_start_frame,ds_end_frame]
+        self.model.current_configuration.ds_temperature_model.calibration_frames = [ds_start_frame,ds_end_frame]
        
-        self.model.ds_set_calibration_data()
+        self.model.current_configuration.ds_set_calibration_data()
 
 
     def ds_temperature_txt_changed(self):
         new_temperature = float(str(self.widget.ds_temperature_txt.text()))
-        self.model.set_ds_calibration_temperature(new_temperature)
+        self.model.current_configuration.set_ds_calibration_temperature(new_temperature)
 
     def us_temperature_txt_changed(self):
         new_temperature = float(str(self.widget.us_temperature_txt.text()))
-        self.model.set_us_calibration_temperature(new_temperature)
+        self.model.current_configuration.set_us_calibration_temperature(new_temperature)
 
     def temperature_function_callback(self):
         plank = self.widget.temperature_function_plank_rb.isChecked()
@@ -347,7 +357,7 @@ class TemperatureController(QtCore.QObject):
             function_type = 'plank'
         else:
             function_type = 'wien'
-        self.model.set_temperature_fit_function(function_type)
+        self.model.current_configuration.set_temperature_fit_function(function_type)
 
     def load_ds_standard_file(self, filename=None):
         if filename is None or filename is False:
@@ -356,7 +366,7 @@ class TemperatureController(QtCore.QObject):
 
         if filename != '':
             self._exp_working_dir = os.path.dirname(filename)
-            self.model.load_ds_standard_spectrum(filename)
+            self.model.current_configuration.load_ds_standard_spectrum(filename)
 
     def load_us_standard_file(self, filename=None):
         if filename is None or filename is False:
@@ -365,7 +375,7 @@ class TemperatureController(QtCore.QObject):
 
         if filename != '':
             self._exp_working_dir = os.path.dirname(filename)
-            self.model.load_us_standard_spectrum(filename)
+            self.model.current_configuration.load_us_standard_spectrum(filename)
 
     def save_ds_standard_file(self, filename=None):
         if filename is None or filename is False:
@@ -374,7 +384,7 @@ class TemperatureController(QtCore.QObject):
 
         if filename != '':
             self._exp_working_dir = os.path.dirname(filename)
-            self.model.save_ds_standard_spectrum(filename)
+            self.model.current_configuration.save_ds_standard_spectrum(filename)
 
     def save_us_standard_file(self, filename=None):
         if filename is None or filename is False:
@@ -383,7 +393,7 @@ class TemperatureController(QtCore.QObject):
 
         if filename != '':
             self._exp_working_dir = os.path.dirname(filename)
-            self.model.save_us_standard_spectrum(filename)
+            self.model.current_configuration.save_us_standard_spectrum(filename)
 
     def save_setting_file(self, filename=None):
         if filename is None or filename is False:
@@ -392,7 +402,7 @@ class TemperatureController(QtCore.QObject):
 
         if filename != '':
             self._setting_working_dir = os.path.dirname(filename)
-            self.model.save_setting(filename)
+            self.model.current_configuration.save_setting(filename)
             self.update_setting_combobox(filename)
 
     def load_setting_file(self, filename=None):
@@ -402,7 +412,7 @@ class TemperatureController(QtCore.QObject):
 
         if filename != '':
             self._setting_working_dir = os.path.dirname(filename)
-            self.model.load_setting(filename)
+            self.model.current_configuration.load_setting(filename)
             
             self.update_setting_combobox(filename)
 
@@ -412,10 +422,10 @@ class TemperatureController(QtCore.QObject):
                 self.widget,
                 caption="Save data in tabulated text format",
                 directory=os.path.join(self._exp_working_dir,
-                                       '.'.join(self.model.data_img_file.filename.split(".")[:-1]) + ".txt")
+                                       '.'.join(self.model.current_configuration.data_img_file.filename.split(".")[:-1]) + ".txt")
             )
         if filename != '':
-            self.model.save_txt(filename)
+            self.model.current_configuration.save_txt(filename)
 
     def save_graph_btn_clicked(self, filename=None):
         if filename is None or filename is False:
@@ -423,7 +433,7 @@ class TemperatureController(QtCore.QObject):
                 self.widget,
                 caption="Save displayed graph as vector graphics or image",
                 directory=os.path.join(self._exp_working_dir,
-                                       '.'.join(self.model.data_img_file.filename.split(".")[:-1]) + ".svg"),
+                                       '.'.join(self.model.current_configuration.data_img_file.filename.split(".")[:-1]) + ".svg"),
                 filter='Vector Graphics (*.svg);; Image (*.png)'
             )
         filename = str(filename)
@@ -473,38 +483,38 @@ class TemperatureController(QtCore.QObject):
     def use_background_update(self):
         self.widget.use_backbround_calibration_cb.blockSignals(True)
         self.widget.use_backbround_data_cb.blockSignals(True)
-        self.widget.use_backbround_calibration_cb.setChecked (bool(self.model.use_insitu_calibration_background))
-        self.widget.use_backbround_data_cb.setChecked (bool(self.model.use_insitu_data_background))
+        self.widget.use_backbround_calibration_cb.setChecked (bool(self.model.current_configuration.use_insitu_calibration_background))
+        self.widget.use_backbround_data_cb.setChecked (bool(self.model.current_configuration.use_insitu_data_background))
         self.widget.use_backbround_calibration_cb.blockSignals(False)
         self.widget.use_backbround_data_cb.blockSignals(False)
 
 
     def data_changed_signal_callback(self):
-        self.widget.roi_widget.plot_img(self.model.data_img)
-        if self.model.data_img_file is not None:
-            if hasattr(self.model.data_img_file,'raw_ccd'):
-                self.widget.roi_widget.plot_raw_ccd(self.model.data_img_file.raw_ccd)
-        if self.model.x_calibration is not None and self.model.data_img is not None:
-            wl_calibration = self.model.x_calibration
-            #x_dim = self.model.data_img.shape[1]
+        self.widget.roi_widget.plot_img(self.model.current_configuration.data_img)
+        if self.model.current_configuration.data_img_file is not None:
+            if hasattr(self.model.current_configuration.data_img_file,'raw_ccd'):
+                self.widget.roi_widget.plot_raw_ccd(self.model.current_configuration.data_img_file.raw_ccd)
+        if self.model.current_configuration.x_calibration is not None and self.model.current_configuration.data_img is not None:
+            wl_calibration = self.model.current_configuration.x_calibration
+            #x_dim = self.model.current_configuration.data_img.shape[1]
             x = round(wl_calibration[0], 3)
             y = 0
             w = round(wl_calibration[-1]-wl_calibration[0],3)
-            h = self.model.data_img.shape[0]
+            h = self.model.current_configuration.data_img.shape[0]
             
             self.widget.roi_widget.img_widget.set_wavelength_calibration((x,y,w,h))
-        rois = self.model.get_roi_data_list()
-        self.widget.roi_widget.set_rois(self.model.get_roi_data_list())
-        self.widget.roi_widget.set_wl_range(self.model.wl_range)
+        rois = self.model.current_configuration.get_roi_data_list()
+        self.widget.roi_widget.set_rois(self.model.current_configuration.get_roi_data_list())
+        self.widget.roi_widget.set_wl_range(self.model.current_configuration.wl_range)
         
         # update exp data widget
         #####################################
 
-        if self.model.data_img_file is not None:
-            if hasattr(self.model.data_img_file, 'filename') :
-                self.model.data_img_file.filename = os.path.normpath(self.model.data_img_file.filename)
-                fname = os.path.split(self.model.data_img_file.filename)[-1]
-                dirname = os.path.sep.join(os.path.dirname(self.model.data_img_file.filename).split(os.path.sep)[-2:])
+        if self.model.current_configuration.data_img_file is not None:
+            if hasattr(self.model.current_configuration.data_img_file, 'filename') :
+                self.model.current_configuration.data_img_file.filename = os.path.normpath(self.model.current_configuration.data_img_file.filename)
+                fname = os.path.split(self.model.current_configuration.data_img_file.filename)[-1]
+                dirname = os.path.sep.join(os.path.dirname(self.model.current_configuration.data_img_file.filename).split(os.path.sep)[-2:])
                 joined = os.path.join(dirname,fname)
                 self.widget.filename_lbl.setText(joined)
 
@@ -513,18 +523,17 @@ class TemperatureController(QtCore.QObject):
                 self.widget.filename_lbl.setText('')
                 #self.widget.dirname_lbl.setText('')
 
-            if self.model.data_img_file.num_frames > 1:
+            if self.model.current_configuration.data_img_file.num_frames > 1:
                 self.widget.frame_widget.setVisible(True)
                 self.widget.temperature_spectrum_widget.show_time_lapse_plot(True)
             else:
                 self.widget.frame_widget.setVisible(False)
                 self.widget.temperature_spectrum_widget.show_time_lapse_plot(False)
-            self.widget.frame_num_txt.blockSignals(True)
-            self.widget.frame_num_txt.setText(str(self.model.current_frame + 1))
-            self.widget.frame_num_txt.clearFocus()
-            self.widget.frame_num_txt.blockSignals(False)
+           
+            self.set_frame_text(str(self.model.current_configuration.current_frame + 1))
+       
             
-            self.widget.graph_info_lbl.setText(self.model.file_info)
+            self.widget.graph_info_lbl.setText(self.model.current_configuration.file_info)
         else:
             self.widget.filename_lbl.setText('Select File...')
             #self.widget.dirname_lbl.setText('')
@@ -538,128 +547,132 @@ class TemperatureController(QtCore.QObject):
 
         self.widget.temperature_spectrum_widget.normalize_range()
         
-        mtime = self.model.mtime
+        mtime = self.model.current_configuration.mtime
         self.widget.mtime.setText('Timestamp: '+ str(mtime))
         
-    
+    def set_frame_text(self, txt):
+        self.widget.frame_num_txt.blockSignals(True)
+        self.widget.frame_num_txt.setText(txt)
+        self.widget.frame_num_txt.clearFocus()
+        self.widget.frame_num_txt.blockSignals(False)
 
     def ds_calculations_changed(self):
-        curr_frame = self.model.current_frame
+        curr_frame = self.model.current_configuration.current_frame
         ds_fit_ok = True
         if hasattr(self.model, 'ds_temperatures'):
-            ds_temperatures = self.model.ds_temperatures
+            ds_temperatures = self.model.current_configuration.ds_temperatures
             if curr_frame>=0 and curr_frame<len(ds_temperatures):
                 ds_fit_ok = ds_temperatures[curr_frame] > 0
       
 
-        if self.model.ds_calibration_filename is not None:
-            self.widget.ds_calibration_filename_lbl.setText(str(os.path.basename(self.model.ds_calibration_filename)))
+        if self.model.current_configuration.ds_calibration_filename is not None:
+            self.widget.ds_calibration_filename_lbl.setText(str(os.path.basename(self.model.current_configuration.ds_calibration_filename)))
         else:
             self.widget.ds_calibration_filename_lbl.setText('Select File...')
 
-        self.widget.ds_standard_filename_lbl.setText(str(os.path.basename(self.model.ds_standard_filename)))
-        self.widget.ds_standard_rb.setChecked(self.model.ds_temperature_model.calibration_parameter.modus)
-        self.widget.ds_temperature_txt.setText(str(self.model.ds_temperature_model.calibration_parameter.temperature))
+        self.widget.ds_standard_filename_lbl.setText(str(os.path.basename(self.model.current_configuration.ds_standard_filename)))
+        self.widget.ds_standard_rb.setChecked(self.model.current_configuration.ds_temperature_model.calibration_parameter.modus)
+        self.widget.ds_temperature_txt.setText(str(self.model.current_configuration.ds_temperature_model.calibration_parameter.temperature))
 
-        if len(self.model.ds_corrected_spectrum):
-            ds_plot_spectrum = self.model.ds_corrected_spectrum
+        if len(self.model.current_configuration.ds_corrected_spectrum):
+            ds_plot_spectrum = self.model.current_configuration.ds_corrected_spectrum
         else:
-            ds_plot_spectrum = self.model.ds_data_spectrum
+            ds_plot_spectrum = self.model.current_configuration.ds_data_spectrum
 
-        if self.widget.two_color_btn.isChecked() and self.model.ds_temperature != 0 and ds_fit_ok:
-            lam, temp = self.model.ds_2_color_temp
+        if self.widget.two_color_btn.isChecked() and self.model.current_configuration.ds_temperature != 0 and ds_fit_ok:
+            lam, temp = self.model.current_configuration.ds_2_color_temp
             self.widget.temperature_spectrum_widget.plot_ds_data(lam, temp)
         else:
             self.widget.temperature_spectrum_widget.plot_ds_data(*ds_plot_spectrum.data,mask=ds_plot_spectrum.mask)
             self.widget.temperature_spectrum_widget.plot_ds_masked_data(*ds_plot_spectrum.data,mask=ds_plot_spectrum.mask)
-        if self.model.ds_temperature != 0 and ds_fit_ok and self.model.ds_temperature_error <= self.model.error_limit:
+        if self.model.current_configuration.ds_temperature != 0 and ds_fit_ok and self.model.current_configuration.ds_temperature_error <= self.model.current_configuration.error_limit:
             if not self.widget.two_color_btn.isChecked() :
-                self.widget.temperature_spectrum_widget.plot_ds_fit(*self.model.ds_fit_spectrum.data)
+                self.widget.temperature_spectrum_widget.plot_ds_fit(*self.model.current_configuration.ds_fit_spectrum.data)
             else:
                 self.widget.temperature_spectrum_widget.plot_ds_fit([],[])
-            self.widget.temperature_spectrum_widget.update_ds_temperature_txt(self.model.ds_temperature,
-                                                           self.model.ds_temperature_error)
+            self.widget.temperature_spectrum_widget.update_ds_temperature_txt(self.model.current_configuration.ds_temperature,
+                                                           self.model.current_configuration.ds_temperature_error)
            
             
         else:
             self.widget.temperature_spectrum_widget.plot_ds_fit([],[])
             self.widget.temperature_spectrum_widget.update_ds_temperature_txt(0,
                                                            0)
-        self.widget.roi_widget.specra_widget.plot_ds_data(*self.model.ds_temperature_model.data_spectrum.data)
+        self.widget.roi_widget.specra_widget.plot_ds_data(*self.model.current_configuration.ds_temperature_model.data_spectrum.data)
 
         
-        self.widget.temperature_spectrum_widget.update_ds_roi_max_txt(self.model.ds_temperature_model.data_roi_max)
+        self.widget.temperature_spectrum_widget.update_ds_roi_max_txt(self.model.current_configuration.ds_temperature_model.data_roi_max)
 
         if self.widget.connect_to_epics_cb.isChecked():
             if self.epics_available:
                 ds_temp_pv = eps.epics_settings['ds_last_temp']
                 if ds_temp_pv is not None and not ds_temp_pv == '' and not ds_temp_pv == 'None':
-                    caput(ds_temp_pv, self.model.ds_temperature)
+                    caput(ds_temp_pv, self.model.current_configuration.ds_temperature)
                 
 
     def us_calculations_changed(self):
-        curr_frame = self.model.current_frame
+        curr_frame = self.model.current_configuration.current_frame
         us_fit_ok = True
         if hasattr(self.model, 'us_temperatures'):
-            us_temperatures = self.model.us_temperatures
+            us_temperatures = self.model.current_configuration.us_temperatures
             if curr_frame>=0 and curr_frame<len(us_temperatures):
                 us_fit_ok = us_temperatures[curr_frame] > 0
  
-        if self.model.us_calibration_filename is not None:
-            self.widget.us_calibration_filename_lbl.setText(str(os.path.basename(self.model.us_calibration_filename)))
+        if self.model.current_configuration.us_calibration_filename is not None:
+            self.widget.us_calibration_filename_lbl.setText(str(os.path.basename(self.model.current_configuration.us_calibration_filename)))
         else:
             self.widget.us_calibration_filename_lbl.setText('Select File...')
 
-        self.widget.us_standard_filename_lbl.setText(str(os.path.basename(self.model.us_standard_filename)))
-        self.widget.us_standard_rb.setChecked(self.model.us_temperature_model.calibration_parameter.modus)
-        self.widget.us_temperature_txt.setText(str(self.model.us_temperature_model.calibration_parameter.temperature))
+        self.widget.us_standard_filename_lbl.setText(str(os.path.basename(self.model.current_configuration.us_standard_filename)))
+        self.widget.us_standard_rb.setChecked(self.model.current_configuration.us_temperature_model.calibration_parameter.modus)
+        self.widget.us_temperature_txt.setText(str(self.model.current_configuration.us_temperature_model.calibration_parameter.temperature))
 
-        if len(self.model.us_corrected_spectrum):
-            us_plot_spectrum = self.model.us_corrected_spectrum
+        if len(self.model.current_configuration.us_corrected_spectrum):
+            us_plot_spectrum = self.model.current_configuration.us_corrected_spectrum
         else:
-            us_plot_spectrum = self.model.us_data_spectrum
-        if self.widget.two_color_btn.isChecked() and self.model.us_temperature != 0 and us_fit_ok:
-            lam, temp = self.model.us_2_color_temp
+            us_plot_spectrum = self.model.current_configuration.us_data_spectrum
+        if self.widget.two_color_btn.isChecked() and self.model.current_configuration.us_temperature != 0 and us_fit_ok:
+            lam, temp = self.model.current_configuration.us_2_color_temp
             self.widget.temperature_spectrum_widget.plot_us_data(lam, temp)
         else:
             self.widget.temperature_spectrum_widget.plot_us_data(*us_plot_spectrum.data,mask=us_plot_spectrum.mask)
             self.widget.temperature_spectrum_widget.plot_us_masked_data(*us_plot_spectrum.data,mask=us_plot_spectrum.mask)
-        if self.model.us_temperature != 0 and us_fit_ok and self.model.us_temperature_error <= self.model.error_limit:
+        if self.model.current_configuration.us_temperature != 0 and us_fit_ok and self.model.current_configuration.us_temperature_error <= self.model.current_configuration.error_limit:
             if not self.widget.two_color_btn.isChecked() :
                 
-                self.widget.temperature_spectrum_widget.plot_us_fit(*self.model.us_fit_spectrum.data)
+                self.widget.temperature_spectrum_widget.plot_us_fit(*self.model.current_configuration.us_fit_spectrum.data)
             else:
                 self.widget.temperature_spectrum_widget.plot_us_fit([],[])
-            self.widget.temperature_spectrum_widget.update_us_temperature_txt(self.model.us_temperature,
-                                                           self.model.us_temperature_error)
+            self.widget.temperature_spectrum_widget.update_us_temperature_txt(self.model.current_configuration.us_temperature,
+                                                           self.model.current_configuration.us_temperature_error)
             
-            lam, temp = self.model.us_2_color_temp
+            lam, temp = self.model.current_configuration.us_2_color_temp
 
         else:
             self.widget.temperature_spectrum_widget.plot_us_fit([],[])
             self.widget.temperature_spectrum_widget.update_us_temperature_txt(0,
                                                            0)
-        self.widget.roi_widget.specra_widget.plot_us_data(*self.model.us_temperature_model.data_spectrum.data)
+        self.widget.roi_widget.specra_widget.plot_us_data(*self.model.current_configuration.us_temperature_model.data_spectrum.data)
 
         
-        self.widget.temperature_spectrum_widget.update_us_roi_max_txt(self.model.us_temperature_model.data_roi_max)
+        self.widget.temperature_spectrum_widget.update_us_roi_max_txt(self.model.current_configuration.us_temperature_model.data_roi_max)
 
         if self.widget.connect_to_epics_cb.isChecked():
             if self.epics_available:
                 us_temp_pv = eps.epics_settings['us_last_temp']
                 if us_temp_pv is not None and not us_temp_pv =='' and not us_temp_pv == 'None':
-                    caput(us_temp_pv, self.model.us_temperature)
+                    caput(us_temp_pv, self.model.current_configuration.us_temperature)
                 
 
     def update_time_lapse(self):
         # this actually fits all the frames so be careful calling this willy nilly
-        us_temperature, us_temperature_error, ds_temperature, ds_temperature_error = self.model.fit_all_frames()
+        us_temperature, us_temperature_error, ds_temperature, ds_temperature_error = self.model.current_configuration.fit_all_frames()
 
         out = np.nan, np.nan
         if len(ds_temperature):
             ds_temperature_arr = np.array(ds_temperature)
             ds_temperature_error_arr = np.array(ds_temperature_error)
-            select_ds  = (ds_temperature_arr > self.min_allowed_T) & (ds_temperature_arr < self.max_allowed_T) & (ds_temperature_error_arr < self.model.error_limit)
+            select_ds  = (ds_temperature_arr > self.min_allowed_T) & (ds_temperature_arr < self.max_allowed_T) & (ds_temperature_error_arr < self.model.current_configuration.error_limit)
             #print(f'select_ds {select_ds}')
             ds_t = ds_temperature_arr[select_ds]
             #print(f'ds_t {ds_t}')
@@ -674,7 +687,7 @@ class TemperatureController(QtCore.QObject):
         if len(us_temperature):
             us_temperature_arr = np.array(us_temperature)
             us_temperature_error_arr = np.array(us_temperature_error)
-            select_us  = (us_temperature_arr > self.min_allowed_T) & (us_temperature_arr < self.max_allowed_T) & (us_temperature_error_arr < self.model.error_limit)
+            select_us  = (us_temperature_arr > self.min_allowed_T) & (us_temperature_arr < self.max_allowed_T) & (us_temperature_error_arr < self.model.current_configuration.error_limit)
             us_t = us_temperature_arr[select_us]
             if len(us_t):
                 out = np.mean(us_t), np.std(us_t)
@@ -695,22 +708,22 @@ class TemperatureController(QtCore.QObject):
         self.data_history_widget.raise_widget()
 
     def clear_data_log_file_btn_callback(self):
-        self.model.clear_log()
+        self.model.current_configuration.clear_log()
 
     def widget_rois_changed(self, roi_list):
-        if self.model.has_data():
+        if self.model.current_configuration.has_data():
             
             
-            self.model.set_rois(roi_list)
-            wl_range = self.model.wl_range
+            self.model.current_configuration.set_rois(roi_list)
+            wl_range = self.model.current_configuration.wl_range
             self.widget.roi_widget.set_wl_range(wl_range)
 
 
     def widget_wl_range_changed_callback(self, wl_range):
-        if self.model.has_data():
-            self.model.wl_range = wl_range
-            rois = self.model.get_roi_data_list()
-            self.model.set_rois(rois)
+        if self.model.current_configuration.has_data():
+            self.model.current_configuration.wl_range = wl_range
+            rois = self.model.current_configuration.get_roi_data_list()
+            self.model.current_configuration.set_rois(rois)
             self.widget.roi_widget.set_rois(rois)
 
     def graph_mouse_moved(self, x, y):
@@ -721,19 +734,19 @@ class TemperatureController(QtCore.QObject):
         y = int(np.floor(y))
         try:
             
-            if self.model.data_img is not None:
-                s = self.model.data_img.shape
+            if self.model.current_configuration.data_img is not None:
+                s = self.model.current_configuration.data_img.shape
                 if int(y)< s[0] and int(x)< s[1] and int(x) >= 0 and int(y) >= 0:
                     self.widget.roi_widget.pos_lbl.setText("X: {:5.0f}  Y: {:5.0f}    Int: {:6.0f}    Wavelength: {:5.2f} nm".
                                                     format(x, y,
-                                                            self.model.data_img[int(y), int(x)],
-                                                            self.model.data_img_file.x_calibration[int(x)]))
+                                                            self.model.current_configuration.data_img[int(y), int(x)],
+                                                            self.model.current_configuration.data_img_file.x_calibration[int(x)]))
         except (IndexError, TypeError):
             pass
 
     def save_settings(self, settings):
-        if self.model.data_img_file:
-            settings.setValue("temperature data file", self.model.data_img_file.filename)
+        if self.model.current_configuration.data_img_file:
+            settings.setValue("temperature data file", self.model.current_configuration.data_img_file.filename)
         settings.setValue("temperature settings directory", self._setting_working_dir)
         settings.setValue("temperature settings file", str(self.widget.settings_cb.currentText()))
 

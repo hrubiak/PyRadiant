@@ -36,6 +36,8 @@ class TemperatureWidget(QtWidgets.QWidget):
     file_dragged_in = QtCore.pyqtSignal(list)
     def __init__(self, *args, **kwargs):
         super().__init__()
+
+        self.config_widget = args[0].configuration_widget
         self._main_layout = QtWidgets.QVBoxLayout()
         self._main_layout.setContentsMargins(0, 0, 0, 0)
         self._main_layout.setSpacing(0)
@@ -109,7 +111,9 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.roi_gb = self.roi_widget.roi_gb
         self.wl_range_widget = self.roi_widget.wl_range_widget
 
+        
         self._other_settings_widget_layout.addWidget(self.side_bar_close_btn_widget)
+        self._other_settings_widget_layout.addWidget(self.config_widget)
         self._other_settings_widget_layout.addWidget(self.settings_gb)
         self._other_settings_widget_layout.addWidget(self.wl_range_widget)
         self._other_settings_widget_layout.addWidget(self.roi_gb)

@@ -62,16 +62,16 @@ class DataLogController(QtCore.QObject):
     def create_signals(self):
         # File signals
         #self.connect_click_function(self.widget.load_data_log_file_btn, self.load_data_log_file)
-        self.temperature_model.log_file_loaded_signal.connect(self.load_log_from_file)
+        self.temperature_model.current_configuration.log_file_loaded_signal.connect(self.load_log_from_file)
         # model signals
-        self.temperature_model.set_log_callback(self.log_file_updated_callback)
+        self.temperature_model.current_configuration.set_log_callback(self.log_file_updated_callback)
         
    
     def connect_click_function(self, emitter, function):
         emitter.clicked.connect(function)
         
     '''def close_log(self):
-        self.temperature_model.close_log()'''
+        self.temperature_model.current_configuration.close_log()'''
 
     def load_data_log_file(self, filename=None):
         
@@ -107,7 +107,7 @@ class DataLogController(QtCore.QObject):
         pass
 
     def load_log_from_file(self):
-        log_file = self.temperature_model.get_log_file_path()
+        log_file = self.temperature_model.current_configuration.get_log_file_path()
         if log_file != None:
             if os.path.exists(log_file):
                 self.load_data_log_file(filename=log_file)
