@@ -44,7 +44,7 @@ class FileGroupBox(QtWidgets.QGroupBox):
         self._second_row_widget_layout.setSpacing(0)
         #self._second_row_widget_layout.addWidget(self.dirname_lbl)
 
-        self._second_row_widget_layout.addWidget(QtWidgets.QLabel(os.path.sep))
+        #self._second_row_widget_layout.addWidget(QtWidgets.QLabel(os.path.sep))
         self._second_row_widget_layout.addWidget(self.filename_lbl)
         self._second_row_widget_layout.addSpacerItem(HorizontalSpacerItem())
         self._second_row_widget_layout.addWidget(self.frame_control_widget)
@@ -96,8 +96,8 @@ class FileGroupBox(QtWidgets.QGroupBox):
         self.autoprocess_cb.setIcon(autoprocess_icon)
 
         self.autoprocess_lbl = QtWidgets.QLabel('')
-        self.filename_lbl = QtWidgets.QLabel('file')
-        self.dirname_lbl = QtWidgets.QLabel('folder')
+        self.filename_lbl = QtWidgets.QLabel('Select File...')
+        self.dirname_lbl = QtWidgets.QLabel('')
         
 
         self._file_control_layout.addWidget(self.load_file_btn)

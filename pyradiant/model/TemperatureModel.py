@@ -50,7 +50,7 @@ class TemperatureModel(QtCore.QObject):
     log_file_updated_signal = QtCore.pyqtSignal(dict)
     log_file_loaded_signal = QtCore.pyqtSignal()
     def __init__(self):
-        super(TemperatureModel, self).__init__()
+        super().__init__()
 
         self.filename = None
         self.mtime = None
