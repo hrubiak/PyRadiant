@@ -51,7 +51,10 @@ class TemperatureModel(QtCore.QObject):
     log_file_loaded_signal = QtCore.pyqtSignal()
     def __init__(self):
         super().__init__()
+        self._init()
+        
 
+    def _init(self):
         self.filename = None
         self.mtime = None
         self.data_img_file = None
@@ -89,6 +92,9 @@ class TemperatureModel(QtCore.QObject):
         self.error_limit = 80
 
         self.log_callback = None
+
+    def reset(self):
+        self._init()
 
     def set_log_callback(self, callback_method):
         self.log_callback = callback_method
