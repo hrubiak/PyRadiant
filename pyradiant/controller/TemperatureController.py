@@ -503,12 +503,15 @@ class TemperatureController(QtCore.QObject):
         if self.model.data_img_file is not None:
             if hasattr(self.model.data_img_file, 'filename') :
                 self.model.data_img_file.filename = os.path.normpath(self.model.data_img_file.filename)
-                self.widget.filename_lbl.setText(os.path.basename(self.model.data_img_file.filename))
+                fname = os.path.split(self.model.data_img_file.filename)[-1]
                 dirname = os.path.sep.join(os.path.dirname(self.model.data_img_file.filename).split(os.path.sep)[-2:])
-                self.widget.dirname_lbl.setText(dirname)
+                joined = os.path.join(dirname,fname)
+                self.widget.filename_lbl.setText(joined)
+
+                #self.widget.dirname_lbl.setText(dirname)
             else:
                 self.widget.filename_lbl.setText('')
-                self.widget.dirname_lbl.setText('')
+                #self.widget.dirname_lbl.setText('')
 
             if self.model.data_img_file.num_frames > 1:
                 self.widget.frame_widget.setVisible(True)
@@ -524,7 +527,7 @@ class TemperatureController(QtCore.QObject):
             self.widget.graph_info_lbl.setText(self.model.file_info)
         else:
             self.widget.filename_lbl.setText('Select File...')
-            self.widget.dirname_lbl.setText('')
+            #self.widget.dirname_lbl.setText('')
             self.widget.frame_widget.setVisible(False)
             self.widget.temperature_spectrum_widget.show_time_lapse_plot(False)
 
