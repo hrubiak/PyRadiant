@@ -59,6 +59,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.data_img_file = None
         self._data_img = None
         self.log_file = None
+        self.setting_filename = None
+        self._setting_working_dir = ''
 
         self.ds_calibration_img_file = None
         self.us_calibration_img_file = None
@@ -594,6 +596,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
 
 
         self.data_changed_emit(self.current_frame)
+
+        self.setting_filename = filename
 
 
     

@@ -33,6 +33,8 @@ import numpy as np
 from ..model.helper.HelperModule import get_partial_index , get_partial_value
 from .. widget.TemperatureSpectrumWidget import dataHistoryWidget
 from ..model.helper.AppSettings import AppSettings
+from natsort import natsorted
+import json
 
 from .. import EPICS_INSTALLED
 if EPICS_INSTALLED:
@@ -66,20 +68,26 @@ class TemperatureController(QtCore.QObject):
         self.data_history_widget.temperatures_plot_widget.update_time_lapse_us_temperature_txt('Upstream')
 
         self._exp_working_dir = ''
-        self._setting_working_dir = ''
+        
 
         self.live_data = False # this is True when AD checkbox is checked and an area detector connection is established, otherwise it's False
         self._AD_watcher = None
-        
+        self.epics_available = False
         
 
         self.widget.frame_num_txt.clearFocus()
         self.widget.load_data_file_btn.setFocus()
 
         
-
+        self._create_autoprocess_system()
         
         self.create_signals()
+
+        if not EPICS_INSTALLED:
+            self.widget.connect_to_epics_cb.setEnabled(False)
+            self.widget.connect_to_epics_cb.setChecked(False)
+            self.widget.connect_to_ad_cb.setEnabled(False)
+            self.widget.connect_to_ad_cb.setChecked(False)
 
     def connect_epics(self):
         if  EPICS_INSTALLED:
@@ -87,10 +95,30 @@ class TemperatureController(QtCore.QObject):
         else:
             self.widget.epics_gb.hide()
         self.epics_available = False
-        self._create_autoprocess_system()
+
+        if EPICS_INSTALLED:
+            if self.check_pv(eps.epics_settings['T_folder']):
+                self.epics_available = True
+                self.setup_temperature_file_folder_monitor()
+            else:
+                self.epics_available = False
+                
+                self.widget.connect_to_epics_cb.setChecked(False)
+                self.widget.show_error_dialog("Couldn't connect to EPICS.", "Connection Error")
+                
+        
+    def disconnect_epics(self):
+        self.epics_available = False
+        if eps.epics_settings['T_folder'] is not None \
+                and eps.epics_settings['T_folder'] != 'None':
+            try:
+                camonitor_clear(eps.epics_settings['T_folder'])
+            except:
+                pass
 
     def connect_to_area_detector(self):
-        if self.epics_available:
+    
+        if EPICS_INSTALLED:
             ad_on = self.widget.connect_to_ad_cb.isChecked()
             if ad_on:
                 if self._AD_watcher is None:
@@ -104,11 +132,8 @@ class TemperatureController(QtCore.QObject):
                         self.widget.connect_to_ad_cb.setChecked(False)
                         self._AD_watcher = None
                 
-        else:
-            ad_on = self.widget.connect_to_ad_cb.setChecked(False)
-            self.widget.connect_to_ad_cb.setEnabled(False)
     
-    def disconnect_to_area_detector(self):
+    def disconnect_from_area_detector(self):
         if self._AD_watcher != None:
             if self._AD_watcher.initialized:
                 self._AD_watcher.deactivate()
@@ -184,7 +209,8 @@ class TemperatureController(QtCore.QObject):
         
 
         # epics stuff
-        self.widget.connect_to_ad_cb.toggled.connect(self.connect_to_ad_cb_callback)
+        self.widget.connect_to_ad_cb.clicked.connect(self.connect_to_ad_cb_callback)
+        self.widget.connect_to_epics_cb.clicked.connect(self.connect_to_epics_cb_callback)
 
         self.widget.use_backbround_data_cb.toggled.connect(self.use_backbround_cb_callback)
         self.widget.use_backbround_calibration_cb.toggled.connect(self.use_backbround_cb_callback)
@@ -229,7 +255,13 @@ class TemperatureController(QtCore.QObject):
         if self.widget.connect_to_ad_cb.isChecked():
             self.connect_to_area_detector()
         else:
-            self.disconnect_to_area_detector()
+            self.disconnect_from_area_detector()
+
+    def connect_to_epics_cb_callback(self):
+        if self.widget.connect_to_epics_cb.isChecked():
+            self.connect_epics()
+        else:
+            self.disconnect_epics()
 
 
     def process_multiframe(self):
@@ -404,20 +436,20 @@ class TemperatureController(QtCore.QObject):
     def save_setting_file(self, filename=None):
         if filename is None or filename is False:
             filename = save_file_dialog(self.widget, caption="Save setting file",
-                                        directory=self._setting_working_dir)
+                                        directory=self.model.current_configuration._setting_working_dir)
 
         if filename != '':
-            self._setting_working_dir = os.path.dirname(filename)
+            self.model.current_configuration._setting_working_dir = os.path.dirname(filename)
             self.model.current_configuration.save_setting(filename)
             self.update_setting_combobox(filename)
 
     def load_setting_file(self, filename=None):
         if filename is None or filename is False:
             filename = open_file_dialog(self.widget, caption="Load setting file",
-                                        directory=self._setting_working_dir)
+                                        directory=self.model.current_configuration._setting_working_dir)
 
         if filename != '':
-            self._setting_working_dir = os.path.dirname(filename)
+            self.model.current_configuration._setting_working_dir = os.path.dirname(filename)
             self.model.current_configuration.load_setting(filename)
             
             self.update_setting_combobox(filename)
@@ -455,8 +487,10 @@ class TemperatureController(QtCore.QObject):
         self._settings_files_list = []
         self._settings_file_names_list = []
         try:
-            for file in os.listdir(folder):
-                if file.endswith('.trs'):
+            files = os.listdir(folder)
+            files = natsorted(files)
+            for file in files:
+                if file.endswith('.trs') and not file.startswith('.'):
                     self._settings_files_list.append(file)
                     name_for_list = file.split('.')[:-1][0]
                     self._settings_file_names_list.append(name_for_list)
@@ -478,7 +512,7 @@ class TemperatureController(QtCore.QObject):
 
     def settings_cb_changed(self):
         current_index = self.widget.settings_cb.currentIndex()
-        new_file_name = os.path.join(self._setting_working_dir,
+        new_file_name = os.path.join(self.model.current_configuration._setting_working_dir,
                                      self._settings_files_list[current_index])  # therefore also one has to be deleted
         self.load_setting_file(new_file_name)
         self.widget.settings_cb.blockSignals(True)
@@ -555,6 +589,10 @@ class TemperatureController(QtCore.QObject):
         
         mtime = self.model.current_configuration.mtime
         self.widget.mtime.setText('Timestamp: '+ str(mtime))
+
+        settings_filename = self.model.current_configuration.setting_filename
+        if settings_filename:
+            self.update_setting_combobox(settings_filename)
         
     def set_frame_text(self, txt):
         self.widget.frame_num_txt.blockSignals(True)
@@ -751,11 +789,38 @@ class TemperatureController(QtCore.QObject):
 
     def save_settings(self, settings):
         settings : AppSettings
+
+        # Save
         
-        if self.model.current_configuration.data_img_file:
+        configs = []
+        for conf in self.model.configurations:
+            set_fname =  os.path.split(conf.setting_filename)[-1]
+            name_for_list = set_fname.split('.')[:-1][0]
+            conf_dict = {}
+            if conf.data_img_file:
+                data_file = conf.data_img_file.filename
+                conf_dict["temperature data file"]=conf.data_img_file.filename
+
+            conf_dict["temperature settings directory"]=conf._setting_working_dir
+            conf_dict["temperature settings file"]=name_for_list
+            configs.append(conf_dict)
+
+        config_txt = json.dumps(configs)
+        
+        settings.set("temperature configurations",
+                          config_txt)
+        
+        configuration_ind = self.model.configuration_ind
+        settings.set("temperature configuration_ind",
+                          configuration_ind)
+        
+        '''if self.model.current_configuration.data_img_file:
             settings.set("temperature data file", self.model.current_configuration.data_img_file.filename)
-        settings.set("temperature settings directory", self._setting_working_dir)
-        settings.set("temperature settings file", str(self.widget.settings_cb.currentText()))
+        settings.set("temperature settings directory", self.model.current_configuration._setting_working_dir)
+        set_fname =  os.path.split(self.model.current_configuration.setting_filename)[-1]
+
+        name_for_list = set_fname.split('.')[:-1][0]
+        settings.set("temperature settings file", name_for_list)'''
 
         settings.set("temperature autoprocessing",
                           self.widget.autoprocess_cb.isChecked())
@@ -767,30 +832,35 @@ class TemperatureController(QtCore.QObject):
     def load_settings(self, settings):
         settings : AppSettings
         settings.dump()
+
+        # Load
+        conf_list = json.loads(settings.get("temperature configurations", "[]"))
         
+        conf = conf_list[0]
+
+        settings_file_path = os.path.join(str(conf["temperature settings directory"]),
+                                          str(conf["temperature settings file"]) + ".trs")
+        if os.path.exists(settings_file_path):
+            self.load_setting_file(settings_file_path)
+
+        temperature_data_path = str(conf["temperature data file"])
+        if os.path.exists(temperature_data_path):
+            self.load_data_file(temperature_data_path)
+
         try_epics = str.lower(str(settings.get("temperature epics connected") )) == 'true'
         if try_epics:
             self.connect_epics()
             if not self.epics_available:
                 settings.set("temperature epics connected",
                           False)
-
-        settings_file_path = os.path.join(str(settings.get("temperature settings directory")),
-                                          str(settings.get("temperature settings file")) + ".trs")
-        if os.path.exists(settings_file_path):
-            self.load_setting_file(settings_file_path)
-
-        temperature_data_path = str(settings.get("temperature data file"))
-        if os.path.exists(temperature_data_path):
-            self.load_data_file(temperature_data_path)
+                self.widget.connect_to_epics_cb.setChecked(False)
+            else:
+                self.widget.connect_to_epics_cb.setChecked(True)
 
         temperature_autoprocessing = str.lower(str(settings.get("temperature autoprocessing")) )== 'true'
         if temperature_autoprocessing:
             self.widget.autoprocess_cb.setChecked(True)
-
-        self.widget.connect_to_epics_cb.setChecked(
-            str.lower((settings.get("temperature epics connected")))== 'true'
-        )
+        
 
     def auto_process_cb_toggled(self):
 
@@ -822,12 +892,7 @@ class TemperatureController(QtCore.QObject):
         self._directory_watcher.file_added.connect(self.load_data_file)
 
         
-        if EPICS_INSTALLED:
-            if self.check_pv(eps.epics_settings['T_folder']):
-                self.epics_available = True
-                self.setup_temperature_file_folder_monitor()
-            else:
-                self.epics_available = False
+        
 
     def check_pv(self, pv_name):
     

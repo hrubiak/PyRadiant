@@ -68,7 +68,11 @@ class TemperatureModel(QtCore.QObject):
         Adds a new configuration to the list of configurations. The new configuration will have the same working
         directories as the currently selected.
         """
-        self.configurations.append(TemperatureModelConfiguration())
+        new_conf = TemperatureModelConfiguration()
+        _setting_working_dir = self.configurations[self.configuration_ind]._setting_working_dir
+        new_conf._setting_working_dir = _setting_working_dir
+        self.configurations.append(new_conf)
+
 
         self.select_configuration(len(self.configurations) - 1)
         self.configuration_added.emit()

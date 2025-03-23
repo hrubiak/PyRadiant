@@ -298,7 +298,7 @@ class EPICSGroupBox(QtWidgets.QGroupBox):
         self._layout = QtWidgets.QGridLayout()
    
         self.setup_epics_pb = QtWidgets.QPushButton("Setup EPICS")
-        self.connect_to_epics_cb = QtWidgets.QCheckBox("Output to EPICS")
+        self.connect_to_epics_cb = QtWidgets.QCheckBox("Connect to EPICS")
         self.connect_to_ad_cb = QtWidgets.QCheckBox("Connect to AD")
         self.connect_to_epics_cb.setLayoutDirection(QtCore.Qt.LayoutDirection.RightToLeft)
         self.connect_to_ad_cb.setLayoutDirection(QtCore.Qt.LayoutDirection.RightToLeft)
