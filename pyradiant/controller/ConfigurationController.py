@@ -21,7 +21,7 @@ import os
 
 from ..widget.ConfigurationWidget import ConfigurationWidget
 from ..model.TemperatureModel import TemperatureModel
-
+from .DataLogController import DataLogController
 
 class ConfigurationController(object):
     """
@@ -60,5 +60,7 @@ class ConfigurationController(object):
         )
 
     def configuration_selected(self):
-        
-        pass
+        datalog_controller: DataLogController
+        datalog_controller = self.controllers[1]
+        datalog_controller.disconnect_models()
+        datalog_controller.connect_models()

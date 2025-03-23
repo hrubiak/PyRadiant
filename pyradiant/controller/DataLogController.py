@@ -59,14 +59,38 @@ class DataLogController(QtCore.QObject):
 
         self.create_signals()
 
+
+
     def create_signals(self):
-        # File signals
-        #self.connect_click_function(self.widget.load_data_log_file_btn, self.load_data_log_file)
-        self.temperature_model.current_configuration.log_file_loaded_signal.connect(self.load_log_from_file)
+        
+        self.connect_models()
+        self.connect_click_function(self.widget.clear_data_log_file_btn, self.clear_data_log_file_btn_callback)
+        
+
+    def disconnect_models(self):
+        """
+        Disconnects signals of the currently selected configuration.
+        """
+        self.temperature_model.log_file_loaded_signal.disconnect(self.load_log_from_file)
+        self.temperature_model.current_configuration.set_log_callback(None)
+
+    def connect_models(self):
+        """
+        Connects signals of the currently selected configuration
+        """
+        
+        self.temperature_model.log_file_loaded_signal.connect(self.load_log_from_file)
         # model signals
         self.temperature_model.current_configuration.set_log_callback(self.log_file_updated_callback)
-        
+
    
+    def clear_data_log_file_btn_callback(self):
+        self.temperature_model.current_configuration.clear_log()
+        self.model.clear_log(0)
+        self.widget.temperatures_plot_widget.plot_ds_time_lapse([],[] )
+        self.widget.temperatures_plot_widget.plot_us_time_lapse([], [])
+
+
     def connect_click_function(self, emitter, function):
         emitter.clicked.connect(function)
         

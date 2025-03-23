@@ -58,7 +58,7 @@ class TemperatureModel(QtCore.QObject):
         self.data_changed_signal = Signal()
         self.ds_calculations_changed = Signal()
         self.us_calculations_changed = Signal()
-        self.log_file_updated_signal = Signal(dict)
+   
         self.log_file_loaded_signal = Signal()
 
         self.connect_models()
@@ -107,7 +107,7 @@ class TemperatureModel(QtCore.QObject):
         self.current_configuration.data_changed_signal.disconnect(self.data_changed_signal)
         self.current_configuration.ds_calculations_changed.disconnect(self.ds_calculations_changed)
         self.current_configuration.us_calculations_changed.disconnect(self.us_calculations_changed)
-        self.current_configuration.log_file_updated_signal.disconnect(self.log_file_updated_signal)
+
         self.current_configuration.log_file_loaded_signal.disconnect(self.log_file_loaded_signal)
 
     def connect_models(self):
@@ -118,7 +118,7 @@ class TemperatureModel(QtCore.QObject):
         self.current_configuration.data_changed_signal.connect(self.data_changed_signal)
         self.current_configuration.ds_calculations_changed.connect(self.ds_calculations_changed)
         self.current_configuration.us_calculations_changed.connect(self.us_calculations_changed)
-        self.current_configuration.log_file_updated_signal.connect(self.log_file_updated_signal)
+
         self.current_configuration.log_file_loaded_signal.connect(self.log_file_loaded_signal)
 
     def remove_configuration(self):

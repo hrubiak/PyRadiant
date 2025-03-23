@@ -176,7 +176,7 @@ class TemperatureController(QtCore.QObject):
 
         # data hitory signals
         self.connect_click_function(self.widget.data_history_btn, self.data_history_btn_callback)
-        self.connect_click_function(self.data_history_widget.clear_data_log_file_btn, self.clear_data_log_file_btn_callback)
+        
 
         # epics stuff
         self.widget.connect_to_ad_cb.toggled.connect(self.connect_to_ad_cb_callback)
@@ -707,8 +707,7 @@ class TemperatureController(QtCore.QObject):
     def data_history_btn_callback(self):
         self.data_history_widget.raise_widget()
 
-    def clear_data_log_file_btn_callback(self):
-        self.model.current_configuration.clear_log()
+    
 
     def widget_rois_changed(self, roi_list):
         if self.model.current_configuration.has_data():

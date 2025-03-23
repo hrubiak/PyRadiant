@@ -89,6 +89,9 @@ class DatalogModel(QtCore.QObject):
         self.filename = None
         self.data_records_groups = [[]]
 
+    def clear_log(self, ind):
+        self.data_records_groups[ind]= []
+
     def get_temperatures_by_group(self, group):
         if len(self.data_records_groups) > group and group >=0:
             data_records = self.data_records_groups[group]

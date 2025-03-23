@@ -51,7 +51,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.data_changed_signal = Signal()
         self.ds_calculations_changed = Signal()
         self.us_calculations_changed = Signal()
-        self.log_file_updated_signal = Signal(dict)
+
         self.log_file_loaded_signal = Signal()
 
         self.filename = None
@@ -114,7 +114,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.log_file.truncate(0)
             self.log_file.seek(0)
             self.log_file.write(LOG_HEADER)
-            self.data_changed_emit(self.current_frame)
+            #self.data_changed_emit(self.current_frame)
 
     def get_log_file_path(self):
         if self.log_file is not None:
