@@ -461,7 +461,13 @@ class RoiImageWidget(QtWidgets.QWidget):
         if self.rectangle != rectangle:
             self.rectangle = rectangle
             self.pg_img_item.setRect(*rectangle)
-            self.bottom_axis.setRange(rectangle[0], rectangle[0]+rectangle[1])
+            x_min = self.rectangle[0]
+            x_max = self.rectangle[0]+ self.rectangle[2]
+            y_min = self.rectangle[1]
+            y_max = self.rectangle[1]+ self.rectangle[3]
+            self.pg_viewbox.setLimits(xMin=x_min, xMax=x_max,
+                                    yMin=y_min, yMax=y_max)
+            self.pg_viewbox.autoRange()
 
     def add_rois(self):
         self.rois = []
@@ -536,7 +542,7 @@ class RoiImageWidget(QtWidgets.QWidget):
     def plot_image(self, data):
         
         self.pg_img_item.setImage(data)
-        if self.rectangle != None:
+        '''if self.rectangle != None:
             x_min = self.rectangle[0]
             x_max = self.rectangle[0]+ self.rectangle[2]
             y_min = self.rectangle[1]
@@ -544,12 +550,11 @@ class RoiImageWidget(QtWidgets.QWidget):
             self.pg_viewbox.setLimits(xMin=x_min, xMax=x_max,
                                     yMin=y_min, yMax=y_max)
         else:
-            x_max = data.shape[0]
-            y_max = data.shape[1]
-            #x_max, y_max = data.shape
+            
+            x_max, y_max = data.shape
             self.pg_viewbox.setLimits(xMin=0, xMax=x_max,
                                     yMin=0, yMax=y_max)
-
+        '''
     @property
     def img_data(self):
         return self.pg_img_item.image
