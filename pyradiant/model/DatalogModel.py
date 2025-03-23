@@ -139,7 +139,7 @@ class DatalogModel(QtCore.QObject):
         # Parse the collected lines into DataRecord objects
         data_records = []
         reader = csv.DictReader(last_n_lines, delimiter='\t', fieldnames=header.strip().split('\t'))
-        next(reader)  # Skip the header line in deque
+        next(reader, None)  # Skip the header line in deque
         for row in reader:
             if row['Path'] != 'Path':
                 headings = list(row.keys())

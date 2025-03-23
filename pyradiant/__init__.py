@@ -45,7 +45,7 @@ except:
 from .controller.MainController import MainController
 
 def cleanup_ca():
-    print("Shutting down any CA threads and closing sockets...")
+    #print("Shutting down any CA threads and closing sockets...")
     # Finalize PyEpics Channel Access
     ca.finalize_libca()
     # Force garbage collection
@@ -53,7 +53,7 @@ def cleanup_ca():
     # Check if any sockets remain open
     for obj in gc.get_objects():
         if isinstance(obj, socket.socket):
-            print(f"Unclosed socket detected: {obj}")
+            #print(f"Unclosed socket detected: {obj}")
             obj.close()  # Force close lingering sockets
 
 def run_pyradiant():

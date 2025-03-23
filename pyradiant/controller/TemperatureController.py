@@ -40,6 +40,7 @@ from .. import EPICS_INSTALLED
 if EPICS_INSTALLED:
     from epics import caput, camonitor, camonitor_clear, caget, PV
 
+
 class TemperatureController(QtCore.QObject):
 
     temperature_folder_changed = QtCore.pyqtSignal()
@@ -90,6 +91,8 @@ class TemperatureController(QtCore.QObject):
             self.widget.connect_to_ad_cb.setChecked(False)
 
     def connect_epics(self):
+
+        
         if  EPICS_INSTALLED:
             self.setup_epics_dialog = SetupEpicsDialog(self.widget)
         else:

@@ -18,8 +18,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from functools import partial
-
+from PyQt6.QtGui import QIcon
 from PyQt6 import QtWidgets, QtCore
+import os
 
 from .CustomWidgets import (
     LabelAlignRight,
@@ -30,7 +31,7 @@ from .CustomWidgets import (
     VerticalLine,
     SaveIconButton,
 )
-
+from .. import icons_path
 
 class ConfigurationWidget(QtWidgets.QWidget):
     configuration_selected = QtCore.pyqtSignal(int)  # configuration index
@@ -51,8 +52,18 @@ class ConfigurationWidget(QtWidgets.QWidget):
         self.configurations_btn_widget = QtWidgets.QWidget()
         self.configuration_btn_group = QtWidgets.QButtonGroup()
 
-        self.add_configuration_btn = QtWidgets.QPushButton("+")
-        self.remove_configuration_btn = QtWidgets.QPushButton("-")
+        # Add a button to add a new model
+        self.add_configuration_btn = QtWidgets.QPushButton("")
+        add_model_button_icon = QIcon()
+        add_model_button_icon.addFile(os.path.join(icons_path,'shadow_add_24dp_E1E5E9_FILL0_wght400_GRAD0_opsz24.svg'))
+        self.add_configuration_btn.setIcon(add_model_button_icon)
+       
+
+        # Add a button to remove a model
+        self.remove_configuration_btn = QtWidgets.QPushButton("")
+        remove_model_button_icon = QIcon()
+        remove_model_button_icon.addFile(os.path.join(icons_path,'delete_24dp_E1E5E9_FILL0_wght400_GRAD0_opsz24.svg'))
+        self.remove_configuration_btn.setIcon(remove_model_button_icon)
 
 
     def create_layout(self):
