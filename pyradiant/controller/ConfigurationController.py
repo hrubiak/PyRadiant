@@ -63,4 +63,6 @@ class ConfigurationController(object):
         datalog_controller: DataLogController
         datalog_controller = self.controllers[1]
         datalog_controller.disconnect_models()
+        datalog_controller.clear_log_display()
         datalog_controller.connect_models()
+        datalog_controller.load_log_from_file()

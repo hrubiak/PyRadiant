@@ -86,6 +86,9 @@ class DataLogController(QtCore.QObject):
    
     def clear_data_log_file_btn_callback(self):
         self.temperature_model.current_configuration.clear_log()
+
+    
+    def clear_log_display(self):
         self.model.clear_log(0)
         self.widget.temperatures_plot_widget.plot_ds_time_lapse([],[] )
         self.widget.temperatures_plot_widget.plot_us_time_lapse([], [])
@@ -123,7 +126,10 @@ class DataLogController(QtCore.QObject):
             self.widget.temperatures_plot_widget.plot_ds_time_lapse(x_DS, T_DS)
             self.widget.temperatures_plot_widget.plot_us_time_lapse(x_US, T_US)
 
-            self.widget.load_data_log_file_lbl.setText(str(filename) )
+            fname = os.path.split(filename)[-1]
+            dirname = os.path.sep.join(os.path.dirname(filename).split(os.path.sep)[-2:])
+            joined = os.path.join(dirname,fname)
+            self.widget.load_data_log_file_lbl.setText(joined)
             #later  = time.time()
             #print ('T log update time = ' + str(later-now))
 
