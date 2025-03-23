@@ -70,20 +70,24 @@ class TemperatureController(QtCore.QObject):
 
         self.live_data = False # this is True when AD checkbox is checked and an area detector connection is established, otherwise it's False
         self._AD_watcher = None
+        
+        
+
+        self.widget.frame_num_txt.clearFocus()
+        self.widget.load_data_file_btn.setFocus()
+
+        
+
+        
+        self.create_signals()
+
+    def connect_epics(self):
         if  EPICS_INSTALLED:
             self.setup_epics_dialog = SetupEpicsDialog(self.widget)
         else:
             self.widget.epics_gb.hide()
         self.epics_available = False
-
-        self.widget.frame_num_txt.clearFocus()
-        self.widget.load_data_file_btn.setFocus()
-
         self._create_autoprocess_system()
-        self.create_signals()
-
-        
-        
 
     def connect_to_area_detector(self):
         if self.epics_available:
@@ -212,7 +216,8 @@ class TemperatureController(QtCore.QObject):
         emitter.clicked.connect(function)
         
     def close_log(self):
-        self.model.current_configuration.close_log()
+        for conf in self.model.configurations:
+            conf.close_log()
 
     def use_backbround_cb_callback(self):
         use_data_background = self.widget.use_backbround_data_cb.isChecked()
@@ -762,6 +767,14 @@ class TemperatureController(QtCore.QObject):
     def load_settings(self, settings):
         settings : AppSettings
         settings.dump()
+        
+        try_epics = str.lower(str(settings.get("temperature epics connected") )) == 'true'
+        if try_epics:
+            self.connect_epics()
+            if not self.epics_available:
+                settings.set("temperature epics connected",
+                          False)
+
         settings_file_path = os.path.join(str(settings.get("temperature settings directory")),
                                           str(settings.get("temperature settings file")) + ".trs")
         if os.path.exists(settings_file_path):
@@ -771,12 +784,12 @@ class TemperatureController(QtCore.QObject):
         if os.path.exists(temperature_data_path):
             self.load_data_file(temperature_data_path)
 
-        temperature_autoprocessing = settings.get("temperature autoprocessing") == 'true'
+        temperature_autoprocessing = str.lower(str(settings.get("temperature autoprocessing")) )== 'true'
         if temperature_autoprocessing:
             self.widget.autoprocess_cb.setChecked(True)
 
         self.widget.connect_to_epics_cb.setChecked(
-            settings.get("temperature epics connected") == 'true'
+            str.lower((settings.get("temperature epics connected")))== 'true'
         )
 
     def auto_process_cb_toggled(self):
