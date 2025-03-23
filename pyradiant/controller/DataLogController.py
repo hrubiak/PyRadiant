@@ -86,7 +86,7 @@ class DataLogController(QtCore.QObject):
    
     def clear_data_log_file_btn_callback(self):
         self.temperature_model.current_configuration.clear_log()
-
+        self.clear_log_display()
     
     def clear_log_display(self):
         self.model.clear_log(0)

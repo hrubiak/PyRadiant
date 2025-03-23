@@ -30,6 +30,7 @@ from .TemperatureController import TemperatureController
 from .. widget.TemperatureSpectrumWidget import dataHistoryWidget
 from .DataLogController import DataLogController
 from .ConfigurationController import ConfigurationController
+from ..model.helper.AppSettings import AppSettings
 from .. import style_path
 
 class MainController(object):
@@ -45,7 +46,7 @@ class MainController(object):
         self.create_signals()
         self.create_data_models()
         self.create_sub_controller()
-        self.settings = QtCore.QSettings("PyRadiant", "PyRadiant")
+        self.settings = AppSettings()
         self.load_settings()
         #self.load_stylesheet()
         self.configuration_controller = ConfigurationController(

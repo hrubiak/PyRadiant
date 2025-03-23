@@ -32,6 +32,7 @@ from ..model.data_models.ADWatcher import ADWatcher
 import numpy as np
 from ..model.helper.HelperModule import get_partial_index , get_partial_value
 from .. widget.TemperatureSpectrumWidget import dataHistoryWidget
+from ..model.helper.AppSettings import AppSettings
 
 from .. import EPICS_INSTALLED
 if EPICS_INSTALLED:
@@ -744,35 +745,38 @@ class TemperatureController(QtCore.QObject):
             pass
 
     def save_settings(self, settings):
+        settings : AppSettings
+        
         if self.model.current_configuration.data_img_file:
-            settings.setValue("temperature data file", self.model.current_configuration.data_img_file.filename)
-        settings.setValue("temperature settings directory", self._setting_working_dir)
-        settings.setValue("temperature settings file", str(self.widget.settings_cb.currentText()))
+            settings.set("temperature data file", self.model.current_configuration.data_img_file.filename)
+        settings.set("temperature settings directory", self._setting_working_dir)
+        settings.set("temperature settings file", str(self.widget.settings_cb.currentText()))
 
-        settings.setValue("temperature autoprocessing",
+        settings.set("temperature autoprocessing",
                           self.widget.autoprocess_cb.isChecked())
 
-        settings.setValue("temperature epics connected",
+        settings.set("temperature epics connected",
                           self.widget.connect_to_epics_cb.isChecked())
+        settings.dump()
 
     def load_settings(self, settings):
-        
-
-        settings_file_path = os.path.join(str(settings.value("temperature settings directory")),
-                                          str(settings.value("temperature settings file")) + ".trs")
+        settings : AppSettings
+        settings.dump()
+        settings_file_path = os.path.join(str(settings.get("temperature settings directory")),
+                                          str(settings.get("temperature settings file")) + ".trs")
         if os.path.exists(settings_file_path):
             self.load_setting_file(settings_file_path)
 
-        temperature_data_path = str(settings.value("temperature data file"))
+        temperature_data_path = str(settings.get("temperature data file"))
         if os.path.exists(temperature_data_path):
             self.load_data_file(temperature_data_path)
 
-        temperature_autoprocessing = settings.value("temperature autoprocessing") == 'true'
+        temperature_autoprocessing = settings.get("temperature autoprocessing") == 'true'
         if temperature_autoprocessing:
             self.widget.autoprocess_cb.setChecked(True)
 
         self.widget.connect_to_epics_cb.setChecked(
-            settings.value("temperature epics connected") == 'true'
+            settings.get("temperature epics connected") == 'true'
         )
 
     def auto_process_cb_toggled(self):
