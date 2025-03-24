@@ -816,14 +816,7 @@ class TemperatureController(QtCore.QObject):
         configuration_ind = self.model.configuration_ind
         settings.set("temperature configuration_ind",
                           configuration_ind)
-        
-        '''if self.model.current_configuration.data_img_file:
-            settings.set("temperature data file", self.model.current_configuration.data_img_file.filename)
-        settings.set("temperature settings directory", self.model.current_configuration._setting_working_dir)
-        set_fname =  os.path.split(self.model.current_configuration.setting_filename)[-1]
 
-        name_for_list = set_fname.split('.')[:-1][0]
-        settings.set("temperature settings file", name_for_list)'''
 
         settings.set("temperature autoprocessing",
                           self.widget.autoprocess_cb.isChecked())
@@ -831,6 +824,15 @@ class TemperatureController(QtCore.QObject):
         settings.set("temperature epics connected",
                           self.widget.connect_to_epics_cb.isChecked())
         settings.dump()
+
+    def load_conf_settings(self, conf):
+        settings_file_path = os.path.join(str(conf["temperature settings directory"]),
+                                          str(conf["temperature settings file"]) + ".trs")
+        if os.path.exists(settings_file_path):
+            self.load_setting_file(settings_file_path)
+        temperature_data_path = str(conf["temperature data file"])
+        if os.path.exists(temperature_data_path):
+            self.load_data_file(temperature_data_path)
 
     def load_settings(self, settings):
         settings : AppSettings
@@ -841,14 +843,18 @@ class TemperatureController(QtCore.QObject):
         
         conf = conf_list[0]
 
-        settings_file_path = os.path.join(str(conf["temperature settings directory"]),
-                                          str(conf["temperature settings file"]) + ".trs")
-        if os.path.exists(settings_file_path):
-            self.load_setting_file(settings_file_path)
+        self.load_conf_settings(conf)
+        
 
-        temperature_data_path = str(conf["temperature data file"])
-        if os.path.exists(temperature_data_path):
-            self.load_data_file(temperature_data_path)
+        more_configurations = len(conf_list)-1
+        for n in range(more_configurations):
+            self.model.add_configuration()
+            self.model.select_configuration(n+1)
+            conf = conf_list[n+1]
+            self.load_conf_settings(conf)
+
+        configuration_ind = settings.get("temperature configuration_ind", 0)
+        self.model.select_configuration(configuration_ind)
 
         try_epics = str.lower(str(settings.get("temperature epics connected") )) == 'true'
         if try_epics:
@@ -859,11 +865,9 @@ class TemperatureController(QtCore.QObject):
                 self.widget.connect_to_epics_cb.setChecked(False)
             else:
                 self.widget.connect_to_epics_cb.setChecked(True)
-
         temperature_autoprocessing = str.lower(str(settings.get("temperature autoprocessing")) )== 'true'
         if temperature_autoprocessing:
             self.widget.autoprocess_cb.setChecked(True)
-        
 
     def auto_process_cb_toggled(self):
 
