@@ -841,20 +841,21 @@ class TemperatureController(QtCore.QObject):
         # Load
         conf_list = json.loads(settings.get("temperature configurations", "[]"))
         
-        conf = conf_list[0]
+        if len(conf_list):
+            conf = conf_list[0]
 
-        self.load_conf_settings(conf)
-        
-
-        more_configurations = len(conf_list)-1
-        for n in range(more_configurations):
-            self.model.add_configuration()
-            self.model.select_configuration(n+1)
-            conf = conf_list[n+1]
             self.load_conf_settings(conf)
+            
 
-        configuration_ind = settings.get("temperature configuration_ind", 0)
-        self.model.select_configuration(configuration_ind)
+            more_configurations = len(conf_list)-1
+            for n in range(more_configurations):
+                self.model.add_configuration()
+                self.model.select_configuration(n+1)
+                conf = conf_list[n+1]
+                self.load_conf_settings(conf)
+
+            configuration_ind = settings.get("temperature configuration_ind", 0)
+            self.model.select_configuration(configuration_ind)
 
         try_epics = str.lower(str(settings.get("temperature epics connected") )) == 'true'
         if try_epics:
