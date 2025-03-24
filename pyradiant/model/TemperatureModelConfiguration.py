@@ -338,9 +338,11 @@ class TemperatureModelConfiguration(QtCore.QObject):
 
     @property
     def file_info(self):
-        out = "Exp. Time: {}s | Grating: {} | Detector: {} | Gain: {}".format(round(float(self.data_img_file.exposure_time),6),
+        out = "Exp. Time: {}s | Grating: {} | Detector: {} ".format(round(float(self.data_img_file.exposure_time),6),
                                                                     self.data_img_file.grating,
-                                                                    self.data_img_file.detector,self.data_img_file.EMIccd_gain)
+                                                                    self.data_img_file.detector)
+        if hasattr(self.data_img_file, 'EMIccd_gain'):
+           out = out + f"| Gain: {self.data_img_file.EMIccd_gain}"
         return out
 
     # calibration image files:
@@ -348,9 +350,9 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def load_ds_calibration_image(self, filename):
         # Get the extension
         _, file_extension = os.path.splitext(filename)
-        if file_extension == '.spe':
+        if str.lower(file_extension) == '.spe':
             self.ds_calibration_img_file = SpeFile(filename)
-        elif file_extension == '.h5':
+        elif str.lower(file_extension)  == '.h5':
             self.ds_calibration_img_file = H5File(filename,self.x_calibration)
 
         #self.ds_calibration_img_file = SpeFile(filename)
@@ -367,9 +369,9 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def load_us_calibration_image(self, filename):
         # Get the extension
         _, file_extension = os.path.splitext(filename)
-        if file_extension == '.spe':
+        if str.lower(file_extension)  == '.spe':
             self.us_calibration_img_file = SpeFile(filename)
-        elif file_extension == '.h5':
+        elif str.lower(file_extension)  == '.h5':
             self.us_calibration_img_file = H5File(filename,self.x_calibration)
 
         #self.us_calibration_img_file = SpeFile(filename)
