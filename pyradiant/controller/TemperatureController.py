@@ -797,16 +797,17 @@ class TemperatureController(QtCore.QObject):
         
         configs = []
         for conf in self.model.configurations:
-            set_fname =  os.path.split(conf.setting_filename)[-1]
-            name_for_list = set_fname.split('.')[:-1][0]
-            conf_dict = {}
-            if conf.data_img_file:
-                data_file = conf.data_img_file.filename
-                conf_dict["temperature data file"]=conf.data_img_file.filename
+            if not conf.setting_filename is None:
+                set_fname =  os.path.split(conf.setting_filename)[-1]
+                name_for_list = set_fname.split('.')[:-1][0]
+                conf_dict = {}
+                if conf.data_img_file:
+                    data_file = conf.data_img_file.filename
+                    conf_dict["temperature data file"]=conf.data_img_file.filename
 
-            conf_dict["temperature settings directory"]=conf._setting_working_dir
-            conf_dict["temperature settings file"]=name_for_list
-            configs.append(conf_dict)
+                conf_dict["temperature settings directory"]=conf._setting_working_dir
+                conf_dict["temperature settings file"]=name_for_list
+                configs.append(conf_dict)
 
         config_txt = json.dumps(configs)
         
