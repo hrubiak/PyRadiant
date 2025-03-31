@@ -21,7 +21,9 @@ import os
 
 from ..widget.ConfigurationWidget import ConfigurationWidget
 from ..model.TemperatureModel import TemperatureModel
+from ..model.TemperatureModelConfiguration import TemperatureModelConfiguration
 from .DataLogController import DataLogController
+from .TemperatureController import TemperatureController
 
 class ConfigurationController(object):
     """
@@ -66,3 +68,10 @@ class ConfigurationController(object):
         datalog_controller.clear_log_display()
         datalog_controller.connect_models()
         datalog_controller.load_log_from_file()
+        temperature_controller: TemperatureController
+        temperature_controller = self.controllers[0]
+        configuration : TemperatureModelConfiguration
+        configuration = self.model.configurations[self.model.configuration_ind]
+        filename = configuration.filename
+        if filename:
+            temperature_controller._directory_watcher.path = os.path.split(filename)[0]
