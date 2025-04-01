@@ -27,7 +27,7 @@ from ..model.TemperatureModel import TemperatureModel
 
 from ..widget.MainWidget import MainWidget
 from .TemperatureController import TemperatureController
-from .. widget.TemperatureSpectrumWidget import dataHistoryWidget
+from .. widget.DataHistoryWidget import dataHistoryWidget
 from .DataLogController import DataLogController
 from .ConfigurationController import ConfigurationController
 from ..model.helper.AppSettings import AppSettings

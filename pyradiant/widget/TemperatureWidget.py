@@ -218,6 +218,7 @@ class TemperatureWidget(QtWidgets.QWidget):
 
         self.setup_epics_pb = self.epics_gb. setup_epics_pb
         self.connect_to_epics_cb = self.epics_gb. connect_to_epics_cb
+        self.connect_to_epics_datalog_cb = self.epics_gb.connect_to_epics_datalog_cb
         self.connect_to_ad_cb = self.epics_gb. connect_to_ad_cb
 
 
@@ -299,6 +300,7 @@ class EPICSGroupBox(QtWidgets.QGroupBox):
    
         self.setup_epics_pb = QtWidgets.QPushButton("Setup EPICS")
         self.connect_to_epics_cb = QtWidgets.QCheckBox("Connect to EPICS")
+        self.connect_to_epics_datalog_cb = QtWidgets.QCheckBox("Connect to datalog")
         self.connect_to_ad_cb = QtWidgets.QCheckBox("Connect to AD")
         self.connect_to_epics_cb.setLayoutDirection(QtCore.Qt.LayoutDirection.RightToLeft)
         self.connect_to_ad_cb.setLayoutDirection(QtCore.Qt.LayoutDirection.RightToLeft)

@@ -31,7 +31,7 @@ from .NewFileInDirectoryWatcher import NewFileInDirectoryWatcher
 from ..model.data_models.ADWatcher import ADWatcher
 import numpy as np
 from ..model.helper.HelperModule import get_partial_index , get_partial_value
-from .. widget.TemperatureSpectrumWidget import dataHistoryWidget
+from .. widget.DataHistoryWidget import dataHistoryWidget
 from ..model.helper.AppSettings import AppSettings
 from natsort import natsorted
 import json
@@ -44,6 +44,7 @@ if EPICS_INSTALLED:
 class TemperatureController(QtCore.QObject):
 
     temperature_folder_changed = QtCore.pyqtSignal()
+    epics_datalog_file_changed = QtCore.pyqtSignal()
 
     def __init__(self, temperature_widget: TemperatureWidget, model: TemperatureModel, data_history_widget:dataHistoryWidget):
         """
@@ -89,6 +90,10 @@ class TemperatureController(QtCore.QObject):
             self.widget.connect_to_epics_cb.setChecked(False)
             self.widget.connect_to_ad_cb.setEnabled(False)
             self.widget.connect_to_ad_cb.setChecked(False)
+            
+        # testing only: remove in production
+        self.setup_epics_datalog_file_monitor()
+        self.widget.connect_to_epics_datalog_cb.setChecked(True)
 
     def connect_epics(self):
 
@@ -100,9 +105,11 @@ class TemperatureController(QtCore.QObject):
         self.epics_available = False
 
         if EPICS_INSTALLED:
+            
             if self.check_pv(eps.epics_settings['T_folder']):
                 self.epics_available = True
                 self.setup_temperature_file_folder_monitor()
+                
             else:
                 self.epics_available = False
                 
@@ -159,6 +166,7 @@ class TemperatureController(QtCore.QObject):
         self.connect_click_function(self.widget.save_graph_btn, self.save_graph_btn_clicked)
 
         self.temperature_folder_changed.connect(self.temperature_folder_changed_emitted)
+        self.epics_datalog_file_changed.connect(self.epics_datalog_file_changed_emitted)
 
         # File drag and drop
         self.widget.file_dragged_in.connect(self.file_dragged_in) 
@@ -831,9 +839,10 @@ class TemperatureController(QtCore.QObject):
                                           str(conf["temperature settings file"]) + ".trs")
         if os.path.exists(settings_file_path):
             self.load_setting_file(settings_file_path)
-        temperature_data_path = str(conf["temperature data file"])
-        if os.path.exists(temperature_data_path):
-            self.load_data_file(temperature_data_path)
+        if 'temperature data file' in conf:
+            temperature_data_path = str(conf["temperature data file"])
+            if os.path.exists(temperature_data_path) and len(temperature_data_path)>4:
+                self.load_data_file(temperature_data_path)
 
     def load_settings(self, settings):
         settings : AppSettings
@@ -904,10 +913,18 @@ class TemperatureController(QtCore.QObject):
         
 
     def check_pv(self, pv_name):
-    
-        value = caget(pv_name, timeout=0.2)  # Short timeout for quick response
+        try:
+            value = caget(pv_name, timeout=0.2)  # Short timeout for quick response
+        except:
+            value = None
         return value is not None
  
+    def setup_epics_datalog_file_monitor(self):
+        if eps.epics_settings['epics_datalog'] is not None \
+                and eps.epics_settings['epics_datalog'] != 'None':
+  
+            camonitor_clear(eps.epics_settings['epics_datalog'])
+            camonitor(eps.epics_settings['epics_datalog'], callback=self.epics_datalog_changed)
 
     def setup_temperature_file_folder_monitor(self):
         if eps.epics_settings['T_folder'] is not None \
@@ -916,7 +933,14 @@ class TemperatureController(QtCore.QObject):
             camonitor_clear(eps.epics_settings['T_folder'])
             camonitor(eps.epics_settings['T_folder'], callback=self.temperature_file_folder_changed)
 
+  
+    def epics_datalog_changed(self, *args, **kwargs):
+        print(args)
+        if self.widget.connect_to_epics_datalog_cb.isChecked() and self.widget.autoprocess_cb.isChecked():
+            self.epics_datalog_file_changed.emit()
+
     def temperature_file_folder_changed(self, *args, **kwargs):
+        
         if self.widget.connect_to_epics_cb.isChecked() and self.widget.autoprocess_cb.isChecked():
             self.temperature_folder_changed.emit()
 
@@ -924,6 +948,20 @@ class TemperatureController(QtCore.QObject):
         if  self.epics_available:
             self._exp_working_dir = caget(eps.epics_settings['T_folder'], as_string=True)
             self._directory_watcher.path = self._exp_working_dir
+
+    def epics_datalog_file_changed_emitted(self):
+        filename = caget(eps.epics_settings['epics_datalog'], as_string=True)
+        print(f'epics_datalog_file_changed_emitted {filename}')
+        
+        current_file = self.model.current_configuration.data_img_file.filename
+        print(f'current_file {current_file}')
+        current_folder = os.path.split(current_file)[0]
+        new_file = os.path.join(current_folder, filename)
+        exists = os.path.isfile(new_file)
+        if exists:
+            print(f'{new_file} exists -> loading')
+            self.load_data_file(new_file)
+        
 
     def setup_epics_pb_clicked(self):
         self.setup_epics_dialog.ok_btn.setEnabled(True)

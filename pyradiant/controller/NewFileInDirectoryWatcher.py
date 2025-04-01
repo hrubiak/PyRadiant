@@ -71,7 +71,7 @@ class NewFileInDirectoryWatcher(QtCore.QObject):
     def path(self, new_path):
         self._path = new_path
         self._files_in_path = os.listdir(new_path)
-        print(f'directory watcher path: {self._path}')
+        #print(f'directory watcher path: {self._path}')
 
     def activate(self):
         """

@@ -45,8 +45,7 @@ from typing import List
 
 class DataRecord:
     def __init__(self, **kwargs):
-        
-        
+    
         self.File = kwargs.get('# File')
         self.Path = kwargs.get('Path')
         self.T_DS = float(kwargs.get('T_DS'))
@@ -60,20 +59,6 @@ class DataRecord:
         self.scaling_US = float(kwargs.get('scaling_US'))
         self.counts_DS = float(kwargs.get('counts_DS'))
         self.counts_US = float(kwargs.get('counts_US'))
-        '''except:
-            self.File = ''
-            self.Path = ''
-            self.T_DS = np.nan
-            self.T_US = np.nan
-            self.T_DS_error = np.nan
-            self.T_US_error =np.nan
-            self.Detector = ''
-            self.Exposure_Time_sec = np.nan
-            self.Gain = np.nan
-            self.scaling_DS = np.nan
-            self.scaling_US = np.nan
-            self.counts_DS = np.nan
-            self.counts_US = np.nan'''
 
     def __repr__(self):
         return f"DataRecord({self.File}, {self.Path}, {self.T_DS}, {self.T_US}, {self.T_DS_error}, {self.T_US_error}, {self.Detector}, {self.Exposure_Time_sec}, {self.Gain}, {self.scaling_DS}, {self.scaling_US}, {self.counts_DS}, {self.counts_US})"
@@ -82,45 +67,32 @@ class DataRecord:
 class DatalogModel(QtCore.QObject):
     selection_changed = QtCore.pyqtSignal(dict)
 
-
     def __init__(self):
         super().__init__()
 
         self.filename = None
-        self.data_records_groups = [[]]
+        self.data_records = []
 
-    def clear_log(self, ind):
-        self.data_records_groups[ind]= []
+    def clear_log(self):
+        self.data_records= []
 
-    def get_temperatures_by_group(self, group):
-        if len(self.data_records_groups) > group and group >=0:
-            data_records = self.data_records_groups[group]
-            T_DS = np.zeros(len(data_records))
-            T_US = np.zeros(len(data_records))
-            for i, record in enumerate(data_records):
-                tds = record.T_DS
-                tus = record.T_US
-               
-                T_DS[i] = tds
-                T_US[i] = tus
-            return T_DS, T_US
-        else:
-            return [],[]
-
-    def load_data_log(self,file_path: str) -> List[DataRecord]:
-        data_records = []
-        with open(file_path, 'r') as file:
-            reader = csv.DictReader(file, delimiter='\t')
-            for row in reader:
-                if row['Path'] != 'Path':
-                    record = DataRecord(**row)
-                    data_records.append(record)
-                
-        return data_records
+    def get_temperatures(self):
+        
+        data_records = self.data_records
+        T_DS = np.zeros(len(data_records))
+        T_US = np.zeros(len(data_records))
+        for i, record in enumerate(data_records):
+            tds = record.T_DS
+            tus = record.T_US
+            
+            T_DS[i] = tds
+            T_US[i] = tus
+        return T_DS, T_US
+       
     
     def add_record(self, record):
         data_record = DataRecord(**record)
-        self.data_records_groups[0].append(data_record)
+        self.data_records.append(data_record)
     
     def load_last_n_records(self, file_path: str, n: int):
         # Using deque to keep only the last n lines in memory

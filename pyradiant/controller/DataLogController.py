@@ -25,11 +25,12 @@ from ..widget.Widgets import open_file_dialog, open_files_dialog, save_file_dial
 
 import numpy as np
 from ..model.helper.HelperModule import get_partial_index , get_partial_value
-from .. widget.TemperatureSpectrumWidget import dataHistoryWidget
+from .. widget.DataHistoryWidget import dataHistoryWidget
 from ..model.TemperatureModel import TemperatureModel
 from .NewFileInDirectoryWatcher import NewFileInDirectoryWatcher
 
 from ..model.DatalogModel import DatalogModel
+from ..model.DatalogModelStatic import StaticRecordManager
 
 DATALOG_LENGTH = 200
 MIN_TEMPERATURE = 100
@@ -53,6 +54,8 @@ class DataLogController(QtCore.QObject):
         #self.temperature_model: TemperatureModel
         self.temperature_model = model
         self.model = DatalogModel()
+        self.model_static = StaticRecordManager()
+        
 
         self._exp_working_dir = ''
         self._setting_working_dir = ''
@@ -89,7 +92,7 @@ class DataLogController(QtCore.QObject):
         self.clear_log_display()
     
     def clear_log_display(self):
-        self.model.clear_log(0)
+        self.model.clear_log()
         self.widget.temperatures_plot_widget.plot_ds_time_lapse([],[] )
         self.widget.temperatures_plot_widget.plot_us_time_lapse([], [])
 
@@ -108,11 +111,16 @@ class DataLogController(QtCore.QObject):
 
         
         if filename != '':
+            
             #now = time.time()
             self._exp_working_dir = os.path.dirname(str(filename))
+            self.model_static.initialize_records(self._exp_working_dir)
+            self.model_static.update_records_from_log(filename)
+
             records = self.model.load_last_n_records(str(filename),DATALOG_LENGTH)
-            self.model.data_records_groups = [records]
-            T_DS, T_US = self.model.get_temperatures_by_group(0)
+            
+            self.model.data_records=records
+            T_DS, T_US = self.model.get_temperatures()
             #T_DS = T_DS[-200:]
             #T_US = T_US[-200:]
             T_DS[T_DS<=MIN_TEMPERATURE] = np.nan
@@ -125,6 +133,20 @@ class DataLogController(QtCore.QObject):
 
             self.widget.temperatures_plot_widget.plot_ds_time_lapse(x_DS, T_DS)
             self.widget.temperatures_plot_widget.plot_us_time_lapse(x_US, T_US)
+
+            T_DS, T_US = self.model_static.get_temperatures(DATALOG_LENGTH)
+            #T_DS = T_DS[-200:]
+            #T_US = T_US[-200:]
+            T_DS[T_DS<=MIN_TEMPERATURE] = np.nan
+            T_US[T_US<=MIN_TEMPERATURE] = np.nan
+            T_DS[T_DS >MAX_TEMPERATURE] = np.nan
+            T_US[T_US >MAX_TEMPERATURE] = np.nan
+            
+            x_DS = np.arange(T_DS.shape[0])
+            x_US = np.arange(T_US.shape[0])
+
+            self.widget.static_temperature_plot_widget.plot_ds_time_lapse(x_DS, T_DS)
+            self.widget.static_temperature_plot_widget.plot_us_time_lapse(x_US, T_US)
 
             fname = os.path.split(filename)[-1]
             dirname = os.path.sep.join(os.path.dirname(filename).split(os.path.sep)[-2:])
@@ -144,8 +166,9 @@ class DataLogController(QtCore.QObject):
 
     def log_file_updated_callback(self, log_dict):
         self.model.add_record(log_dict)
+        self.model_static.update_record(**log_dict)
        
-        T_DS, T_US = self.model.get_temperatures_by_group(0)
+        T_DS, T_US = self.model.get_temperatures()
         #T_DS = T_DS[-200:]
         #T_US = T_US[-200:]
         T_DS[T_DS<=MIN_TEMPERATURE] = np.nan
@@ -159,10 +182,19 @@ class DataLogController(QtCore.QObject):
         self.widget.temperatures_plot_widget.plot_ds_time_lapse(x_DS, T_DS)
         self.widget.temperatures_plot_widget.plot_us_time_lapse(x_US, T_US)
 
-        #self.widget.load_data_log_file_lbl.setText(str(filename) )
-        #later  = time.time()
-        #print ('T log update time = ' + str(later-now))
+        T_DS, T_US = self.model_static.get_temperatures(DATALOG_LENGTH)
+        #T_DS = T_DS[-200:]
+        #T_US = T_US[-200:]
+        T_DS[T_DS<=MIN_TEMPERATURE] = np.nan
+        T_US[T_US<=MIN_TEMPERATURE] = np.nan
+        T_DS[T_DS >MAX_TEMPERATURE] = np.nan
+        T_US[T_US >MAX_TEMPERATURE] = np.nan
+        
+        x_DS = np.arange(T_DS.shape[0])
+        x_US = np.arange(T_US.shape[0])
 
+        self.widget.static_temperature_plot_widget.plot_ds_time_lapse(x_DS, T_DS)
+        self.widget.static_temperature_plot_widget.plot_us_time_lapse(x_US, T_US)
         
 
                 
