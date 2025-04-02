@@ -102,9 +102,13 @@ class historyPlotWidget(pg.GraphicsLayoutWidget):
             symbolSize=5,
             symbol='s'
         )
+        self.cursor_item = pg.InfiniteLine(
+            pen=pg.mkPen(QColor(colors['fit_pen']), width=2)
+        )
 
         self._time_lapse_plot.addItem(self._time_lapse_ds_data_item)
         self._time_lapse_plot.addItem(self._time_lapse_us_data_item)
+        self._time_lapse_plot.addItem(self.cursor_item)
 
     def plot_ds_time_lapse(self, x, y):
         self._time_lapse_ds_data_item.setData(x, y)
@@ -155,11 +159,11 @@ class dataHistoryWidget(QtWidgets.QWidget):
         self._layout.addWidget(self.file_navigation_widget)
 
         self.temperatures_plot_widget = historyPlotWidget(scale_label="T (K)")
-        self.static_temperature_plot_widget = historyPlotWidget(scale_label="Scaling")
+        self.static_temperature_plot_widget = historyPlotWidget(scale_label="T (K)")
 
         self.plot_tab_widget = QtWidgets.QTabWidget()
-        self.plot_tab_widget.addTab(self.temperatures_plot_widget,'Moving')
-        self.plot_tab_widget.addTab(self.static_temperature_plot_widget, 'Static')
+        self.plot_tab_widget.addTab(self.temperatures_plot_widget,'Latest')
+        self.plot_tab_widget.addTab(self.static_temperature_plot_widget, 'Total')
         self._layout.addWidget(self.plot_tab_widget)
 
 

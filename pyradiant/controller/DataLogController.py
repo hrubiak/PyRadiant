@@ -167,6 +167,9 @@ class DataLogController(QtCore.QObject):
     def log_file_updated_callback(self, log_dict):
         self.model.add_record(log_dict)
         self.model_static.update_record(**log_dict)
+
+        spe_file = log_dict.get('# File')
+        spe_file_static_index = self.model_static.get_record_index(spe_file) # for moving the cursor, etc
        
         T_DS, T_US = self.model.get_temperatures()
         #T_DS = T_DS[-200:]
@@ -181,6 +184,7 @@ class DataLogController(QtCore.QObject):
 
         self.widget.temperatures_plot_widget.plot_ds_time_lapse(x_DS, T_DS)
         self.widget.temperatures_plot_widget.plot_us_time_lapse(x_US, T_US)
+        self.widget.temperatures_plot_widget.cursor_item.setPos(len(x_US))
 
         T_DS, T_US = self.model_static.get_temperatures(DATALOG_LENGTH)
         #T_DS = T_DS[-200:]
@@ -195,7 +199,7 @@ class DataLogController(QtCore.QObject):
 
         self.widget.static_temperature_plot_widget.plot_ds_time_lapse(x_DS, T_DS)
         self.widget.static_temperature_plot_widget.plot_us_time_lapse(x_US, T_US)
-        
+        self.widget.static_temperature_plot_widget.cursor_item.setPos(spe_file_static_index)
 
                 
     def show_widget(self):

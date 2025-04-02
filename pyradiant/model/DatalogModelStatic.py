@@ -52,6 +52,7 @@ class StaticRecordManager:
     def __init__(self):
         self.directory = ''
         self.records: Dict[str, DataRecord] = {}
+        self.spe_file = ''
         
 
     def get_earliest_timestamp(self, file_path: str) -> datetime:
@@ -102,6 +103,7 @@ class StaticRecordManager:
 
     def update_record(self, **kwargs):
         spe_file = kwargs.get('# File')
+        self.spe_file = spe_file
         if spe_file and spe_file in self.records:
             existing_record = self.records[spe_file]
             existing_timestamp = existing_record.timestamp
@@ -115,6 +117,13 @@ class StaticRecordManager:
             existing_record.timestamp = existing_timestamp
         else:
             print(f"Record for {spe_file} not found.")
+
+    def get_record_index(self, spe_file: str) -> Optional[int]:
+        sorted_records = sorted(self.records.values(), key=lambda record: record.timestamp)
+        for index, record in enumerate(sorted_records):
+            if record.File == spe_file:
+                return index
+        return None
 
     def get_record(self, spe_file: str) -> Optional[DataRecord]:
         return self.records.get(spe_file, None)
