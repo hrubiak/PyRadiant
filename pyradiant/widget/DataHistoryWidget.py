@@ -111,10 +111,17 @@ class historyPlotWidget(pg.GraphicsLayoutWidget):
         self._time_lapse_plot.addItem(self.cursor_item)
 
     def plot_ds_time_lapse(self, x, y):
-        self._time_lapse_ds_data_item.setData(x, y)
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            
+            self._time_lapse_ds_data_item.setData(x, y)
+        else:
+            self._time_lapse_ds_data_item.setData([], [])
 
     def plot_us_time_lapse(self, x, y):
-        self._time_lapse_us_data_item.setData(x, y)
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            self._time_lapse_us_data_item.setData(x, y)
+        else:
+            self._time_lapse_us_data_item.setData([], [])
 
     def update_time_lapse_ds_temperature_txt(self, txt):
         self._time_lapse_ds_temperature_txt.setText(txt,

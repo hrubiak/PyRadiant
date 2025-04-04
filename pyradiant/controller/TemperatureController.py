@@ -44,7 +44,7 @@ if EPICS_INSTALLED:
 class TemperatureController(QtCore.QObject):
 
     temperature_folder_changed = QtCore.pyqtSignal()
-    epics_datalog_file_changed = QtCore.pyqtSignal()
+    epics_datalog_file_changed = QtCore.pyqtSignal(str)
 
     def __init__(self, temperature_widget: TemperatureWidget, model: TemperatureModel, data_history_widget:dataHistoryWidget):
         """
@@ -935,9 +935,12 @@ class TemperatureController(QtCore.QObject):
 
   
     def epics_datalog_changed(self, *args, **kwargs):
-        print(args)
-        if self.widget.connect_to_epics_datalog_cb.isChecked() and self.widget.autoprocess_cb.isChecked():
-            self.epics_datalog_file_changed.emit()
+        
+        if 'value' in kwargs:
+            value = kwargs['value']
+            print(value)
+            if self.widget.connect_to_epics_datalog_cb.isChecked() and self.widget.autoprocess_cb.isChecked():
+                self.epics_datalog_file_changed.emit(value)
 
     def temperature_file_folder_changed(self, *args, **kwargs):
         
@@ -949,8 +952,8 @@ class TemperatureController(QtCore.QObject):
             self._exp_working_dir = caget(eps.epics_settings['T_folder'], as_string=True)
             self._directory_watcher.path = self._exp_working_dir
 
-    def epics_datalog_file_changed_emitted(self):
-        filename = caget(eps.epics_settings['epics_datalog'], as_string=True)
+    def epics_datalog_file_changed_emitted(self, filename):
+        
         print(f'epics_datalog_file_changed_emitted {filename}')
         
         current_file = self.model.current_configuration.data_img_file.filename

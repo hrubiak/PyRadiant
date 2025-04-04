@@ -265,8 +265,10 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
             #x[~mask] = np.nan
             y[~mask] = np.nan
         
-        
-        self._ds_data_item.setData(x, y)
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            self._ds_data_item.setData(x, y)
+        else:
+            self._ds_data_item.setData([], [])
 
     def plot_us_data(self, x, y, mask=None):
     
@@ -280,8 +282,10 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         if mask is not None:
             #x[~mask] = np.nan
             y[~mask] = np.nan
-        
-        self._us_data_item.setData(x, y)
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            self._us_data_item.setData(x, y)
+        else:
+            self._us_data_item.setData([], [])
 
     def normalize_range(self):
         mx = max(self.ds_mx,self.us_mx)
@@ -294,7 +298,10 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
             #x[~mask] = np.nan
             y[mask] = np.nan
    
-        self._ds_masked_data_item.setData(x, y)
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            self._ds_masked_data_item.setData(x, y)
+        else:
+            self._ds_masked_data_item.setData([], [])
 
     def plot_us_masked_data(self, x, y, mask):
        
@@ -302,21 +309,36 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
             #x[~mask] = np.nan
             y[mask] = np.nan
      
-        self._us_masked_data_item.setData(x, y)
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            self._us_masked_data_item.setData(x, y)
+        else:
+            self._us_masked_data_item.setData([], [])
 
     def plot_ds_fit(self, x, y):
         
-        self._ds_fit_item.setData(x, y)
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            self._ds_fit_item.setData(x, y)
+        else:
+            self._ds_fit_item.setData([], [])
 
     def plot_us_fit(self, x, y):
         
-        self._us_fit_item.setData(x, y)
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            self._us_fit_item.setData(x, y)
+        else:
+            self._us_fit_item.setData([], [])
 
     def plot_ds_time_lapse(self, x, y):
-        self._time_lapse_ds_data_item.setData(x, y)
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            self._time_lapse_ds_data_item.setData(x, y)
+        else:
+            self._time_lapse_ds_data_item.setData([], [])
 
     def plot_us_time_lapse(self, x, y):
-        self._time_lapse_us_data_item.setData(x, y)
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            self._time_lapse_us_data_item.setData(x, y)
+        else:
+            self._time_lapse_us_data_item.setData([], [])
 
     def update_us_temperature_txt(self, temperature, temperature_error):
         self._us_temperature_txt_item.setText('{0:.0f} K &plusmn; {1:.0f}'.format(temperature,

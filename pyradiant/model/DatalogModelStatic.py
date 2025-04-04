@@ -99,7 +99,10 @@ class StaticRecordManager:
         for row in reader:
             spe_file = row['# File']
             if spe_file in self.records:
-                self.records[spe_file] = DataRecord(**row, timestamp=self.records[spe_file].timestamp)
+                try:
+                    self.records[spe_file] = DataRecord(**row, timestamp=self.records[spe_file].timestamp)
+                except:
+                    pass
 
     def update_record(self, **kwargs):
         spe_file = kwargs.get('# File')

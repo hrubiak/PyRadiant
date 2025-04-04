@@ -199,7 +199,8 @@ class DataLogController(QtCore.QObject):
 
         self.widget.static_temperature_plot_widget.plot_ds_time_lapse(x_DS, T_DS)
         self.widget.static_temperature_plot_widget.plot_us_time_lapse(x_US, T_US)
-        self.widget.static_temperature_plot_widget.cursor_item.setPos(spe_file_static_index)
+        if spe_file_static_index:
+            self.widget.static_temperature_plot_widget.cursor_item.setPos(spe_file_static_index)
 
                 
     def show_widget(self):
