@@ -6,8 +6,7 @@ The original thermal fitting program, up to version 0.5.5, was based on LabVIEW 
 PyRadiant
 ===
 
-A python GUI program for fast visual analysis of thermal spectra collected mostly during high pressure diamond anvil 
-cell experiments.
+A python GUI program for fast visual analysis of thermal spectra collected during high pressure diamond anvil cell experiments.
 
  
 Currently, the only input files allowed are Princeton Instruments \*.spe file saved either from WinSpec (File Version 2) 

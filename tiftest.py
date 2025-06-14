@@ -25,6 +25,7 @@ with TiffFile(original_path) as tif:
 img = Image.open(png_path).convert('L')  # Convert to 8-bit grayscale
 img = img.resize((shape[1], shape[0]))   # Resize to match (width, height)
 png_data = np.array(img)
+png_data = np.flipud(png_data)                  # Flip vertically
 
 # --- Step 3: Threshold to binary (0 or 1)
 new_data = (png_data > 0).astype(np.uint8)     # or np.bool_ if you prefer
