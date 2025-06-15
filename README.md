@@ -1,16 +1,13 @@
-Some background
-===
-
-The original thermal fitting program, up to version 0.5.5, was based on LabVIEW and called T-View. The PyRadiant versions 0.6 and higher were originaly forked from T-Rax by Clemens Prescher https://github.com/CPrescher/T-Rax, combined with code ported from the legacy LabVIEW version of T-View, and additional features. 
-
 PyRadiant
 ===
 
-A python GUI program for fast visual analysis of thermal spectra collected during high pressure diamond anvil cell experiments.
+PyRadiant is a Python-based graphical user interface (GUI) application designed for fast, visual analysis of thermal emission spectra collected during laser-heated diamond anvil cell (DAC) experiments. It provides real-time feedback by fitting black-body radiation models to the data, allowing users to estimate sample temperature during high-pressure experiments.
 
- 
-Currently, the only input files allowed are Princeton Instruments \*.spe file saved either from WinSpec (File Version 2) 
-or Lightfield (File Version 3).
+Originally based on code forked from T-Rax <https://github.com/CPrescher/T-Rax>_, PyRadiant combines this with functionality ported from the legacy LabVIEW program **T-View**, and includes numerous new features for usability and beamline integration.
+
+The application supports Princeton Instruments .spe files collected using WinSpec (File Version 2) or LightField (File Version 3).
+
+PyRadiant can optionally connect to EPICS to read detector data directly and publish fitted temperature values to process variables (PVs), enabling display on beamline control screens or archival as experimental metadata.
 
 Maintainer
 ===
