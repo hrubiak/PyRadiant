@@ -23,10 +23,11 @@ High Pressue Collaborative Access Team, Argonne National Laboratory
 PyRadiant Installation Guide (via Conda)
 ========================================
 
+
 Requirements
 ------------
 - Anaconda or Miniforge installed (Python 3.12+ recommended)
-- Git and internet connection
+- Internet connection
 
 Step-by-Step Setup
 ------------------
@@ -39,21 +40,23 @@ Step-by-Step Setup
 
    For example:
 
-   cd /path/to/PyRadiant
+       cd /path/to/PyRadiant
 
 3. Create and Activate a Conda Environment
 
-   conda create -n pyradiant_env python=3.12 -y
-   conda activate pyradiant_env
+       conda create -n pyradiant_env python=3.12 -y
+       conda activate pyradiant_env
 
 4. Install Python Dependencies
 
-   pip install -r requirements.txt
-   pip install pyqtdarktheme==2.1.0 --ignore-requires-python
+       pip install -r requirements.txt
+       pip install pyqtdarktheme==2.1.0 --ignore-requires-python
 
 5. Launch PyRadiant
 
-   python run_pyradiant.py
+       python pyradiant/main.py
+
+   Or use one of the wrapper scripts described below for convenience.
 
 Notes
 -----
