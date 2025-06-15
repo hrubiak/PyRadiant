@@ -39,6 +39,12 @@ import json
 from .. import EPICS_INSTALLED
 if EPICS_INSTALLED:
     from epics import caput, camonitor, camonitor_clear, caget, PV
+else:
+    caput = None
+    camonitor = None
+    camonitor_clear = None
+    caget = None
+    PV = None
 
 
 class TemperatureController(QtCore.QObject):
@@ -922,16 +928,18 @@ class TemperatureController(QtCore.QObject):
     def setup_epics_datalog_file_monitor(self):
         if eps.epics_settings['epics_datalog'] is not None \
                 and eps.epics_settings['epics_datalog'] != 'None':
-  
-            camonitor_clear(eps.epics_settings['epics_datalog'])
-            camonitor(eps.epics_settings['epics_datalog'], callback=self.epics_datalog_changed)
+            
+            if camonitor_clear is not None:
+                camonitor_clear(eps.epics_settings['epics_datalog'])
+                camonitor(eps.epics_settings['epics_datalog'], callback=self.epics_datalog_changed)
 
     def setup_temperature_file_folder_monitor(self):
         if eps.epics_settings['T_folder'] is not None \
                 and eps.epics_settings['T_folder'] != 'None':
   
-            camonitor_clear(eps.epics_settings['T_folder'])
-            camonitor(eps.epics_settings['T_folder'], callback=self.temperature_file_folder_changed)
+            if camonitor_clear is not None:
+                camonitor_clear(eps.epics_settings['T_folder'])
+                camonitor(eps.epics_settings['T_folder'], callback=self.temperature_file_folder_changed)
 
   
     def epics_datalog_changed(self, *args, **kwargs):
