@@ -1,0 +1,21 @@
+numpy>=1.24
+scipy>=1.10
+opencv-python-headless
+pillow>=10.0
+tifffile>=2024.0
+PyQt6>=6.7
+pyqtgraph>=0.13
+python-dateutil
+
+# pyqtdarktheme has overly strict metadata; install manually with --ignore-requires-python
+# Do NOT install via pip from this file — see instructions below
+# pyqtdarktheme==2.1.0
+
+h5py>=3.10
+lxml>=5.0
+fabio>=2024.0
+pyFAI>=2024.0
+silx>=2.1
+natsort
+
+

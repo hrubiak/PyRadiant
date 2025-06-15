@@ -23,18 +23,11 @@ High Pressue Collaborative Access Team, Argonne National Laboratory
 Requirements
 ===
 
-- Python 3
-- PyQt6
-- numpy
-- scipy
-- pyqtgraph
-- dateutils
-- lmfit
-- h5py
-    
+# Install pyqtdarktheme manually due to strict metadata:
+pip install pyqtdarktheme==2.1.0 --ignore-requires-python
 
 
-
-
+# Then continue with:
+pip install -r requirements.txt
     
 
