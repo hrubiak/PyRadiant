@@ -36,6 +36,8 @@ class TemperatureWidget(QtWidgets.QWidget):
     file_dragged_in = QtCore.pyqtSignal(list)
     def __init__(self, *args, **kwargs):
         super().__init__()
+
+        self.config_widget = args[0].configuration_widget
         self._main_layout = QtWidgets.QVBoxLayout()
         self._main_layout.setContentsMargins(0, 0, 0, 0)
         self._main_layout.setSpacing(0)
@@ -53,8 +55,6 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.splitter_horizontal = QtWidgets.QSplitter(Qt.Orientation.Horizontal)
         self._main_layout.addWidget(self.splitter_horizontal)
 
-
-       
         
         self.tab_widget = QtWidgets.QTabWidget()
         
@@ -73,22 +73,33 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.roi_settings_widget = QtWidgets.QWidget()
         self._roi_settings_widget_layout = QtWidgets.QVBoxLayout(self.roi_settings_widget)
         self.roi_widget = RoiWidget(4, ['Downstream', 'Upstream', 'Background', 'Background'],
-                                    roi_colors=[(255, 255, 0), (255, 140, 0),(155, 155, 0), (175,  110, 0)])
+                                    roi_colors=[(255, 215, 0), (255, 111, 97),(151, 135, 50), (157,  60, 50)])
         self._roi_settings_widget_layout.addWidget(self.roi_widget)
         
         # scroll area stuff
-        self.scroll = QtWidgets.QScrollArea()
-        self.scroll.setStyleSheet("QScrollArea { border: 0px;}")
-        self.scroll.setMaximumWidth(320)
-        self.scroll.setMinimumWidth(320)
+        self.scroll_area = QtWidgets.QScrollArea()
+        self.scroll_area.setStyleSheet("QScrollArea { border: 0px;}")
+        self.scroll_area.setMaximumWidth(320)
+        self.scroll_area.setMinimumWidth(320)
         
         self.other_settings_widget = QtWidgets.QWidget()
-        self.scroll.setWidget(self.other_settings_widget)
-        self.scroll.setWidgetResizable(True)
+        self.scroll_area.setWidget(self.other_settings_widget)
+        self.scroll_area.setWidgetResizable(True)
 
         
         self.other_settings_widget.setMaximumWidth(300)
         self._other_settings_widget_layout = QtWidgets.QVBoxLayout(self.other_settings_widget)
+
+        self.side_bar_close_btn_widget = QtWidgets.QWidget()
+        self._side_bar_close_btn_widget_layout = QtWidgets.QHBoxLayout(self.side_bar_close_btn_widget)
+        self._side_bar_close_btn_widget_layout.setSpacing(0)
+        self._side_bar_close_btn_widget_layout.setContentsMargins(0, 0, 0, 0)
+        self.side_bar_close_btn = QtWidgets.QPushButton()
+        side_bar_close_icon = QIcon()
+        side_bar_close_icon.addFile(os.path.join(resources_path,'style','right_panel_close.svg'))
+        self.side_bar_close_btn.setIcon(side_bar_close_icon)
+        self._side_bar_close_btn_widget_layout.addWidget(self.side_bar_close_btn)
+        self._side_bar_close_btn_widget_layout.addSpacerItem(HorizontalSpacerItem())
         
         self.calibration_section = TemperatureCalibrationSection()
         
@@ -100,6 +111,9 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.roi_gb = self.roi_widget.roi_gb
         self.wl_range_widget = self.roi_widget.wl_range_widget
 
+        
+        self._other_settings_widget_layout.addWidget(self.side_bar_close_btn_widget)
+        self._other_settings_widget_layout.addWidget(self.config_widget)
         self._other_settings_widget_layout.addWidget(self.settings_gb)
         self._other_settings_widget_layout.addWidget(self.wl_range_widget)
         self._other_settings_widget_layout.addWidget(self.roi_gb)
@@ -123,7 +137,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._left_layout.addWidget(self.tab_widget)
 
         self.splitter_horizontal.addWidget(self.left_widget)
-        self.splitter_horizontal.addWidget(self.scroll)
+        self.splitter_horizontal.addWidget(self.scroll_area)
         
         
 
@@ -133,6 +147,14 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.create_shortcuts()
 
         self.setAcceptDrops(True) 
+
+        self.side_bar_close_btn.clicked.connect(self.hide_right_panel)
+
+    def hide_right_panel(self):
+        self.splitter_horizontal.setSizes([self.splitter_horizontal.width(), 0])
+        
+    def show_right_panel(self):    
+        self.splitter_horizontal.setSizes([self.splitter_horizontal.width() - self.scroll_area.width(), self.scroll_area.width()])
 
     def style_widgets(self):
         pass
@@ -144,6 +166,7 @@ class TemperatureWidget(QtWidgets.QWidget):
 
         self.load_next_frame_btn = self.control_widget.file_gb.load_next_frame_btn
         self.load_previous_frame_btn = self.control_widget.file_gb.load_previous_frame_btn
+        
         self.frame_num_txt = self.control_widget.file_gb.frame_txt
         self.frame_widget = self.control_widget.file_gb.frame_control_widget
 
@@ -157,6 +180,10 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.load_us_calibration_file_btn = self.calibration_section.upstream_gb.load_file_btn
         self.ds_calibration_filename_lbl = self.calibration_section.downstream_gb.file_lbl
         self.us_calibration_filename_lbl = self.calibration_section.upstream_gb.file_lbl
+        self.ds_calibration_start_frame = self.calibration_section.downstream_gb.start_frame
+        self.us_calibration_start_frame = self.calibration_section.upstream_gb.start_frame
+        self.ds_calibration_end_frame = self.calibration_section.downstream_gb.end_frame
+        self.us_calibration_end_frame = self.calibration_section.upstream_gb.end_frame
 
         self.ds_temperature_rb = self.calibration_section.downstream_gb.temperature_rb
         self.us_temperature_rb = self.calibration_section.upstream_gb.temperature_rb
@@ -164,6 +191,10 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.us_standard_rb = self.calibration_section.upstream_gb.standard_rb
         self.ds_load_standard_file_btn = self.calibration_section.downstream_gb.load_standard_btn
         self.us_load_standard_file_btn = self.calibration_section.upstream_gb.load_standard_btn
+
+        self.ds_save_standard_file_btn = self.calibration_section.downstream_gb.save_standard_btn
+        self.us_save_standard_file_btn = self.calibration_section.upstream_gb.save_standard_btn
+
         self.ds_standard_filename_lbl = self.calibration_section.downstream_gb.standard_file_lbl
         self.us_standard_filename_lbl = self.calibration_section.upstream_gb.standard_file_lbl
         self.ds_temperature_txt = self.calibration_section.downstream_gb.temperature_txt
@@ -175,6 +206,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.save_data_btn = self.control_widget.output_gb.save_data_btn
         self.save_graph_btn = self.control_widget.output_gb.save_graph_btn
         self.data_history_btn = self.control_widget.file_gb.data_history_btn
+        self.two_color_btn = self.control_widget.file_gb.two_color_btn
 
         self.settings_cb = self.settings_gb.settings_cb
 
@@ -186,6 +218,7 @@ class TemperatureWidget(QtWidgets.QWidget):
 
         self.setup_epics_pb = self.epics_gb. setup_epics_pb
         self.connect_to_epics_cb = self.epics_gb. connect_to_epics_cb
+        self.connect_to_epics_datalog_cb = self.epics_gb.connect_to_epics_datalog_cb
         self.connect_to_ad_cb = self.epics_gb. connect_to_ad_cb
 
 
@@ -194,6 +227,9 @@ class TemperatureWidget(QtWidgets.QWidget):
 
         self.temperature_function_plank_rb = self.t_function_type_section.plank_btn
         self.temperature_function_wien_rb = self.t_function_type_section.wien_btn
+
+        self.use_backbround_data_cb = self.roi_widget.use_backbround_data_cb
+        self.use_backbround_calibration_cb = self.roi_widget.use_backbround_calibration_cb
 
 
     def dragEnterEvent(self, e):
@@ -226,6 +262,16 @@ class TemperatureWidget(QtWidgets.QWidget):
             self.file_dragged_in.emit(fnames)
         else:
             e.ignore() 
+
+
+    def show_error_dialog(self, message_text:str, dialog_title:str):
+        error_dialog = QtWidgets.QMessageBox()
+        error_dialog.setIcon(QtWidgets.QMessageBox.Icon.Critical)
+        error_dialog.setText(message_text)
+        error_dialog.setWindowTitle(dialog_title)
+        error_dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
+
+        error_dialog.exec()
         
 
 class TemperatureFileNavigation(QtWidgets.QWidget):
@@ -253,7 +299,8 @@ class EPICSGroupBox(QtWidgets.QGroupBox):
         self._layout = QtWidgets.QGridLayout()
    
         self.setup_epics_pb = QtWidgets.QPushButton("Setup EPICS")
-        self.connect_to_epics_cb = QtWidgets.QCheckBox("Output to EPICS")
+        self.connect_to_epics_cb = QtWidgets.QCheckBox("Connect to EPICS")
+        self.connect_to_epics_datalog_cb = QtWidgets.QCheckBox("Connect to datalog")
         self.connect_to_ad_cb = QtWidgets.QCheckBox("Connect to AD")
         self.connect_to_epics_cb.setLayoutDirection(QtCore.Qt.LayoutDirection.RightToLeft)
         self.connect_to_ad_cb.setLayoutDirection(QtCore.Qt.LayoutDirection.RightToLeft)
@@ -303,8 +350,8 @@ class TemperatureCalibrationSection(QtWidgets.QGroupBox):
         super().__init__('Intensity calibration')
         self._layout = QtWidgets.QVBoxLayout()
 
-        self.downstream_gb = CalibrationGB('Downstream', 'rgba(255, 255, 0, 255)')
-        self.upstream_gb = CalibrationGB('Upstream', 'rgba(255, 140, 0, 255)')
+        self.downstream_gb = CalibrationGB('Downstream', 'rgba(255, 215, 0, 255)')
+        self.upstream_gb = CalibrationGB('Upstream', 'rgba(255, 111, 97, 255)')
 
         self._layout.addWidget(self.downstream_gb)
         self._layout.addWidget(self.upstream_gb)
@@ -351,6 +398,12 @@ class CalibrationGB(QtWidgets.QGroupBox):
         self.standard_rb = QtWidgets.QRadioButton('Standard Spectrum')
         self.load_standard_btn = QtWidgets.QPushButton('...')
         self.standard_file_lbl = QtWidgets.QLabel('Select File...')
+        self.save_standard_btn = QtWidgets.QPushButton('Save Standard')
+
+        self.start_frame_lbl = QtWidgets.QLabel('Start frame')
+        self.end_frame_lbl = QtWidgets.QLabel('End frame')
+        self.start_frame = IntegerTextField('1')
+        self.end_frame = IntegerTextField('1')
 
         self._layout.addWidget(self.load_file_btn, 0, 0, 1, 3)
         self._layout.addWidget(self.file_lbl, 0, 3)
@@ -360,6 +413,11 @@ class CalibrationGB(QtWidgets.QGroupBox):
         self._layout.addWidget(self.load_standard_btn, 2, 1, 1, 2)
         self._layout.addWidget(self.standard_rb, 2, 3)
         self._layout.addWidget(self.standard_file_lbl, 3, 3)
+        self._layout.addWidget(self.start_frame_lbl, 4, 0, 1,2)
+        self._layout.addWidget(self.start_frame, 4, 2, 1,2)
+        self._layout.addWidget(self.end_frame_lbl, 5, 0, 1,2)
+        self._layout.addWidget(self.end_frame,5, 2,1,2)
+        self._layout.addWidget(self.save_standard_btn, 6, 0, 1, 2)
 
         self.setLayout(self._layout)
         self.style_widgets()

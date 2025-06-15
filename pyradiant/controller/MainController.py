@@ -27,9 +27,10 @@ from ..model.TemperatureModel import TemperatureModel
 
 from ..widget.MainWidget import MainWidget
 from .TemperatureController import TemperatureController
-from .. widget.TemperatureSpectrumWidget import dataHistoryWidget
+from .. widget.DataHistoryWidget import dataHistoryWidget
 from .DataLogController import DataLogController
-
+from .ConfigurationController import ConfigurationController
+from ..model.helper.AppSettings import AppSettings
 from .. import style_path
 
 class MainController(object):
@@ -38,16 +39,24 @@ class MainController(object):
         self.style_path = style_path
         self.main_widget = MainWidget()
         self.data_history_widget = dataHistoryWidget()
-        
+        self.configuration_widget = self.main_widget.configuration_widget
 
         self.main_widget.setWindowTitle('PyRadiant ' + __version__)
 
         self.create_signals()
         self.create_data_models()
         self.create_sub_controller()
-        self.settings = QtCore.QSettings("PyRadiant", "PyRadiant")
+        self.settings = AppSettings()
         self.load_settings()
         #self.load_stylesheet()
+        self.configuration_controller = ConfigurationController(
+            configuration_widget=self.main_widget.configuration_widget,
+            temperature_model=self.temperature_model,
+            controllers=[
+                self.temperature_controller,
+                self.datalog_controller
+            ],
+        )
 
     def show_window(self):
         self.main_widget.show()
@@ -134,18 +143,10 @@ class MainController(object):
 
     def closeEvent(self, event):
         self.save_settings()
-        try:
-            self.temperature_controller.roi_controller.view.close()
-        except:
-            pass
+      
         self.main_widget.close()
+        self.data_history_widget.close()
         self.temperature_controller.close_log()
         event.accept()
 
-    def load_stylesheet(self):
-        WStyle = 'plastique'
-        file = open(os.path.join(self.style_path, "stylesheet.qss"))
-        stylesheet = file.read()
-        self.app.setStyleSheet(stylesheet)
-        file.close()
-        self.app.setStyle(WStyle)
+    

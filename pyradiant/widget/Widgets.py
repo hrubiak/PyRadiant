@@ -25,6 +25,7 @@ import os
 from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem
 from .. import resources_path
 
+
 class FileGroupBox(QtWidgets.QGroupBox):
     def __init__(self, *args):
         super().__init__()
@@ -41,9 +42,9 @@ class FileGroupBox(QtWidgets.QGroupBox):
         self._second_row_widget_layout = QtWidgets.QHBoxLayout(self._second_row_widget)
         self._second_row_widget_layout.setContentsMargins(0, 0, 0, 0)
         self._second_row_widget_layout.setSpacing(0)
-        self._second_row_widget_layout.addWidget(self.dirname_lbl)
+        #self._second_row_widget_layout.addWidget(self.dirname_lbl)
 
-        self._second_row_widget_layout.addWidget(QtWidgets.QLabel(os.path.sep))
+        #self._second_row_widget_layout.addWidget(QtWidgets.QLabel(os.path.sep))
         self._second_row_widget_layout.addWidget(self.filename_lbl)
         self._second_row_widget_layout.addSpacerItem(HorizontalSpacerItem())
         self._second_row_widget_layout.addWidget(self.frame_control_widget)
@@ -55,6 +56,8 @@ class FileGroupBox(QtWidgets.QGroupBox):
         self.frame_control_widget.hide()
         
         self.setLayout(self._main_layout)
+
+    
 
     def create_file_control_widget(self):
         self.file_control_widget = QtWidgets.QWidget()
@@ -93,8 +96,8 @@ class FileGroupBox(QtWidgets.QGroupBox):
         self.autoprocess_cb.setIcon(autoprocess_icon)
 
         self.autoprocess_lbl = QtWidgets.QLabel('')
-        self.filename_lbl = QtWidgets.QLabel('file')
-        self.dirname_lbl = QtWidgets.QLabel('folder')
+        self.filename_lbl = QtWidgets.QLabel('Select File...')
+        self.dirname_lbl = QtWidgets.QLabel('')
         
 
         self._file_control_layout.addWidget(self.load_file_btn)
@@ -108,12 +111,14 @@ class FileGroupBox(QtWidgets.QGroupBox):
         self._file_control_layout.addSpacerItem(HorizontalSpacerItem())
         
         self.data_history_btn = QtWidgets.QPushButton("T Log")
+        self.two_color_btn = QtWidgets.QPushButton("2 Color")
+        self.two_color_btn.setCheckable(True)
         data_history_icon = QIcon()
         data_history_icon.addFile(os.path.join(resources_path,'style','timeline.svg'))
         self.data_history_btn.setIcon(data_history_icon)
 
         self._file_control_layout.addWidget(self.data_history_btn)
-        
+        #self._file_control_layout.addWidget(self.two_color_btn)
         
         self.frame_control_widget = QtWidgets.QWidget()
 

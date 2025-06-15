@@ -29,6 +29,7 @@ import numpy as np
 from PyQt6.QtCore import pyqtSignal
 from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem
 
+
 from .. import resources_path
 
 pg.setConfigOption('leftButtonPan', False)
@@ -39,9 +40,9 @@ pg.setConfigOption('antialias', True)
 colors = {
     'data_pen': '#FFFFFF',
     'data_brush': '#FFFFFF',
-    'fit_pen': 'r',
-    'downstream': '#FFFF00',
-    'upstream': '#FF9900',
+    'fit_pen': '#C90048',
+    'downstream': '#FFD700',
+    'upstream': '#FF6F61',
     'combined': '#66FFFF'
 }
 
@@ -111,6 +112,9 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._ds_plot.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
         self._pg_ds_layout.addItem(self._ds_plot)
         self._pg_ds_layout_widget.addItem(self._pg_ds_layout)
+
+        self.ds_mx = 2
+        self.us_mx = 2
         
         self.plots_widget = QtWidgets.QWidget()
         self._plots_widget_layout = QtWidgets.QGridLayout(self.plots_widget)
@@ -172,7 +176,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._us_data_item.setDownsampling(True)
         self._us_masked_data_item = pg.PlotDataItem(pen=pg.mkPen("#d61cff", width=1.0, conntect='finite',antialias=True ))
         self._us_masked_data_item.setDownsampling(True)
-        self._us_fit_item = pg.PlotDataItem(pen=pg.mkPen(colors['fit_pen'], width=3, conntect='finite',antialias=True))
+        self._us_fit_item = pg.PlotDataItem(pen=pg.mkPen(colors['fit_pen'], width=4, conntect='finite',antialias=True))
         self._us_fit_item.setDownsampling(True)
 
         self._us_plot.addItem(self._us_data_item)
@@ -198,7 +202,7 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._ds_data_item.setDownsampling(True)
         self._ds_masked_data_item = pg.PlotDataItem(pen=pg.mkPen("#d61cff", width=1.0, conntect='finite',antialias=True ))
         self._ds_masked_data_item.setDownsampling(True)
-        self._ds_fit_item = pg.PlotDataItem(pen=pg.mkPen(colors['fit_pen'], width=3, conntect='finite',antialias=True))
+        self._ds_fit_item = pg.PlotDataItem(pen=pg.mkPen(colors['fit_pen'], width=4, conntect='finite',antialias=True))
         self._ds_fit_item.setDownsampling(True)
 
         self._ds_plot.addItem(self._ds_data_item)
@@ -248,31 +252,45 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         #self._time_lapse_plot.mouse_moved.connect(self.mouse_moved)
 
     def plot_ds_data(self, x, y, mask=None):
+      
         if len(x)>0:
             mx = np.amax(y)*1.1
         else:
             mx = 1.1
         if mx < 2:
             mx = 2
-        if mask is not None:
-            #x[~mask] = np.nan
-            y[~mask] = np.nan
-        self._ds_view_box.setYRange(-1,mx)
-        
-        self._ds_data_item.setData(x, y)
+        self.ds_mx = mx
 
-    def plot_us_data(self, x, y, mask):
+        if mask is not None:
+            #x[~mask] = np.nan
+            y[~mask] = np.nan
+        
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            self._ds_data_item.setData(x, y)
+        else:
+            self._ds_data_item.setData([], [])
+
+    def plot_us_data(self, x, y, mask=None):
+    
         if len(x)>0:
             mx = np.amax(y)*1.1
         else:
             mx = 1.1
         if mx < 2:
             mx = 2
+        self.us_mx = mx
         if mask is not None:
             #x[~mask] = np.nan
             y[~mask] = np.nan
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            self._us_data_item.setData(x, y)
+        else:
+            self._us_data_item.setData([], [])
+
+    def normalize_range(self):
+        mx = max(self.ds_mx,self.us_mx)
         self._us_view_box.setYRange(-1,mx)
-        self._us_data_item.setData(x, y)
+        self._ds_view_box.setYRange(-1,mx)
 
     def plot_ds_masked_data(self, x, y, mask=None):
        
@@ -280,7 +298,10 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
             #x[~mask] = np.nan
             y[mask] = np.nan
    
-        self._ds_masked_data_item.setData(x, y)
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            self._ds_masked_data_item.setData(x, y)
+        else:
+            self._ds_masked_data_item.setData([], [])
 
     def plot_us_masked_data(self, x, y, mask):
        
@@ -288,21 +309,36 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
             #x[~mask] = np.nan
             y[mask] = np.nan
      
-        self._us_masked_data_item.setData(x, y)
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            self._us_masked_data_item.setData(x, y)
+        else:
+            self._us_masked_data_item.setData([], [])
 
     def plot_ds_fit(self, x, y):
         
-        self._ds_fit_item.setData(x, y)
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            self._ds_fit_item.setData(x, y)
+        else:
+            self._ds_fit_item.setData([], [])
 
     def plot_us_fit(self, x, y):
         
-        self._us_fit_item.setData(x, y)
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            self._us_fit_item.setData(x, y)
+        else:
+            self._us_fit_item.setData([], [])
 
     def plot_ds_time_lapse(self, x, y):
-        self._time_lapse_ds_data_item.setData(x, y)
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            self._time_lapse_ds_data_item.setData(x, y)
+        else:
+            self._time_lapse_ds_data_item.setData([], [])
 
     def plot_us_time_lapse(self, x, y):
-        self._time_lapse_us_data_item.setData(x, y)
+        if len(x) > 0 and not np.all(np.isnan(y)):
+            self._time_lapse_us_data_item.setData(x, y)
+        else:
+            self._time_lapse_us_data_item.setData([], [])
 
     def update_us_temperature_txt(self, temperature, temperature_error):
         self._us_temperature_txt_item.setText('{0:.0f} K &plusmn; {1:.0f}'.format(temperature,
@@ -321,14 +357,14 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
     def update_us_roi_max_txt(self, roi_max, format_max=65536):
         self._us_roi_max_txt_item.setText('Max Int {0:.0f}'.format(roi_max),
                                           size='18pt',
-                                          color='#33CC00',
+                                          color='#4DDECD',
                                           justify='right')
         self._us_intensity_indicator.set_intensity(float(roi_max) / format_max)
 
     def update_ds_roi_max_txt(self, roi_max, format_max=65536):
         self._ds_roi_max_txt_item.setText('Max Int {0:.0f}'.format(roi_max),
                                           size='18pt',
-                                          color='#33CC00',
+                                          color='#4DDECD',
                                           justify='left')
         self._ds_intensity_indicator.set_intensity(float(roi_max) / format_max)
 
@@ -467,158 +503,3 @@ class CustomViewBox(pg.ViewBox):
             self.plotMouseCursorSignal.emit(self.cursorPoint) 
         ev.accept()   
 
-class historyPlotWidget(pg.GraphicsLayoutWidget):
-    def __init__(self, scale_label,*args,  **kwargs):
-        super().__init__()
-
-        self._pg_layout = pg.GraphicsLayout()
-        self._pg_layout.setContentsMargins(0, 0, 0, 0)
-        self._pg_layout.layout.setVerticalSpacing(0)
-        
-        self._time_lapse_plot = pg.PlotItem()
-        self._time_lapse_plot.showAxis('top', show=True)
-        self._time_lapse_plot.showAxis('right', show=True)
-        self._time_lapse_plot.getAxis('top').setStyle(showValues=False)
-        self._time_lapse_plot.getAxis('right').setStyle(showValues=False)
-        self._time_lapse_plot.getAxis('bottom').setStyle(showValues=True)
-        self._time_lapse_plot.setLabel('left', scale_label)
-
-        self._pg_time_lapse_layout = pg.GraphicsLayout()
-        self._pg_time_lapse_layout.setContentsMargins(0, 0, 0, 0)
-        self._pg_time_lapse_layout.setSpacing(0)
-
-        self._time_lapse_ds_temperature_txt = pg.LabelItem()
-        self._time_lapse_us_temperature_txt = pg.LabelItem()
-        self._time_lapse_combined_temperature_txt = pg.LabelItem()
-
-        self._pg_time_lapse_layout.addItem(self._time_lapse_ds_temperature_txt, 0, 0)
-        self._pg_time_lapse_layout.addItem(self._time_lapse_combined_temperature_txt, 0, 1)
-        self._pg_time_lapse_layout.addItem(self._time_lapse_us_temperature_txt, 0, 2)
-
-        self._pg_time_lapse_layout.addItem(self._time_lapse_plot, 1, 0, 1, 3)
-
-        self._pg_layout.addItem(self._pg_time_lapse_layout)
-
-        self.addItem(self._pg_layout)
-
-        self.create_data_items()
-
-
-    def create_data_items(self):
-        self._time_lapse_ds_data_item = pg.PlotDataItem(
-            pen=pg.mkPen(QColor(colors['downstream']), width=1),
-            brush=pg.mkBrush(QColor(colors['downstream'])),
-            symbolPen=pg.mkPen(QColor(colors['downstream']), width=1),
-            symbolBrush=pg.mkBrush(QColor(colors['downstream'])),
-            size=1,
-            symbolSize=5,
-            symbol='s'
-        )
-        self._time_lapse_us_data_item = pg.PlotDataItem(
-            pen=pg.mkPen(QColor(colors['upstream']), width=1),
-            brush=pg.mkBrush(QColor(colors['upstream'])),
-            symbolPen=pg.mkPen(QColor(colors['upstream']), width=1),
-            symbolBrush=pg.mkBrush(QColor(colors['upstream'])),
-            size=1,
-            symbolSize=5,
-            symbol='s'
-        )
-
-        self._time_lapse_plot.addItem(self._time_lapse_ds_data_item)
-        self._time_lapse_plot.addItem(self._time_lapse_us_data_item)
-
-    def plot_ds_time_lapse(self, x, y):
-        self._time_lapse_ds_data_item.setData(x, y)
-
-    def plot_us_time_lapse(self, x, y):
-        self._time_lapse_us_data_item.setData(x, y)
-
-    def update_time_lapse_ds_temperature_txt(self, txt):
-        self._time_lapse_ds_temperature_txt.setText(txt,
-                                                    size='16pt',
-                                                    color=colors['downstream'],
-                                                    justify='left')
-
-    def update_time_lapse_us_temperature_txt(self, txt):
-        self._time_lapse_us_temperature_txt.setText(txt,
-                                                    size='16pt',
-                                                    color=colors['upstream'],
-                                                    justify='right')
-
-
-class dataHistoryWidget(QtWidgets.QWidget):
-    file_dragged_in = QtCore.pyqtSignal(list)
-    def __init__(self, *args, **kwargs):
-        super().__init__()
-
-        self._layout = QtWidgets.QVBoxLayout(self)
-        self._layout.setContentsMargins(0, 0, 0, 0)
-        self._layout.setSpacing(0)
-
-        self.file_navigation_widget = QtWidgets.QWidget()
-        #self.file_navigation_widget.setStyleSheet("QWidget { background: #000000; color: #F1F1F1}")
-        self._file_navigation_widget_layout = QtWidgets.QHBoxLayout(self.file_navigation_widget)
-        self._file_navigation_widget_layout.setSpacing(5)
-        self.btn_lbl = QtWidgets.QLabel("Log file ")
-        self.load_data_log_file_btn = QtWidgets.QPushButton('Load')
-        self.load_data_log_file_lbl = QtWidgets.QLabel('')
-        self._file_navigation_widget_layout.addWidget(self.btn_lbl)
-        #self._file_navigation_widget_layout.addWidget(self.load_data_log_file_btn)
-        self._file_navigation_widget_layout.addWidget(self.load_data_log_file_lbl)
-        self._file_navigation_widget_layout.addSpacerItem(HorizontalSpacerItem())
-        self.clear_data_log_file_btn = QtWidgets.QPushButton('Clear Log')
-        clear_data_icon = QIcon()
-        clear_data_icon.addFile(os.path.join(resources_path,'style','delete_forever.svg'))
-        self.clear_data_log_file_btn.setIcon(clear_data_icon)
-
-        self._file_navigation_widget_layout.addWidget(self.clear_data_log_file_btn)
-
-        self._layout.addWidget(self.file_navigation_widget)
-
-        self.temperatures_plot_widget = historyPlotWidget(scale_label="T (K)")
-        self.scaling_plot_widget = historyPlotWidget(scale_label="Scaling")
-
-        self._layout.addWidget(self.temperatures_plot_widget)
-        #self._layout.addWidget(self.scaling_plot_widget)
-
-
-        #self.setAcceptDrops(True) 
-        
-
-
-    def raise_widget(self):
-        self.show()
-        self.setWindowState(self.windowState() & ~QtCore.Qt.WindowState.WindowMinimized | QtCore.Qt.WindowState.WindowActive)
-        self.activateWindow()
-        self.raise_()
-
-    def dragEnterEvent(self, e):
-        if e.mimeData().hasUrls:
-            e.accept()
-        else:
-            e.ignore()
-
-    def dragMoveEvent(self, e):
-        if e.mimeData().hasUrls:
-            e.accept()
-        else:
-            e.ignore()
-
-    def dropEvent(self, e):
-        """
-        Drop files directly onto the widget
-
-        File locations are stored in fname
-        :param e:
-        :return:
-        """
-        if e.mimeData().hasUrls:
-            e.setDropAction(QtCore.Qt.CopyAction)
-            e.accept()
-            fnames = list()
-            for url in e.mimeData().urls():
-                fname = str(url.toLocalFile())  
-                fnames.append(fname)
-            self.file_dragged_in.emit(fnames)
-        else:
-            e.ignore() 

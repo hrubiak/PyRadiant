@@ -18,14 +18,42 @@
 
 from PyQt6 import QtCore, QtWidgets, QtGui
 from math import floor, log10
+import os
+from .. import icons_path
 
+class FlatButton(QtWidgets.QPushButton):
+    def __init__(self, *args):
+        super(FlatButton, self).__init__(*args)
+        self.setFlat(True)
 
+    def setHeight(self, height):
+        self.setMinimumHeight(height)
+        self.setMaximumHeight(height)
+
+    def setWidth(self, width):
+        self.setMinimumWidth(width)
+        self.setMaximumWidth(width)
+
+class CheckableFlatButton(FlatButton):
+    def __init__(self, *args):
+        super(CheckableFlatButton, self).__init__(*args)
+        self.setCheckable(True)
+
+class CheckableButton(QtWidgets.QPushButton):
+    def __init__(self, *args):
+        super(CheckableButton, self).__init__(*args)
+        self.setCheckable(True)
+
+class SaveIconButton(FlatButton):
+    def __init__(self):
+        super(SaveIconButton, self).__init__()
+        self.setIcon(QtGui.QIcon(os.path.join(icons_path, "save.ico")))
 
 class NumberTextField(QtWidgets.QLineEdit):
     def __init__(self, *args, **kwargs):
         super(NumberTextField, self).__init__(*args, **kwargs)
         self.setValidator(QtGui.QDoubleValidator())
-        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
+        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
         self.min = None
         self.max = None
 
@@ -57,13 +85,13 @@ class IntegerTextField(QtWidgets.QLineEdit):
     def __init__(self, *args, **kwargs):
         super(IntegerTextField, self).__init__(*args, **kwargs)
         self.setValidator(QtGui.QIntValidator())
-        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
+        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
 
 
 class LabelAlignRight(QtWidgets.QLabel):
     def __init__(self, *args, **kwargs):
         super(LabelAlignRight, self).__init__(*args, **kwargs)
-        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignVCenter)
+        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
 
 
 class CleanLooksComboBox(QtWidgets.QComboBox):

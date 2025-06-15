@@ -44,8 +44,8 @@ colors = {
     'data_pen': '#FFFFFF',
     'data_brush': '#FFFFFF',
     'fit_pen': 'r',
-    'downstream': '#FFFF00',
-    'upstream': '#FF9900',
+    'downstream': '#FFD700',
+    'upstream': '#FF6F61',
     'combined': '#66FFFF'
 }
 
@@ -65,6 +65,7 @@ class RoiWidget(QtWidgets.QWidget):
         self._main_vertical_layout.setSpacing(5)
 
         self.img_widget = RoiImageWidget(roi_num=roi_num, roi_colors=roi_colors)
+        self.ccd_widget = RoiImageWidget(roi_num=0, roi_colors=[])
         self.specra_widget = RoiSpectraWidget()
 
         self.left_tab_widget = QtWidgets.QTabWidget()
@@ -72,7 +73,7 @@ class RoiWidget(QtWidgets.QWidget):
         self.left_tab_widget.setCurrentIndex(0)
         self.left_tab_widget.addTab(self.specra_widget, '1D')
         self.left_tab_widget.addTab(self.img_widget, '2D')
-        
+        self.left_tab_widget.addTab(self.ccd_widget, 'RAW')
 
 
         self.wl_range_widget = wavelengthRangeGB()
@@ -88,6 +89,13 @@ class RoiWidget(QtWidgets.QWidget):
         self.roi_gbs = []
         self.create_roi_gbs()
         self._roi_v_bs_layout.addLayout(self._roi_gbs_layout)
+        self._roi_v_bs_layout.addWidget(QtWidgets.QLabel('Subtract in-situ background'))
+        self.use_backbround_data_cb = QtWidgets.QCheckBox('- Data background')
+        self._roi_v_bs_layout.addWidget(self.use_backbround_data_cb)
+        self.use_backbround_data_cb.setChecked(True)
+        self.use_backbround_calibration_cb = QtWidgets.QCheckBox('- Calibration background')
+        self._roi_v_bs_layout.addWidget(self.use_backbround_calibration_cb)
+        self.use_backbround_calibration_cb.setChecked(True)
         #self._roi_gbs_layout.addSpacerItem(HorizontalSpacerItem())
 
         self._main_vertical_layout.addWidget(self.left_tab_widget)
@@ -95,6 +103,8 @@ class RoiWidget(QtWidgets.QWidget):
         #self._main_vertical_layout.addWidget(self.status_bar)
 
         self.pos_lbl = self.status_bar.left_lbl
+
+        
        
         self.setLayout(self._main_vertical_layout)
 
@@ -177,6 +187,10 @@ class RoiWidget(QtWidgets.QWidget):
         if img_data is not None:
             self.img_widget.plot_image(img_data.T)
 
+    def plot_raw_ccd(self, ccd_data):
+        if ccd_data is not None:
+            self.ccd_widget.plot_image(ccd_data.T)
+
     def add_item(self, pg_item):
         self.img_widget.pg_viewbox.addItem(pg_item)
 
@@ -240,6 +254,8 @@ class RoiGroupBox(QtWidgets.QGroupBox):
         #self._grid_layout.addWidget(CenteredQLabel('X:'), 1, 0)
         #self._grid_layout.addWidget(self.x_min_txt, 3, 1)
         #self._grid_layout.addWidget(self.x_max_txt, 4, 1)
+
+        
 
 
         self.setLayout(self._layout)
@@ -395,7 +411,7 @@ class RoiImageWidget(QtWidgets.QWidget):
         super(RoiImageWidget, self).__init__(*args, **kwargs)
         self.roi_num = roi_num
         self.roi_colors = roi_colors
-        self.rect = None
+        self.rectangle = None
         self.pg_widget = pg.GraphicsLayoutWidget()
         self.pg_layout = self.pg_widget.ci
         self.pg_layout.setContentsMargins(0, 10, 15, 0)
@@ -440,12 +456,18 @@ class RoiImageWidget(QtWidgets.QWidget):
         self.add_rois()
         self.modify_mouse_behavior()
 
-    def set_wavelength_calibration(self, rect):
+    def set_wavelength_calibration(self, rectangle):
         
-        if self.rect != rect :
-            self.rect = rect
-            self.pg_img_item.setRect(*rect)
-            self.bottom_axis.setRange(rect[0], rect[0]+rect[1])
+        if self.rectangle != rectangle:
+            self.rectangle = rectangle
+            self.pg_img_item.setRect(*rectangle)
+            x_min = self.rectangle[0]
+            x_max = self.rectangle[0]+ self.rectangle[2]
+            y_min = self.rectangle[1]
+            y_max = self.rectangle[1]+ self.rectangle[3]
+            self.pg_viewbox.setLimits(xMin=x_min, xMax=x_max,
+                                    yMin=y_min, yMax=y_max)
+            self.pg_viewbox.autoRange()
 
     def add_rois(self):
         self.rois = []
@@ -461,9 +483,9 @@ class RoiImageWidget(QtWidgets.QWidget):
         for roi in self.rois:
             roi_pos_x = roi.pos()[0]
             roi_size_x = roi.size()[0]
-            if self.rect != None:
-                roi_pos_x =   (roi_pos_x-self.rect[0]) *self.pg_img_item.image.shape[0] /self.rect[2]
-                roi_size_x = roi_size_x / self.rect[2]*self.pg_img_item.image.shape[0]
+            if self.rectangle != None:
+                roi_pos_x =   (roi_pos_x-self.rectangle[0]) *self.pg_img_item.image.shape[0] /self.rectangle[2]
+                roi_size_x = roi_size_x / self.rectangle[2]*self.pg_img_item.image.shape[0]
             limit = [int(round(roi_pos_x)), int(round(roi_pos_x + roi_size_x)),
                                roi.pos()[1], roi.pos()[1] + roi.size()[1]]
             roi_limits.append(limit)
@@ -497,9 +519,9 @@ class RoiImageWidget(QtWidgets.QWidget):
         pos = [roi_limits[0], roi_limits[2]]
         size = [roi_limits[1] - roi_limits[0],
                                 roi_limits[3] - roi_limits[2]]
-        if self.rect != None:
-            pos[0] = int(round(self.rect[0] + pos[0] /self.pg_img_item.image.shape[0] *self.rect[2]))
-            size[0] = int(round(size[0] * (self.rect[2]/self.pg_img_item.image.shape[0])))
+        if self.rectangle != None:
+            pos[0] = int(round(self.rectangle[0] + pos[0] /self.pg_img_item.image.shape[0] *self.rectangle[2]))
+            size[0] = int(round(size[0] * (self.rectangle[2]/self.pg_img_item.image.shape[0])))
         
         self.rois[ind].blockSignals(True)
         self.rois[ind].setPos(pos)
@@ -520,18 +542,19 @@ class RoiImageWidget(QtWidgets.QWidget):
     def plot_image(self, data):
         
         self.pg_img_item.setImage(data)
-        if self.rect != None:
-            x_min = self.rect[0]
-            x_max = self.rect[0]+ self.rect[2]
-            y_min = self.rect[1]
-            y_max = self.rect[1]+ self.rect[3]
+        '''if self.rectangle != None:
+            x_min = self.rectangle[0]
+            x_max = self.rectangle[0]+ self.rectangle[2]
+            y_min = self.rectangle[1]
+            y_max = self.rectangle[1]+ self.rectangle[3]
             self.pg_viewbox.setLimits(xMin=x_min, xMax=x_max,
                                     yMin=y_min, yMax=y_max)
         else:
+            
             x_max, y_max = data.shape
             self.pg_viewbox.setLimits(xMin=0, xMax=x_max,
                                     yMin=0, yMax=y_max)
-
+        '''
     @property
     def img_data(self):
         return self.pg_img_item.image
@@ -548,7 +571,7 @@ class RoiImageWidget(QtWidgets.QWidget):
     def myMouseClickEvent(self, ev):
         if ev.button() == QtCore.Qt.MouseButton.RightButton or \
                 (ev.button() == QtCore.Qt.MouseButton.LeftButton and
-                         ev.modifiers() & QtCore.Qt.ControlModifier):
+                         ev.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier):
             self.pg_viewbox.autoRange()
         ev.accept()
 
@@ -574,8 +597,9 @@ class ImgROI(pg.ROI):
         if not ev.isExit():
             if ev.acceptDrags(QtCore.Qt.MouseButton.LeftButton):
                 hover = True
-            for btn in [QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.RightButton, QtCore.Qt.MidButton]:
-                if int(self.acceptedMouseButtons() & btn) > 0 and ev.acceptClicks(btn):
+            for btn in [QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.RightButton, QtCore.Qt.MouseButton.MiddleButton]:
+                # Check if the acceptedMouseButtons mask includes the button
+                if (self.acceptedMouseButtons() & btn) and ev.acceptClicks(btn):
                     hover = True
 
         if hover:
@@ -603,8 +627,8 @@ class CustomHandle(pg.graphicsItems.ROI.Handle):
         if not ev.isExit():
             if ev.acceptDrags(QtCore.Qt.MouseButton.LeftButton):
                 hover = True
-            for btn in [QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.RightButton, QtCore.Qt.MidButton]:
-                if int(self.acceptedMouseButtons() & btn) > 0 and ev.acceptClicks(btn):
+            for btn in [QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.RightButton, QtCore.Qt.MouseButton.MiddleButton]:
+                if (self.acceptedMouseButtons() & btn) and ev.acceptClicks(btn):
                     hover = True
 
         if hover:

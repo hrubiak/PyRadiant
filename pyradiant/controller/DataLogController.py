@@ -17,7 +17,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import os, importlib
+import os
 import time
 from PyQt6 import QtWidgets, QtCore
 
@@ -25,11 +25,12 @@ from ..widget.Widgets import open_file_dialog, open_files_dialog, save_file_dial
 
 import numpy as np
 from ..model.helper.HelperModule import get_partial_index , get_partial_value
-from .. widget.TemperatureSpectrumWidget import dataHistoryWidget
+from .. widget.DataHistoryWidget import dataHistoryWidget
 from ..model.TemperatureModel import TemperatureModel
 from .NewFileInDirectoryWatcher import NewFileInDirectoryWatcher
 
 from ..model.DatalogModel import DatalogModel
+from ..model.DatalogModelStatic import StaticRecordManager
 
 DATALOG_LENGTH = 200
 MIN_TEMPERATURE = 100
@@ -53,31 +54,54 @@ class DataLogController(QtCore.QObject):
         #self.temperature_model: TemperatureModel
         self.temperature_model = model
         self.model = DatalogModel()
+        self.model_static = StaticRecordManager()
+        
 
         self._exp_working_dir = ''
         self._setting_working_dir = ''
 
         self.create_signals()
 
+
+
     def create_signals(self):
-        # File signals
-        self.connect_click_function(self.widget.load_data_log_file_btn, self.load_data_log_file)
+        
+        self.connect_models()
+        self.connect_click_function(self.widget.clear_data_log_file_btn, self.clear_data_log_file_btn_callback)
+        
 
+    def disconnect_models(self):
+        """
+        Disconnects signals of the currently selected configuration.
+        """
+        self.temperature_model.log_file_loaded_signal.disconnect(self.load_log_from_file)
+        self.temperature_model.current_configuration.set_log_callback(None)
 
-        # File drag and drop
-        #self.widget.file_dragged_in.connect(self.file_dragged_in) 
-
+    def connect_models(self):
+        """
+        Connects signals of the currently selected configuration
+        """
+        
+        self.temperature_model.log_file_loaded_signal.connect(self.load_log_from_file)
         # model signals
-        self.temperature_model.data_changed.connect(self.data_changed_callback)
-        self.temperature_model.ds_calculations_changed.connect(self.ds_calculations_changed_callback)
-        self.temperature_model.us_calculations_changed.connect(self.us_calculations_changed_callback)
+        self.temperature_model.current_configuration.set_log_callback(self.log_file_updated_callback)
+
+   
+    def clear_data_log_file_btn_callback(self):
+        self.temperature_model.current_configuration.clear_log()
+        self.clear_log_display()
+    
+    def clear_log_display(self):
+        self.model.clear_log()
+        self.widget.temperatures_plot_widget.plot_ds_time_lapse([],[] )
+        self.widget.temperatures_plot_widget.plot_us_time_lapse([], [])
 
 
     def connect_click_function(self, emitter, function):
         emitter.clicked.connect(function)
         
-    def close_log(self):
-        self.temperature_model.close_log()
+    '''def close_log(self):
+        self.temperature_model.current_configuration.close_log()'''
 
     def load_data_log_file(self, filename=None):
         
@@ -87,11 +111,16 @@ class DataLogController(QtCore.QObject):
 
         
         if filename != '':
+            
             #now = time.time()
             self._exp_working_dir = os.path.dirname(str(filename))
+            self.model_static.initialize_records(self._exp_working_dir)
+            self.model_static.update_records_from_log(filename)
+
             records = self.model.load_last_n_records(str(filename),DATALOG_LENGTH)
-            self.model.data_records_groups = [records]
-            T_DS, T_US = self.model.get_temperatures_by_group(0)
+            
+            self.model.data_records=records
+            T_DS, T_US = self.model.get_temperatures()
             #T_DS = T_DS[-200:]
             #T_US = T_US[-200:]
             T_DS[T_DS<=MIN_TEMPERATURE] = np.nan
@@ -105,28 +134,74 @@ class DataLogController(QtCore.QObject):
             self.widget.temperatures_plot_widget.plot_ds_time_lapse(x_DS, T_DS)
             self.widget.temperatures_plot_widget.plot_us_time_lapse(x_US, T_US)
 
-            self.widget.load_data_log_file_lbl.setText(str(filename) )
+            T_DS, T_US = self.model_static.get_temperatures(DATALOG_LENGTH)
+            #T_DS = T_DS[-200:]
+            #T_US = T_US[-200:]
+            T_DS[T_DS<=MIN_TEMPERATURE] = np.nan
+            T_US[T_US<=MIN_TEMPERATURE] = np.nan
+            T_DS[T_DS >MAX_TEMPERATURE] = np.nan
+            T_US[T_US >MAX_TEMPERATURE] = np.nan
+            
+            x_DS = np.arange(T_DS.shape[0])
+            x_US = np.arange(T_US.shape[0])
+
+            self.widget.static_temperature_plot_widget.plot_ds_time_lapse(x_DS, T_DS)
+            self.widget.static_temperature_plot_widget.plot_us_time_lapse(x_US, T_US)
+
+            fname = os.path.split(filename)[-1]
+            dirname = os.path.sep.join(os.path.dirname(filename).split(os.path.sep)[-2:])
+            joined = os.path.join(dirname,fname)
+            self.widget.load_data_log_file_lbl.setText(joined)
             #later  = time.time()
             #print ('T log update time = ' + str(later-now))
 
     def file_dragged_in(self,files):
         pass
 
-    def update_log_display(self):
-        log_file = self.temperature_model.get_log_file_path()
+    def load_log_from_file(self):
+        log_file = self.temperature_model.current_configuration.get_log_file_path()
         if log_file != None:
             if os.path.exists(log_file):
                 self.load_data_log_file(filename=log_file)
 
-    def data_changed_callback(self):
-        self.update_log_display()
+    def log_file_updated_callback(self, log_dict):
+        self.model.add_record(log_dict)
+        self.model_static.update_record(**log_dict)
 
-    def ds_calculations_changed_callback(self):
-        self.update_log_display()
-                
+        spe_file = log_dict.get('# File')
+        spe_file_static_index = self.model_static.get_record_index(spe_file) # for moving the cursor, etc
+       
+        T_DS, T_US = self.model.get_temperatures()
+        #T_DS = T_DS[-200:]
+        #T_US = T_US[-200:]
+        T_DS[T_DS<=MIN_TEMPERATURE] = np.nan
+        T_US[T_US<=MIN_TEMPERATURE] = np.nan
+        T_DS[T_DS >MAX_TEMPERATURE] = np.nan
+        T_US[T_US >MAX_TEMPERATURE] = np.nan
+        
+        x_DS = np.arange(T_DS.shape[0])
+        x_US = np.arange(T_US.shape[0])
 
-    def us_calculations_changed_callback(self):
-        self.update_log_display()
+        self.widget.temperatures_plot_widget.plot_ds_time_lapse(x_DS, T_DS)
+        self.widget.temperatures_plot_widget.plot_us_time_lapse(x_US, T_US)
+        self.widget.temperatures_plot_widget.cursor_item.setPos(len(x_US))
+
+        T_DS, T_US = self.model_static.get_temperatures(DATALOG_LENGTH)
+        #T_DS = T_DS[-200:]
+        #T_US = T_US[-200:]
+        T_DS[T_DS<=MIN_TEMPERATURE] = np.nan
+        T_US[T_US<=MIN_TEMPERATURE] = np.nan
+        T_DS[T_DS >MAX_TEMPERATURE] = np.nan
+        T_US[T_US >MAX_TEMPERATURE] = np.nan
+        
+        x_DS = np.arange(T_DS.shape[0])
+        x_US = np.arange(T_US.shape[0])
+
+        self.widget.static_temperature_plot_widget.plot_ds_time_lapse(x_DS, T_DS)
+        self.widget.static_temperature_plot_widget.plot_us_time_lapse(x_US, T_US)
+        if spe_file_static_index:
+            self.widget.static_temperature_plot_widget.cursor_item.setPos(spe_file_static_index)
+
                 
     def show_widget(self):
         self.widget.raise_widget()

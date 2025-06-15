@@ -66,7 +66,7 @@ class ModifiedPlotItem(pg.PlotItem):
     def mouse_click_event(self, ev):
         if ev.button() == QtCore.Qt.MouseButton.RightButton or \
                 (ev.button() == QtCore.Qt.MouseButton.LeftButton and
-                         ev.modifiers() & QtCore.Qt.ControlModifier):
+                         ev.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier:
             if self.enableMouseInterAction:
                 self.vb.scaleBy(2)
                 self.vb.sigRangeChangedManually.emit(self.vb.state['mouseEnabled'])
@@ -80,7 +80,7 @@ class ModifiedPlotItem(pg.PlotItem):
     def mouse_double_click_event(self, ev):
         if self.enableMouseInterAction:
             if (ev.button() == QtCore.Qt.MouseButton.RightButton) or (ev.button() == QtCore.Qt.MouseButton.LeftButton and
-                                                                  ev.modifiers() & QtCore.Qt.ControlModifier):
+                                                                  ev.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier:
                 self.vb.autoRange()
                 self.vb.enableAutoRange()
                 self._auto_range = True
@@ -105,7 +105,7 @@ class ModifiedPlotItem(pg.PlotItem):
         dif *= -1
 
         if ev.button() == QtCore.Qt.MouseButton.RightButton or \
-                (ev.button() == QtCore.Qt.MouseButton.LeftButton and ev.modifiers() & QtCore.Qt.ControlModifier):
+                (ev.button() == QtCore.Qt.MouseButton.LeftButton and ev.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier:
             # determine the amount of translation
             tr = dif
             tr = self.vb.mapToView(tr) - self.vb.mapToView(pg.Point(0, 0))

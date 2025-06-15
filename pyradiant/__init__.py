@@ -20,9 +20,8 @@
 import os
 import sys
 from sys import platform
-#from optparse import OptionParser
-#import PyQt6
-from PyQt6 import QtWidgets, QtCore
+
+from PyQt6 import QtWidgets
 import qdarktheme 
 import platform
 
@@ -34,35 +33,38 @@ resources_path = os.path.join(os.path.dirname(__file__), 'resources')
 icons_path = os.path.join(resources_path, 'icons')
 style_path = os.path.join(resources_path, 'style')
 
+EPICS_INSTALLED = False
+try:
+    from epics import PV, caget, camonitor, camonitor_clear, ca, pv
+    import socket
+    import gc
+    EPICS_INSTALLED = True
+except:
+    pass
+
 from .controller.MainController import MainController
 
-def make_dpi_aware():
-    __platform__ = platform.system()
-    if __platform__ == 'Windows':
-        if int(platform.release()) >= 8:
-            import ctypes
-            from ctypes import wintypes
-            # Constants for DPI awareness levels
-            PROCESS_PER_MONITOR_DPI_AWARE = 2
-            # Set the DPI awareness
-            ctypes.windll.shcore.SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE)
+def cleanup_ca():
+    #print("Shutting down any CA threads and closing sockets...")
+    # Finalize PyEpics Channel Access
+    ca.finalize_libca()
+    # Force garbage collection
+    gc.collect()
+    # Check if any sockets remain open
+    for obj in gc.get_objects():
+        if isinstance(obj, socket.socket):
+            #print(f"Unclosed socket detected: {obj}")
+            obj.close()  # Force close lingering sockets
 
 def run_pyradiant():
-
-    '''make_dpi_aware()
-    if hasattr(QtCore.Qt.ApplicationAttribute, 'AA_EnableHighDpiScaling'):
-        QtWidgets.QApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
-
-    if hasattr(QtCore.Qt.ApplicationAttribute, 'AA_UseHighDpiPixmaps'):
-        QtWidgets.QApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
-    '''
-    #QtCore.QCoreApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
     qdarktheme.enable_hi_dpi()
     app = QtWidgets.QApplication(sys.argv)
+
     # Apply the complete dark theme to your Qt App.
     qdarktheme.setup_theme("dark", custom_colors={"primary": "#4DDECD"}) 
-    '''if platform != "darwin":
-        app.setStyle('plastique')'''
+  
     controller = MainController(app)
     controller.show_window()
+    if EPICS_INSTALLED:
+        app.aboutToQuit.connect(cleanup_ca)  # Ensure cleanup happens on exit
     sys.exit(app.exec())
