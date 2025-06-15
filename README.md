@@ -54,7 +54,7 @@ Step-by-Step Setup
 
 5. Launch PyRadiant
 
-       python pyradiant/main.py
+       python run_pyradiant.py
 
    Or use one of the wrapper scripts described below for convenience.
 
