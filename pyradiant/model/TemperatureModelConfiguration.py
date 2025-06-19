@@ -628,17 +628,20 @@ class TemperatureModelConfiguration(QtCore.QObject):
         header_ds = header + "\t".join(("wavelength(nm)", "DS_data", "DS_fit"))
         header_us = header + "\t".join(("wavelength(nm)", "US_data", "US_fit"))
 
-        output_matrix_ds = np.vstack((self.ds_data_spectrum.x,
-                                      self.ds_corrected_spectrum.y, self.ds_fit_spectrum.y))
-
-        output_matrix_us = np.vstack((self.us_data_spectrum.x,
-                                      self.us_corrected_spectrum.y, self.us_fit_spectrum.y))
-
         ds_filename = filename.rsplit('.', 1)[0] + '_ds.txt'
         us_filename = filename.rsplit('.', 1)[0] + '_us.txt'
 
-        np.savetxt(ds_filename, output_matrix_ds.T, header=header_ds)
-        np.savetxt(us_filename, output_matrix_us.T, header=header_us)
+        if self.ds_fit_spectrum.y.size == self.ds_corrected_spectrum.y.size:
+            output_matrix_ds = np.vstack((self.ds_data_spectrum.x,
+                                        self.ds_corrected_spectrum.y, self.ds_fit_spectrum.y))
+            
+            np.savetxt(ds_filename, output_matrix_ds.T, header=header_ds)
+
+        if self.us_corrected_spectrum.y.size ==  self.us_fit_spectrum.y.size:
+            output_matrix_us = np.vstack((self.us_data_spectrum.x,
+                                        self.us_corrected_spectrum.y, self.us_fit_spectrum.y))
+
+            np.savetxt(us_filename, output_matrix_us.T, header=header_us)
 
 
     # updating wavelength range values
