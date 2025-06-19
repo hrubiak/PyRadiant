@@ -39,6 +39,10 @@ from .helper.HelperModule import get_partial_index, get_partial_value
 from .TwoColor import calculate_2_color
 from .helper.signal import Signal
 
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.fft import fft, ifft, fftfreq, fftshift, ifftshift
+
 T_LOG_FILE = 'T_log'
 LOG_HEADER = '# File\tFrame\tPath\tT_DS\tT_US\tT_DS_error\tT_US_error\tDetector\tExposure Time [sec]\tGain\tscaling_DS\tscaling_US\tcounts_DS\tcounts_US\n'
 
@@ -1213,6 +1217,8 @@ class SingleTemperatureModel(QtCore.QObject):
 ###############################################
 ###############################################
 
+
+
 def calculate_real_spectrum(data_spectrum, calibration_spectrum, standard_spectrum):
     response_y = calibration_spectrum._y / standard_spectrum._y
     response_y[np.where(response_y == 0)] = np.nan
@@ -1220,6 +1226,9 @@ def calculate_real_spectrum(data_spectrum, calibration_spectrum, standard_spectr
     
     corrected_y = data_spectrum._y / response_y
     corrected_y = corrected_y / np.max(corrected_y) * np.max(data_spectrum._y)
+
+    corrected_y_filtered = remove_frequency_component(corrected_y)
+
     return Spectrum(data_spectrum._x, corrected_y), response
 
 
@@ -1262,6 +1271,53 @@ def black_body_function(wavelength, temp, scaling):
     c1 = 3.7418e-16
     c2 = 0.014388
     return scaling * c1 * wavelength ** -5 / (np.exp(c2 / (wavelength * temp)) - 1)
+
+
+
+
+def remove_frequency_component(signal, sampling_rate=1.0, freq_min=.1, freq_max=None, plot=True):
+    n = len(signal)
+    freqs = fftfreq(n, d=1/sampling_rate)
+    fft_vals = fft(signal)
+    
+    # Shift for symmetric spectrum
+    fft_vals_shifted = fftshift(fft_vals)
+    freqs_shifted = fftshift(freqs)
+
+    # Detect dominant frequencies for reference
+    power = np.abs(fft_vals_shifted)**2
+    dominant_freqs = freqs_shifted[np.argsort(power)[-5:]]
+    print("Top dominant frequencies (for reference):", np.sort(np.abs(dominant_freqs)))
+
+    # Mask for keeping all frequencies except the unwanted band
+    keep_mask = np.ones_like(freqs_shifted, dtype=bool)
+    if freq_min is not None and freq_max is not None:
+        band_mask = (np.abs(freqs_shifted) >= freq_min) & (np.abs(freqs_shifted) <= freq_max)
+        keep_mask[band_mask] = False
+
+    fft_vals_shifted[~keep_mask] = 0
+    filtered_fft = ifftshift(fft_vals_shifted)
+    filtered_signal = np.real(ifft(filtered_fft))
+
+    if plot:
+        plt.figure(figsize=(12, 6))
+        plt.subplot(2, 1, 1)
+        plt.title("Original and Filtered Signal")
+        plt.plot(signal, label='Original')
+        plt.plot(filtered_signal, label='Filtered', alpha=0.8)
+        plt.legend()
+
+        plt.subplot(2, 1, 2)
+        plt.title("Power Spectrum")
+        plt.plot(freqs_shifted, power, label='Power Spectrum')
+        if freq_min is not None and freq_max is not None:
+            plt.axvspan(-freq_max, -freq_min, color='red', alpha=0.3, label='Removed Band')
+            plt.axvspan(freq_min, freq_max, color='red', alpha=0.3)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+    return filtered_signal
 
 
 class CalibrationParameter(object):
