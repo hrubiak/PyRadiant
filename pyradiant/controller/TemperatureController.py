@@ -201,6 +201,8 @@ class TemperatureController(QtCore.QObject):
         self.widget.temperature_function_plank_rb.clicked.connect(self.temperature_function_callback)
         self.widget.temperature_function_wien_rb.clicked.connect(self.temperature_function_callback)
 
+        self.widget.interference_filter_cb.clicked.connect(self.filter_setting_callback)
+
         # Setting signals
         self.connect_click_function(self.widget.load_setting_btn, self.load_setting_file)
         self.connect_click_function(self.widget.save_setting_btn, self.save_setting_file)
@@ -413,6 +415,11 @@ class TemperatureController(QtCore.QObject):
         else:
             function_type = 'wien'
         self.model.current_configuration.set_temperature_fit_function(function_type)
+
+    def filter_setting_callback(self):
+        apply_filter = self.widget.interference_filter_cb.isChecked()
+        self.model.current_configuration.ds_filter_oscillation = apply_filter
+        self.model.current_configuration.us_filter_oscillation = apply_filter
 
     def load_ds_standard_file(self, filename=None):
         if filename is None or filename is False:

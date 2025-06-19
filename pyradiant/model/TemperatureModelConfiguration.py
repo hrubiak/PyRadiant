@@ -39,9 +39,8 @@ from .helper.HelperModule import get_partial_index, get_partial_value
 from .TwoColor import calculate_2_color
 from .helper.signal import Signal
 
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.fft import fft, ifft, fftfreq, fftshift, ifftshift
+from .helper.filter_oscillation import filter_oscillatory_component 
+
 
 T_LOG_FILE = 'T_log'
 LOG_HEADER = '# File\tFrame\tPath\tT_DS\tT_US\tT_DS_error\tT_US_error\tDetector\tExposure Time [sec]\tGain\tscaling_DS\tscaling_US\tcounts_DS\tcounts_US\n'
@@ -300,6 +299,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.temperature_fit_function_str = function_type
             self._update_temperature_models_data()
             self.data_changed_emit(self.current_frame)
+
+
 
     def set_use_insitu_background(self, use_data_background,use_calibration_background):
         if use_data_background != self.use_insitu_data_background or use_calibration_background !=self.use_insitu_calibration_background:
@@ -789,6 +790,28 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.us_temperature_model.fit_data()
         self.us_calculations_changed_emit()
 
+    @property
+    def ds_filter_oscillation(self):
+        return self.ds_temperature_model.filter_oscillation
+    
+    @ ds_filter_oscillation.setter
+    def ds_filter_oscillation(self, apply_filter):
+        self.ds_temperature_model.filter_oscillation = apply_filter
+        self.ds_temperature_model._update_all_spectra()
+        self.ds_temperature_model.fit_data()
+        self.ds_calculations_changed_emit()
+
+    @property
+    def us_filter_oscillation(self):
+        return self.ds_temperature_model.filter_oscillation
+    
+    @ us_filter_oscillation.setter
+    def us_filter_oscillation(self, apply_filter):
+        self.us_temperature_model.filter_oscillation = apply_filter
+        self.us_temperature_model._update_all_spectra()
+        self.us_temperature_model.fit_data()
+        self.us_calculations_changed_emit()
+
     def set_rois(self, limits):
         self.us_roi = limits[1]
         self.ds_roi = limits[0]
@@ -802,6 +825,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
         ds_roi_bg = self.ds_roi_bg.as_list()
         us_roi_bg = self.us_roi_bg.as_list()
         return [ds_roi, us_roi, ds_roi_bg, us_roi_bg]
+    
+
 
     # Spectrum interfaces
     #########################################################
@@ -854,6 +879,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
     @property
     def us_scaling(self):
         return self.us_temperature_model.scaling
+    
+
 
     @property
     def ds_temperature_error(self):
@@ -886,6 +913,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
     @property
     def us_2_color_temp(self):
         return self.us_temperature_model.get2color()
+    
+
 
     # TODO: Think aboout refactoring this function away from here
     def get_wavelength_from(self, index):
@@ -961,6 +990,8 @@ class SingleTemperatureModel(QtCore.QObject):
         self.temperature_fit_function = fit_black_body_function_wien
         self.subtract_inistu_data_background = True
         self.subtract_inistu_calibration_background = True
+
+        self.filter_oscillation = False
 
         self._data_img = None
         self._data_img_x_calibration = None
@@ -1160,9 +1191,11 @@ class SingleTemperatureModel(QtCore.QObject):
         if len(self.calibration_spectrum._x) == len(self.data_spectrum._x):
             x, _ = self.data_spectrum.data
             lamp_spectrum = self.calibration_parameter.get_lamp_spectrum(x)
+            filt_osc = self.filter_oscillation
             self.corrected_spectrum, self.response = calculate_real_spectrum(self.data_spectrum,
                                                               self.calibration_spectrum,
-                                                              lamp_spectrum)
+                                                              lamp_spectrum,
+                                                              filter_oscillation=filt_osc)
             self.corrected_spectrum.mask = self.data_spectrum.mask
         else:
             self.corrected_spectrum = Spectrum([], [])
@@ -1219,7 +1252,7 @@ class SingleTemperatureModel(QtCore.QObject):
 
 
 
-def calculate_real_spectrum(data_spectrum, calibration_spectrum, standard_spectrum):
+def calculate_real_spectrum(data_spectrum, calibration_spectrum, standard_spectrum, filter_oscillation=False):
     response_y = calibration_spectrum._y / standard_spectrum._y
     response_y[np.where(response_y == 0)] = np.nan
     response = Spectrum(data_spectrum._x, response_y)
@@ -1227,7 +1260,8 @@ def calculate_real_spectrum(data_spectrum, calibration_spectrum, standard_spectr
     corrected_y = data_spectrum._y / response_y
     corrected_y = corrected_y / np.max(corrected_y) * np.max(data_spectrum._y)
 
-    corrected_y_filtered = remove_frequency_component(corrected_y)
+    if filter_oscillation:
+        corrected_y = filter_oscillatory_component(data_spectrum._x, corrected_y)
 
     return Spectrum(data_spectrum._x, corrected_y), response
 
@@ -1273,51 +1307,6 @@ def black_body_function(wavelength, temp, scaling):
     return scaling * c1 * wavelength ** -5 / (np.exp(c2 / (wavelength * temp)) - 1)
 
 
-
-
-def remove_frequency_component(signal, sampling_rate=1.0, freq_min=.1, freq_max=None, plot=True):
-    n = len(signal)
-    freqs = fftfreq(n, d=1/sampling_rate)
-    fft_vals = fft(signal)
-    
-    # Shift for symmetric spectrum
-    fft_vals_shifted = fftshift(fft_vals)
-    freqs_shifted = fftshift(freqs)
-
-    # Detect dominant frequencies for reference
-    power = np.abs(fft_vals_shifted)**2
-    dominant_freqs = freqs_shifted[np.argsort(power)[-5:]]
-    print("Top dominant frequencies (for reference):", np.sort(np.abs(dominant_freqs)))
-
-    # Mask for keeping all frequencies except the unwanted band
-    keep_mask = np.ones_like(freqs_shifted, dtype=bool)
-    if freq_min is not None and freq_max is not None:
-        band_mask = (np.abs(freqs_shifted) >= freq_min) & (np.abs(freqs_shifted) <= freq_max)
-        keep_mask[band_mask] = False
-
-    fft_vals_shifted[~keep_mask] = 0
-    filtered_fft = ifftshift(fft_vals_shifted)
-    filtered_signal = np.real(ifft(filtered_fft))
-
-    if plot:
-        plt.figure(figsize=(12, 6))
-        plt.subplot(2, 1, 1)
-        plt.title("Original and Filtered Signal")
-        plt.plot(signal, label='Original')
-        plt.plot(filtered_signal, label='Filtered', alpha=0.8)
-        plt.legend()
-
-        plt.subplot(2, 1, 2)
-        plt.title("Power Spectrum")
-        plt.plot(freqs_shifted, power, label='Power Spectrum')
-        if freq_min is not None and freq_max is not None:
-            plt.axvspan(-freq_max, -freq_min, color='red', alpha=0.3, label='Removed Band')
-            plt.axvspan(freq_min, freq_max, color='red', alpha=0.3)
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
-
-    return filtered_signal
 
 
 class CalibrationParameter(object):

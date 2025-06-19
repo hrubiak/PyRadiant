@@ -132,7 +132,7 @@ def plot_fft_peaks(freqs, power, peaks, threshold, left_edge_freq=None, right_ed
     if left_edge_freq is not None and right_edge_freq is not None:
         center = (left_edge_freq + right_edge_freq) / 2
         half_span = (right_edge_freq - left_edge_freq) / 2
-        x_margin = 2 * half_span
+        x_margin = 4 * half_span
         plt.xlim(center - x_margin, center + x_margin)
 
         # Y-limits without central peak influence
@@ -181,7 +181,7 @@ def plot_results(results, freq_min=None, freq_max=None, log_scale=False,
     if freq_min and freq_max:
         center = (freq_min + freq_max) / 2
         half_span = (freq_max - freq_min) / 2
-        x_margin = 2 * half_span
+        x_margin = 4 * half_span
         plt.axvspan(-freq_max, -freq_min, color='red', alpha=0.2, label="Removed Band")
         plt.axvspan(freq_min, freq_max, color='red', alpha=0.2)
         plt.xlim(center - x_margin, center + x_margin)
@@ -198,9 +198,8 @@ def plot_results(results, freq_min=None, freq_max=None, log_scale=False,
     plt.tight_layout()
     plt.show()
 
-# === MAIN TEST CODE ===
 if __name__ == "__main__":
-    filename = "/Users/hrubiak/Desktop/expt03_00226_ds.txt"  # Replace with your file
+    filename = "/Users/hrubiak/Desktop/expt03_00226_ds.txt"
     wavelengths, ds_data = read_spectral_data(filename)
 
     # Compute dx from wavelength range
@@ -208,42 +207,84 @@ if __name__ == "__main__":
     lambda_max = wavelengths[-1]
     dx = (lambda_max - lambda_min) / (len(wavelengths) - 1)
 
-    # === First pass: FFT only (no filtering) ===
-    results = remove_oscillatory_component(
+    # === Step 1: Reflection pad the raw signal ===
+    pad_width = 100
+    ds_data_padded = np.concatenate([
+        ds_data[pad_width - 1::-1],
         ds_data,
-        dx=dx,
-        freq_min=None,
-        freq_max=None,
-        edge_k=3
-    )
+        ds_data[:-pad_width - 1:-1]
+    ])
 
-    # === Detect FFT peaks ===
-    freqs = results["freqs"]
-    power = results["power_before"]
-    center_idx = np.argmin(np.abs(freqs))
-    prominence_threshold = 0.0075 * np.max(power)
-    peaks, properties = find_peaks(power, prominence=prominence_threshold)
+    n = len(ds_data)
+    pad_width = 100
+    ds_data_padded = np.concatenate([
+        ds_data[pad_width - 1::-1],
+        ds_data,
+        ds_data[:-pad_width - 1:-1]
+    ])
+    n_padded = len(ds_data_padded)
+    idx_padded = np.arange(n_padded)
+
+    # === Step 3: Detrend using edge points from original signal (center part only) ===
+    idx_original = np.arange(pad_width, pad_width + n)
+    x_edges = np.concatenate([
+        idx_original[:3],
+        idx_original[-3:]
+    ])
+    y_edges = np.concatenate([
+        ds_data_padded[x_edges[0]:x_edges[0]+3],
+        ds_data_padded[x_edges[-3]:x_edges[-3]+3]
+    ])
+    poly_coeffs = np.polyfit(x_edges, y_edges, deg=1)
+    poly_fit = np.polyval(poly_coeffs, idx_padded)
+    ds_data_detrended = ds_data_padded - poly_fit
+
+    # === Step 2: Plot raw and padded signal for visual comparison ===
+    plt.figure(figsize=(12, 4))
+    plt.title("Raw vs Padded Signal")
+    plt.plot(np.arange(len(ds_data)), ds_data, label="Raw Signal")
+    plt.plot(np.arange(len(ds_data_padded)), ds_data_padded, label="Padded Signal", alpha=0.6)
+    plt.axvline(pad_width, color='gray', linestyle='--', linewidth=1, label="Padding Boundary")
+    plt.axvline(len(ds_data_padded) - pad_width - 1, color='gray', linestyle='--', linewidth=1)
+    plt.xlabel("Index")
+    plt.ylabel("Signal")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+    # === Step 3: FFT on padded signal for peak detection ===
+    n_padded = len(ds_data_padded)
+    freqs = fftfreq(n_padded, d=dx)
+    fft_vals = fft(ds_data_detrended)
+    fft_vals_shifted = fftshift(fft_vals)
+    freqs_shifted = fftshift(freqs)
+    power = np.abs(fft_vals_shifted)**2
+
+    # === Step 4: Find peaks in FFT of padded signal ===
+    center_idx = np.argmin(np.abs(freqs_shifted))
+    prominence_threshold = 0.02 * np.max(power)
+    peaks, _ = find_peaks(power, prominence=prominence_threshold)
     left_peaks = [p for p in peaks if p < center_idx]
     right_peaks = [p for p in peaks if p > center_idx]
-    left_edge_freq = freqs[max(left_peaks, key=lambda p: p)] if left_peaks else None
-    right_edge_freq = freqs[min(right_peaks, key=lambda p: p)] if right_peaks else None
+    left_edge_freq = freqs_shifted[max(left_peaks, key=lambda p: p)] if left_peaks else None
+    right_edge_freq = freqs_shifted[min(right_peaks, key=lambda p: p)] if right_peaks else None
 
     if right_peaks:
-        right_peak_idx = min(right_peaks, key=lambda i: abs(freqs[i]))
-        fwhm_r, f_left_r, f_right_r = compute_fwhm(freqs, power, right_peak_idx)
-        print(f"Right peak at {freqs[right_peak_idx]:.4f} Hz, FWHM: {fwhm_r:.5f}")
+        right_peak_idx = min(right_peaks, key=lambda i: abs(freqs_shifted[i]))
+        fwhm_r, f_left_r, f_right_r = compute_fwhm(freqs_shifted, power, right_peak_idx)
+        print(f"Right peak at {freqs_shifted[right_peak_idx]:.4f} Hz, FWHM: {fwhm_r:.5f}")
 
     if left_peaks:
-        left_peak_idx = max(left_peaks, key=lambda i: abs(freqs[i]))
-        fwhm_l, f_left_l, f_right_l = compute_fwhm(freqs, power, left_peak_idx)
-        print(f"Left peak at {freqs[left_peak_idx]:.4f} Hz, FWHM: {fwhm_l:.5f}")
+        left_peak_idx = max(left_peaks, key=lambda i: abs(freqs_shifted[i]))
+        fwhm_l, f_left_l, f_right_l = compute_fwhm(freqs_shifted, power, left_peak_idx)
+        print(f"Left peak at {freqs_shifted[left_peak_idx]:.4f} Hz, FWHM: {fwhm_l:.5f}")
 
-    print(f"Detected edge frequencies: {left_edge_freq:.4f}, {right_edge_freq:.4f}")
+    #print(f"Detected edge frequencies: {left_edge_freq:.4f}, {right_edge_freq:.4f}")
     print(f"Prominence cutoff: {prominence_threshold:.2e}")
 
-    # === Plot detected FFT peaks (before filtering) ===
+    # === Step 5: Plot FFT spectrum of padded signal with peaks ===
     plot_fft_peaks(
-        freqs,
+        freqs_shifted,
         power,
         peaks,
         threshold=prominence_threshold,
@@ -251,25 +292,34 @@ if __name__ == "__main__":
         right_edge_freq=right_edge_freq
     )
 
-    # === Second pass: Apply filtering using manual band ===
-
-    peaks_fre_ave = (abs(freqs[right_peak_idx]) + abs(freqs[left_peak_idx])) / 2
+    # === Step 6: Apply filtering on original (unpadded) signal ===
+    peaks_fre_ave = (abs(freqs_shifted[right_peak_idx]) + abs(freqs_shifted[left_peak_idx])) / 2
     fwhm_ave = (fwhm_r + fwhm_l) / 2
-    cut_range = fwhm_ave * 4
     freq_min = peaks_fre_ave - fwhm_ave * 2.5
-    freq_max = peaks_fre_ave + fwhm_ave * 3
-    #freq_min = 0.06
-    #freq_max = 0.17
+    freq_max = peaks_fre_ave + fwhm_ave * 3.5
 
-    results = remove_oscillatory_component(
-        ds_data,
+    results_full = remove_oscillatory_component(
+        ds_data_padded,
         dx=dx,
         freq_min=freq_min,
         freq_max=freq_max,
         edge_k=3
     )
 
-    # === Plot final filtered result ===
+    # Trim all signal-like fields to the center region
+    n = len(ds_data)
+    start = pad_width
+    end = pad_width + n
+
+    results = {
+        key: (
+            results_full[key][start:end]
+            if isinstance(results_full[key], np.ndarray) and results_full[key].shape == results_full["original_signal"].shape
+            else results_full[key]
+        )
+        for key in results_full
+    }
+
     plot_results(
         results,
         freq_min=freq_min,

@@ -104,6 +104,8 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.calibration_section = TemperatureCalibrationSection()
         
         self.t_function_type_section = TemperatureFitSettings()
+
+        self.filter_section = FilterSettings()
         
         self.settings_gb = SettingsGroupBox()
         self.epics_gb = EPICSGroupBox()
@@ -118,7 +120,9 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._other_settings_widget_layout.addWidget(self.wl_range_widget)
         self._other_settings_widget_layout.addWidget(self.roi_gb)
         self._other_settings_widget_layout.addWidget(self.calibration_section)
+        self._other_settings_widget_layout.addWidget(self.filter_section)
         self._other_settings_widget_layout.addWidget(self.t_function_type_section)
+        
         self._other_settings_widget_layout.addWidget(self.epics_gb)
         self._other_settings_widget_layout.addSpacerItem(VerticalSpacerItem())
         
@@ -227,6 +231,8 @@ class TemperatureWidget(QtWidgets.QWidget):
 
         self.temperature_function_plank_rb = self.t_function_type_section.plank_btn
         self.temperature_function_wien_rb = self.t_function_type_section.wien_btn
+
+        self.interference_filter_cb = self.filter_section.filter_btn
 
         self.use_backbround_data_cb = self.roi_widget.use_backbround_data_cb
         self.use_backbround_calibration_cb = self.roi_widget.use_backbround_calibration_cb
@@ -376,6 +382,23 @@ class TemperatureFitSettings(QtWidgets.QGroupBox):
         #self._layout.addSpacerItem(VerticalSpacerItem())
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
+
+class FilterSettings(QtWidgets.QGroupBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__('Interference filter')
+        self._layout = QtWidgets.QHBoxLayout()
+
+        self.filter_btn = QtWidgets.QCheckBox("Apply filter")
+        
+
+        self._layout.addWidget(self.filter_btn)
+    
+        self.filter_btn.setChecked(False)
+
+        #self._layout.addSpacerItem(VerticalSpacerItem())
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+
 
 
 class CalibrationGB(QtWidgets.QGroupBox):
