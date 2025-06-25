@@ -1,9 +1,6 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.fft import fft, ifft, fftfreq, fftshift, ifftshift
 from scipy.signal import find_peaks
-
-
 
 def compute_fwhm(freqs, power, peak_idx):
     peak_power = power[peak_idx]
@@ -21,11 +18,11 @@ def compute_fwhm(freqs, power, peak_idx):
 def filter_oscillatory_component(
     x,
     y,
-    edge_k=3,
+    edge_k=10,
     pad_width=20,
     prominence_ratio=0.005,
-    cut_scale_left=2.5,
-    cut_scale_right=3.0,
+    cut_scale_left=5,
+    cut_scale_right=7.5,
     fwhm_expand_factor=1.0,
     min_peak_freq=0.08,
     max_peak_freq=0.5
@@ -75,6 +72,7 @@ def filter_oscillatory_component(
 
     # Peak detection with frequency limits
     peaks, _ = find_peaks(power, prominence=prominence_ratio * np.max(power))
+
     def in_freq_range(i):
         f = abs(freqs_shifted[i])
         return f >= min_peak_freq and (max_peak_freq is None or f <= max_peak_freq)
@@ -83,12 +81,11 @@ def filter_oscillatory_component(
     right_peaks = [i for i in peaks if i > center_idx and in_freq_range(i)]
 
     if not left_peaks or not right_peaks:
-        freq_min = 0.07
+        freq_min = 0.08
         freq_max = 0.17
     else:
-
-        l_idx = max(left_peaks, key=lambda i: abs(freqs_shifted[i]))
-        r_idx = min(right_peaks, key=lambda i: abs(freqs_shifted[i]))
+        l_idx = max(left_peaks, key=lambda i: power[i])
+        r_idx = max(right_peaks, key=lambda i: power[i])
         fwhm_l = compute_fwhm(freqs_shifted, power, l_idx)
         fwhm_r = compute_fwhm(freqs_shifted, power, r_idx)
         fwhm = 0.5 * (fwhm_l + fwhm_r) * fwhm_expand_factor
@@ -96,8 +93,6 @@ def filter_oscillatory_component(
         peak_freq = 0.5 * (abs(freqs_shifted[l_idx]) + abs(freqs_shifted[r_idx]))
         freq_min = peak_freq - cut_scale_left * fwhm
         freq_max = peak_freq + cut_scale_right * fwhm
-
-    #print(f'freq_min {freq_min}, freq_max {freq_max}')
 
     band_mask = (np.abs(freqs_shifted) >= freq_min) & (np.abs(freqs_shifted) <= freq_max)
     fft_vals_filtered = fft_vals_shifted.copy()
