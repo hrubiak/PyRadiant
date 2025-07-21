@@ -39,6 +39,8 @@ from .helper.HelperModule import get_partial_index, get_partial_value
 from .TwoColor import calculate_2_color
 from .helper.signal import Signal
 
+from scipy.interpolate import interp1d
+
 from .helper.filter_oscillation import filter_oscillatory_component 
 
 
@@ -1262,7 +1264,6 @@ def calculate_real_spectrum(data_spectrum, calibration_spectrum, standard_spectr
 
     if filter_oscillation:
         corrected_y = filter_oscillatory_component(data_spectrum._x, corrected_y)
-
     return Spectrum(data_spectrum._x, corrected_y), response
 
 
@@ -1305,6 +1306,8 @@ def black_body_function(wavelength, temp, scaling):
     c1 = 3.7418e-16
     c2 = 0.014388
     return scaling * c1 * wavelength ** -5 / (np.exp(c2 / (wavelength * temp)) - 1)
+
+
 
 
 
