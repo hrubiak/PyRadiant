@@ -1,3 +1,11 @@
+"""
+Usage:
+1. In the application, go to File → Open Folder to select the directory containing your `.isf` and/or `.csv` files.
+2. Browse the folder tree on the left and click on any file to display its waveform on the right.
+3. For `.isf` files, the two-column data is plotted automatically.
+4. For `.csv` files, all channels are plotted with a legend indicating each channel name.
+"""
+
 import sys
 import os
 import numpy as np
