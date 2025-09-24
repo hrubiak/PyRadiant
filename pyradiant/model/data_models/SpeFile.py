@@ -250,7 +250,11 @@ class SpeFile(DataModel):
             window_height = None
 
         self.readout_mode = mode
-        self.kinetics_window_height = int(window_height)
+        if window_height is not None:
+
+            self.kinetics_window_height = int(window_height)
+        else:
+            self.kinetics_window_height = None
 
     def _read_sensor_information_from_dom(self):
         """Reads the x calibration of the image from the xml footer and saves 
