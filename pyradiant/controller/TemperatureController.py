@@ -29,6 +29,7 @@ from ..model.helper.FileNameIterator import get_file_and_extension
 from ..model import epics_settings as eps
 from .NewFileInDirectoryWatcher import NewFileInDirectoryWatcher
 from ..model.data_models.ADWatcher import ADWatcher
+from ..model.data_models.SpeFile import SpeFile
 import numpy as np
 from ..model.helper.HelperModule import get_partial_index , get_partial_value
 from .. widget.DataHistoryWidget import dataHistoryWidget
@@ -312,6 +313,7 @@ class TemperatureController(QtCore.QObject):
             if filename != '':
                 if os.path.isfile(filename):
                     self._exp_working_dir = os.path.dirname(str(filename))
+                    self._auto_switch_configuration_by_detector(filename)
                     self.model.current_configuration.load_data_image(str(filename))
                     self._directory_watcher.path = self._exp_working_dir
                     # hack, refactor later:
@@ -320,6 +322,16 @@ class TemperatureController(QtCore.QObject):
                 else:
                     pass
                     #print('file not found: ' + str(filename))
+
+    def _auto_switch_configuration_by_detector(self, filename):
+        """Switch to the configuration whose calibration files match the detector of the given file."""
+        _, ext = os.path.splitext(filename)
+        if ext.lower() != '.spe':
+            return
+        detector = SpeFile.read_detector(filename)
+        ind = self.model.find_configuration_for_detector(detector)
+        if ind is not None and ind != self.model.configuration_ind:
+            self.model.select_configuration(ind)
 
     def load_data_file_ad(self, filename=None):
         if isinstance(filename, str):

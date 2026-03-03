@@ -21,4 +21,3 @@
 import pyradiant
 pyradiant.run_pyradiant()
 
-# TODO automatic config switching

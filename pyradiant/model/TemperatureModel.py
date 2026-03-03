@@ -138,3 +138,26 @@ class TemperatureModel(QtCore.QObject):
             self.configuration_ind = len(self.configurations) - 1
         self.connect_models()
         self.configuration_removed.emit(self.configuration_ind)
+
+    def find_configuration_for_detector(self, detector):
+        """Returns the index of a configuration whose calibration files match the given
+        detector model name. Prefers the current configuration to avoid unnecessary switching.
+        Returns None if no match is found."""
+        if not detector or detector == 'unspecified':
+            return None
+        if self._config_matches_detector(self.configurations[self.configuration_ind], detector):
+            return self.configuration_ind
+        for ind, config in enumerate(self.configurations):
+            if ind == self.configuration_ind:
+                continue
+            if self._config_matches_detector(config, detector):
+                return ind
+        return None
+
+    def _config_matches_detector(self, config, detector):
+        """Returns True if the config has a data file loaded from the given detector."""
+        if config.data_img_file is not None:
+            cal_detector = getattr(config.data_img_file, 'detector', 'unspecified')
+            if cal_detector != 'unspecified' and cal_detector.lower() == detector.lower():
+                return True
+        return False
