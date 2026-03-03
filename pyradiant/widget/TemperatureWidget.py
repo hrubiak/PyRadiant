@@ -220,14 +220,24 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.graph_mouse_pos_lbl = self.graph_status_bar.left_lbl
         self.graph_info_lbl = self.graph_status_bar.right_lbl
 
-        self.setup_epics_pb = self.epics_gb. setup_epics_pb
-        self.connect_to_epics_cb = self.epics_gb. connect_to_epics_cb
+        self.setup_epics_pb = self.epics_gb.setup_epics_pb
+        self.connect_to_epics_cb = self.epics_gb.connect_to_epics_cb
         self.connect_to_epics_datalog_cb = self.epics_gb.connect_to_epics_datalog_cb
-        self.connect_to_ad_cb = self.epics_gb. connect_to_ad_cb
+        self.monitor_folder_cb = self.epics_gb.monitor_folder_cb
+        self.connect_to_ad_cb = self.epics_gb.connect_to_ad_cb
+        self.epics_publish_indicator = self.epics_gb.epics_publish_indicator
+        self.monitor_folder_indicator = self.epics_gb.monitor_folder_indicator
+        self.ad_indicator = self.epics_gb.ad_indicator
+        self.monitor_folder_path_lbl = self.epics_gb.monitor_folder_path_lbl
+        self.ad_last_update_lbl = self.epics_gb.ad_last_update_lbl
+        self.file_system_rb = self.epics_gb.file_system_rb
+        self.live_stream_rb = self.epics_gb.live_stream_rb
 
 
-        self.browse_by_name_rb = self.control_widget.file_gb.browse_by_name_rb 
-        self.browse_by_time_rb = self.control_widget.file_gb.browse_by_time_rb 
+        self.source_mode_badge = self.control_widget.file_gb.source_mode_badge
+
+        self.browse_by_name_rb = self.control_widget.file_gb.browse_by_name_rb
+        self.browse_by_time_rb = self.control_widget.file_gb.browse_by_time_rb
 
         self.temperature_function_plank_rb = self.t_function_type_section.plank_btn
         self.temperature_function_wien_rb = self.t_function_type_section.wien_btn
@@ -298,24 +308,86 @@ class TemperatureFileNavigation(QtWidgets.QWidget):
         
 
 
+class StatusIndicator(QtWidgets.QLabel):
+    _STYLE = "background-color: {color}; border-radius: 5px;"
+
+    def __init__(self):
+        super().__init__()
+        self.setFixedSize(10, 10)
+        self.set_inactive()
+
+    def set_active(self):
+        self.setStyleSheet(self._STYLE.format(color="#4DDECD"))
+        self.setToolTip("Connected")
+
+    def set_inactive(self):
+        self.setStyleSheet(self._STYLE.format(color="#505050"))
+        self.setToolTip("Not connected")
+
+    def set_error(self):
+        self.setStyleSheet(self._STYLE.format(color="#FF5555"))
+        self.setToolTip("Connection failed")
+
+
 class EPICSGroupBox(QtWidgets.QGroupBox):
     def __init__(self, *args, **kwargs):
         super().__init__('EPICS')
 
         self._layout = QtWidgets.QGridLayout()
-   
+
         self.setup_epics_pb = QtWidgets.QPushButton("Setup EPICS")
-        self.connect_to_epics_cb = QtWidgets.QCheckBox("Connect to EPICS")
+        self.connect_to_epics_cb = QtWidgets.QCheckBox("Publish temperatures to EPICS")
         self.connect_to_epics_datalog_cb = QtWidgets.QCheckBox("Connect to datalog")
-        self.connect_to_ad_cb = QtWidgets.QCheckBox("Connect to AD")
-        self.connect_to_epics_cb.setLayoutDirection(QtCore.Qt.LayoutDirection.RightToLeft)
-        self.connect_to_ad_cb.setLayoutDirection(QtCore.Qt.LayoutDirection.RightToLeft)
-        self._layout.addWidget(self.setup_epics_pb,0,0)
-        self._layout.addWidget(self.connect_to_epics_cb,0,1)
-        self._layout.addWidget(self.connect_to_ad_cb,1,1)
-        
+        self.monitor_folder_cb = QtWidgets.QCheckBox("Monitor file folder via EPICS")
+        self.connect_to_ad_cb = QtWidgets.QCheckBox("Stream from Area Detector")
+        self.epics_publish_indicator = StatusIndicator()
+        self.monitor_folder_indicator = StatusIndicator()
+        self.ad_indicator = StatusIndicator()
+
+        # Data source mode selector
+        self.data_source_bg = QtWidgets.QButtonGroup()
+        self.file_system_rb = QtWidgets.QRadioButton("File system")
+        self.live_stream_rb = QtWidgets.QRadioButton("Live AD stream")
+        self.data_source_bg.addButton(self.file_system_rb)
+        self.data_source_bg.addButton(self.live_stream_rb)
+        self.file_system_rb.setChecked(True)
+
+        mode_widget = QtWidgets.QWidget()
+        mode_layout = QtWidgets.QHBoxLayout(mode_widget)
+        mode_layout.setContentsMargins(0, 2, 0, 2)
+        mode_layout.setSpacing(6)
+        mode_lbl = QtWidgets.QLabel("Source:")
+        mode_layout.addWidget(mode_lbl)
+        mode_layout.addWidget(self.file_system_rb)
+        mode_layout.addWidget(self.live_stream_rb)
+        mode_layout.addStretch()
+
+        self.monitor_folder_path_lbl = QtWidgets.QLabel("")
+        self.monitor_folder_path_lbl.setWordWrap(True)
+        self.monitor_folder_path_lbl.setStyleSheet("color: #888888; padding-left: 4px;")
+        small_font = self.monitor_folder_path_lbl.font()
+        small_font.setPointSize(small_font.pointSize() - 1)
+        self.monitor_folder_path_lbl.setFont(small_font)
+
+        self.ad_last_update_lbl = QtWidgets.QLabel("")
+        self.ad_last_update_lbl.setWordWrap(True)
+        self.ad_last_update_lbl.setStyleSheet("color: #888888; padding-left: 4px;")
+        small_font2 = self.ad_last_update_lbl.font()
+        small_font2.setPointSize(small_font2.pointSize() - 1)
+        self.ad_last_update_lbl.setFont(small_font2)
+
+        self._layout.addWidget(self.setup_epics_pb, 0, 0, 1, 2)
+        self._layout.addWidget(mode_widget, 1, 0, 1, 2)
+        self._layout.addWidget(self.connect_to_epics_cb, 2, 0)
+        self._layout.addWidget(self.epics_publish_indicator, 2, 1)
+        self._layout.addWidget(self.monitor_folder_cb, 3, 0)
+        self._layout.addWidget(self.monitor_folder_indicator, 3, 1)
+        self._layout.addWidget(self.monitor_folder_path_lbl, 4, 0, 1, 2)
+        self._layout.addWidget(self.connect_to_ad_cb, 5, 0)
+        self._layout.addWidget(self.ad_indicator, 5, 1)
+        self._layout.addWidget(self.ad_last_update_lbl, 6, 0, 1, 2)
+
         self.setLayout(self._layout)
-        self.setMaximumWidth(300)
 
 
 class SettingsGroupBox(QtWidgets.QGroupBox):
