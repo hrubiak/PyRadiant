@@ -628,26 +628,64 @@ class TemperatureModelConfiguration(QtCore.QObject):
         """
 
         # creating the header:
+        save_filtered = self.save_filtered_spectrum
+        ds_filter_active = self.ds_temperature_model.filter_oscillation and \
+                           self.ds_temperature_model.fringe_frequency is not None
+        us_filter_active = self.us_temperature_model.filter_oscillation and \
+                           self.us_temperature_model.fringe_frequency is not None
+
         header = "Fitted Temperatures:\n"
         header += "Downstream (K): {:.1f}\t{:.1f}\n".format(self.ds_temperature, self.ds_temperature_error)
-        header += "Upstream (K): {:.1f}\t{:.1f}\n\n".format(self.us_temperature, self.us_temperature_error)
-        header += "Datacolumns:\n"
-        header_ds = header + "\t".join(("wavelength(nm)", "DS_data", "DS_fit"))
-        header_us = header + "\t".join(("wavelength(nm)", "US_data", "US_fit"))
+        header += "Upstream (K): {:.1f}\t{:.1f}\n".format(self.us_temperature, self.us_temperature_error)
+
+        if save_filtered and ds_filter_active:
+            f = self.ds_temperature_model.fringe_frequency
+            nd = self.ds_temperature_model.fringe_nd_um
+            header += "DS Fringe frequency (cm): {:.4f}\n".format(f)
+            header += "DS n*d (um): {:.2f}\n".format(nd)
+        if save_filtered and us_filter_active:
+            f = self.us_temperature_model.fringe_frequency
+            nd = self.us_temperature_model.fringe_nd_um
+            header += "US Fringe frequency (cm): {:.4f}\n".format(f)
+            header += "US n*d (um): {:.2f}\n".format(nd)
+
+        header += "\nDatacolumns:\n"
+
+        if save_filtered and ds_filter_active:
+            header_ds = header + "\t".join(("wavelength(nm)", "DS_data", "DS_filtered", "DS_fit"))
+        else:
+            header_ds = header + "\t".join(("wavelength(nm)", "DS_data", "DS_fit"))
+
+        if save_filtered and us_filter_active:
+            header_us = header + "\t".join(("wavelength(nm)", "US_data", "US_filtered", "US_fit"))
+        else:
+            header_us = header + "\t".join(("wavelength(nm)", "US_data", "US_fit"))
 
         ds_filename = filename.rsplit('.', 1)[0] + '_ds.txt'
         us_filename = filename.rsplit('.', 1)[0] + '_us.txt'
 
         if self.ds_fit_spectrum.y.size == self.ds_corrected_spectrum.y.size:
-            output_matrix_ds = np.vstack((self.ds_data_spectrum.x,
-                                        self.ds_corrected_spectrum.y, self.ds_fit_spectrum.y))
-            
+            if save_filtered and ds_filter_active:
+                output_matrix_ds = np.vstack((self.ds_data_spectrum.x,
+                                              self.ds_unfiltered_corrected_spectrum.y,
+                                              self.ds_corrected_spectrum.y,
+                                              self.ds_fit_spectrum.y))
+            else:
+                output_matrix_ds = np.vstack((self.ds_data_spectrum.x,
+                                              self.ds_corrected_spectrum.y,
+                                              self.ds_fit_spectrum.y))
             np.savetxt(ds_filename, output_matrix_ds.T, header=header_ds)
 
-        if self.us_corrected_spectrum.y.size ==  self.us_fit_spectrum.y.size:
-            output_matrix_us = np.vstack((self.us_data_spectrum.x,
-                                        self.us_corrected_spectrum.y, self.us_fit_spectrum.y))
-
+        if self.us_corrected_spectrum.y.size == self.us_fit_spectrum.y.size:
+            if save_filtered and us_filter_active:
+                output_matrix_us = np.vstack((self.us_data_spectrum.x,
+                                              self.us_unfiltered_corrected_spectrum.y,
+                                              self.us_corrected_spectrum.y,
+                                              self.us_fit_spectrum.y))
+            else:
+                output_matrix_us = np.vstack((self.us_data_spectrum.x,
+                                              self.us_corrected_spectrum.y,
+                                              self.us_fit_spectrum.y))
             np.savetxt(us_filename, output_matrix_us.T, header=header_us)
 
 
@@ -814,6 +852,61 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.us_temperature_model.fit_data()
         self.us_calculations_changed_emit()
 
+    @property
+    def filter_freq_min(self):
+        return self.ds_temperature_model.filter_freq_min
+
+    @filter_freq_min.setter
+    def filter_freq_min(self, value):
+        self.ds_temperature_model.filter_freq_min = value
+        self.us_temperature_model.filter_freq_min = value
+        self.ds_temperature_model._update_all_spectra()
+        self.ds_temperature_model.fit_data()
+        self.ds_calculations_changed_emit()
+        self.us_temperature_model._update_all_spectra()
+        self.us_temperature_model.fit_data()
+        self.us_calculations_changed_emit()
+
+    @property
+    def filter_freq_max(self):
+        return self.ds_temperature_model.filter_freq_max
+
+    @filter_freq_max.setter
+    def filter_freq_max(self, value):
+        self.ds_temperature_model.filter_freq_max = value
+        self.us_temperature_model.filter_freq_max = value
+        self.ds_temperature_model._update_all_spectra()
+        self.ds_temperature_model.fit_data()
+        self.ds_calculations_changed_emit()
+        self.us_temperature_model._update_all_spectra()
+        self.us_temperature_model.fit_data()
+        self.us_calculations_changed_emit()
+
+    @property
+    def save_filtered_spectrum(self):
+        return self.ds_temperature_model.save_filtered_spectrum
+
+    @save_filtered_spectrum.setter
+    def save_filtered_spectrum(self, value):
+        self.ds_temperature_model.save_filtered_spectrum = value
+        self.us_temperature_model.save_filtered_spectrum = value
+
+    @property
+    def ds_fringe_frequency(self):
+        return self.ds_temperature_model.fringe_frequency
+
+    @property
+    def ds_fringe_nd_um(self):
+        return self.ds_temperature_model.fringe_nd_um
+
+    @property
+    def us_fringe_frequency(self):
+        return self.us_temperature_model.fringe_frequency
+
+    @property
+    def us_fringe_nd_um(self):
+        return self.us_temperature_model.fringe_nd_um
+
     def set_rois(self, limits):
         self.us_roi = limits[1]
         self.ds_roi = limits[0]
@@ -853,8 +946,16 @@ class TemperatureModelConfiguration(QtCore.QObject):
         return self.ds_temperature_model.corrected_spectrum
 
     @property
+    def ds_unfiltered_corrected_spectrum(self):
+        return self.ds_temperature_model.unfiltered_corrected_spectrum
+
+    @property
     def us_corrected_spectrum(self):
         return self.us_temperature_model.corrected_spectrum
+
+    @property
+    def us_unfiltered_corrected_spectrum(self):
+        return self.us_temperature_model.unfiltered_corrected_spectrum
 
     @property
     def ds_fit_spectrum(self):
@@ -986,6 +1087,7 @@ class SingleTemperatureModel(QtCore.QObject):
         self.data_spectrum = Spectrum([], [])
         self.calibration_spectrum = Spectrum([], [])
         self.corrected_spectrum = Spectrum([], [])
+        self.unfiltered_corrected_spectrum = Spectrum([], [])
         #self.within_limit = None
         self.response = Spectrum([],[])
 
@@ -994,6 +1096,11 @@ class SingleTemperatureModel(QtCore.QObject):
         self.subtract_inistu_calibration_background = True
 
         self.filter_oscillation = False
+        self.filter_freq_min = 0.0005  # cm — lower bound for fringe peak search
+        self.filter_freq_max = 0.05    # cm — upper bound for fringe peak search
+        self.save_filtered_spectrum = False
+        self.fringe_frequency = None   # f_osc in cm
+        self.fringe_nd_um = None       # optical half-path n·d in μm
 
         self._data_img = None
         self._data_img_x_calibration = None
@@ -1194,13 +1301,26 @@ class SingleTemperatureModel(QtCore.QObject):
             x, _ = self.data_spectrum.data
             lamp_spectrum = self.calibration_parameter.get_lamp_spectrum(x)
             filt_osc = self.filter_oscillation
-            self.corrected_spectrum, self.response = calculate_real_spectrum(self.data_spectrum,
-                                                              self.calibration_spectrum,
-                                                              lamp_spectrum,
-                                                              filter_oscillation=filt_osc)
+            self.corrected_spectrum, self.unfiltered_corrected_spectrum, self.response, fringe_info = \
+                calculate_real_spectrum(
+                    self.data_spectrum,
+                    self.calibration_spectrum,
+                    lamp_spectrum,
+                    filter_oscillation=filt_osc,
+                    freq_min=self.filter_freq_min,
+                    freq_max=self.filter_freq_max)
             self.corrected_spectrum.mask = self.data_spectrum.mask
+            if fringe_info is not None:
+                self.fringe_frequency = fringe_info['f_osc']
+                self.fringe_nd_um = fringe_info['nd_um']
+            else:
+                self.fringe_frequency = None
+                self.fringe_nd_um = None
         else:
             self.corrected_spectrum = Spectrum([], [])
+            self.unfiltered_corrected_spectrum = Spectrum([], [])
+            self.fringe_frequency = None
+            self.fringe_nd_um = None
 
     def _update_all_spectra(self):
         self._update_data_spectrum()
@@ -1254,17 +1374,21 @@ class SingleTemperatureModel(QtCore.QObject):
 
 
 
-def calculate_real_spectrum(data_spectrum, calibration_spectrum, standard_spectrum, filter_oscillation=False):
+def calculate_real_spectrum(data_spectrum, calibration_spectrum, standard_spectrum, filter_oscillation=False,
+                            freq_min=0.0005, freq_max=0.05):
     response_y = calibration_spectrum._y / standard_spectrum._y
     response_y[np.where(response_y == 0)] = np.nan
     response = Spectrum(data_spectrum._x, response_y)
-    
+
     corrected_y = data_spectrum._y / response_y
     corrected_y = corrected_y / np.max(corrected_y) * np.max(data_spectrum._y)
+    unfiltered_corrected = Spectrum(data_spectrum._x, corrected_y.copy())
 
+    fringe_info = None
     if filter_oscillation:
-        corrected_y = filter_oscillatory_component(data_spectrum._x, corrected_y)
-    return Spectrum(data_spectrum._x, corrected_y), response
+        corrected_y, fringe_info = filter_oscillatory_component(data_spectrum._x, corrected_y,
+                                                                freq_min=freq_min, freq_max=freq_max)
+    return Spectrum(data_spectrum._x, corrected_y), unfiltered_corrected, response, fringe_info
 
 
 def fit_black_body_function(spectrum):

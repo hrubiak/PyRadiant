@@ -242,7 +242,11 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.temperature_function_plank_rb = self.t_function_type_section.plank_btn
         self.temperature_function_wien_rb = self.t_function_type_section.wien_btn
 
-        self.interference_filter_cb = self.filter_section.filter_btn
+        self.ds_interference_filter_cb = self.filter_section.ds_filter_btn
+        self.us_interference_filter_cb = self.filter_section.us_filter_btn
+        self.save_filtered_cb = self.filter_section.save_filtered_cb
+        self.filter_freq_min_sb = self.filter_section.freq_min_sb
+        self.filter_freq_max_sb = self.filter_section.freq_max_sb
 
         self.use_backbround_data_cb = self.roi_widget.use_backbround_data_cb
         self.use_backbround_calibration_cb = self.roi_widget.use_backbround_calibration_cb
@@ -458,16 +462,59 @@ class TemperatureFitSettings(QtWidgets.QGroupBox):
 class FilterSettings(QtWidgets.QGroupBox):
     def __init__(self, *args, **kwargs):
         super().__init__('Interference filter')
-        self._layout = QtWidgets.QHBoxLayout()
+        self._layout = QtWidgets.QGridLayout()
+        self._layout.setHorizontalSpacing(8)
+        self._layout.setVerticalSpacing(4)
 
-        self.filter_btn = QtWidgets.QCheckBox("Apply filter")
-        
+        # Header row
+        self._layout.addWidget(QtWidgets.QLabel(''),       0, 0)
+        self._layout.addWidget(QtWidgets.QLabel('Apply'),  0, 1)
+        self._layout.addWidget(QtWidgets.QLabel('Fringe (cm)'), 0, 2)
+        self._layout.addWidget(QtWidgets.QLabel('n·d (μm)'),    0, 3)
 
-        self._layout.addWidget(self.filter_btn)
-    
-        self.filter_btn.setChecked(False)
+        # DS row
+        self._layout.addWidget(QtWidgets.QLabel('DS'), 1, 0)
+        self.ds_filter_btn = QtWidgets.QCheckBox()
+        self.ds_filter_btn.setChecked(False)
+        self._layout.addWidget(self.ds_filter_btn, 1, 1)
+        self.ds_fringe_lbl = QtWidgets.QLabel('—')
+        self.ds_nd_lbl     = QtWidgets.QLabel('—')
+        self._layout.addWidget(self.ds_fringe_lbl, 1, 2)
+        self._layout.addWidget(self.ds_nd_lbl,     1, 3)
 
-        #self._layout.addSpacerItem(VerticalSpacerItem())
+        # US row
+        self._layout.addWidget(QtWidgets.QLabel('US'), 2, 0)
+        self.us_filter_btn = QtWidgets.QCheckBox()
+        self.us_filter_btn.setChecked(False)
+        self._layout.addWidget(self.us_filter_btn, 2, 1)
+        self.us_fringe_lbl = QtWidgets.QLabel('—')
+        self.us_nd_lbl     = QtWidgets.QLabel('—')
+        self._layout.addWidget(self.us_fringe_lbl, 2, 2)
+        self._layout.addWidget(self.us_nd_lbl,     2, 3)
+
+        # Save filtered output option
+        self._layout.addWidget(QtWidgets.QLabel('Save filtered'), 3, 0, 1, 2)
+        self.save_filtered_cb = QtWidgets.QCheckBox()
+        self.save_filtered_cb.setChecked(False)
+        self._layout.addWidget(self.save_filtered_cb, 3, 2, 1, 2)
+
+        # Frequency search range rows
+        self._layout.addWidget(QtWidgets.QLabel('f min (cm)'), 4, 0, 1, 2)
+        self.freq_min_sb = QtWidgets.QDoubleSpinBox()
+        self.freq_min_sb.setDecimals(4)
+        self.freq_min_sb.setRange(0.0, 0.5)
+        self.freq_min_sb.setSingleStep(0.0005)
+        self.freq_min_sb.setValue(0.0005)
+        self._layout.addWidget(self.freq_min_sb, 4, 2, 1, 2)
+
+        self._layout.addWidget(QtWidgets.QLabel('f max (cm)'), 5, 0, 1, 2)
+        self.freq_max_sb = QtWidgets.QDoubleSpinBox()
+        self.freq_max_sb.setDecimals(4)
+        self.freq_max_sb.setRange(0.0, 0.5)
+        self.freq_max_sb.setSingleStep(0.001)
+        self.freq_max_sb.setValue(0.05)
+        self._layout.addWidget(self.freq_max_sb, 5, 2, 1, 2)
+
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
 

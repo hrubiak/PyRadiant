@@ -226,7 +226,11 @@ class TemperatureController(QtCore.QObject):
         self.widget.temperature_function_plank_rb.clicked.connect(self.temperature_function_callback)
         self.widget.temperature_function_wien_rb.clicked.connect(self.temperature_function_callback)
 
-        self.widget.interference_filter_cb.clicked.connect(self.filter_setting_callback)
+        self.widget.ds_interference_filter_cb.clicked.connect(self.filter_setting_callback)
+        self.widget.us_interference_filter_cb.clicked.connect(self.filter_setting_callback)
+        self.widget.save_filtered_cb.clicked.connect(self.save_filtered_callback)
+        self.widget.filter_freq_min_sb.valueChanged.connect(self.filter_freq_range_callback)
+        self.widget.filter_freq_max_sb.valueChanged.connect(self.filter_freq_range_callback)
 
         # Setting signals
         self.connect_click_function(self.widget.load_setting_btn, self.load_setting_file)
@@ -522,9 +526,34 @@ class TemperatureController(QtCore.QObject):
         self.model.current_configuration.set_temperature_fit_function(function_type)
 
     def filter_setting_callback(self):
-        apply_filter = self.widget.interference_filter_cb.isChecked()
-        self.model.current_configuration.ds_filter_oscillation = apply_filter
-        self.model.current_configuration.us_filter_oscillation = apply_filter
+        self.model.current_configuration.ds_filter_oscillation = \
+            self.widget.ds_interference_filter_cb.isChecked()
+        self.model.current_configuration.us_filter_oscillation = \
+            self.widget.us_interference_filter_cb.isChecked()
+
+    def save_filtered_callback(self):
+        self.model.current_configuration.save_filtered_spectrum = \
+            self.widget.save_filtered_cb.isChecked()
+
+    def filter_freq_range_callback(self):
+        step = self.widget.filter_freq_min_sb.singleStep()
+        freq_min = self.widget.filter_freq_min_sb.value()
+        freq_max = self.widget.filter_freq_max_sb.value()
+
+        # Keep max > min by adjusting each spinbox's range (block signals to avoid loops)
+        self.widget.filter_freq_max_sb.blockSignals(True)
+        self.widget.filter_freq_max_sb.setMinimum(freq_min + step)
+        self.widget.filter_freq_max_sb.blockSignals(False)
+
+        self.widget.filter_freq_min_sb.blockSignals(True)
+        self.widget.filter_freq_min_sb.setMaximum(freq_max - step)
+        self.widget.filter_freq_min_sb.blockSignals(False)
+
+        # Re-read in case clamping shifted a value
+        self.model.current_configuration.filter_freq_min = \
+            self.widget.filter_freq_min_sb.value()
+        self.model.current_configuration.filter_freq_max = \
+            self.widget.filter_freq_max_sb.value()
 
     def load_ds_standard_file(self, filename=None):
         if filename is None or filename is False:
@@ -776,6 +805,11 @@ class TemperatureController(QtCore.QObject):
         
         self.widget.temperature_spectrum_widget.update_ds_roi_max_txt(self.model.current_configuration.ds_temperature_model.data_roi_max)
 
+        f = self.model.current_configuration.ds_fringe_frequency
+        nd = self.model.current_configuration.ds_fringe_nd_um
+        self.widget.filter_section.ds_fringe_lbl.setText(f'{f:.4f}' if f is not None else '—')
+        self.widget.filter_section.ds_nd_lbl.setText(f'{nd:.1f}' if nd is not None else '—')
+
         if self.widget.connect_to_epics_cb.isChecked():
             if self.epics_available:
                 ds_temp_pv = eps.epics_settings['ds_last_temp']
@@ -829,6 +863,11 @@ class TemperatureController(QtCore.QObject):
 
         
         self.widget.temperature_spectrum_widget.update_us_roi_max_txt(self.model.current_configuration.us_temperature_model.data_roi_max)
+
+        f = self.model.current_configuration.us_fringe_frequency
+        nd = self.model.current_configuration.us_fringe_nd_um
+        self.widget.filter_section.us_fringe_lbl.setText(f'{f:.4f}' if f is not None else '—')
+        self.widget.filter_section.us_nd_lbl.setText(f'{nd:.1f}' if nd is not None else '—')
 
         if self.widget.connect_to_epics_cb.isChecked():
             if self.epics_available:
