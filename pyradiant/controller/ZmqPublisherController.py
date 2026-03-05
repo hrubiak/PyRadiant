@@ -43,7 +43,7 @@ CAPABILITIES_FIELDS = [
     {"key": "ds_temperature_err_K", "label": "DS Temperature Error (K)",  "type": "float"},
     {"key": "us_temperature_K",     "label": "US Temperature (K)",        "type": "float"},
     {"key": "us_temperature_err_K", "label": "US Temperature Error (K)",  "type": "float"},
-    {"key": "filename",             "label": "Filename",                   "type": "str"},
+    {"key": "filename",             "label": "Spectroradiometry Filename",  "type": "str"},
 ]
 
 

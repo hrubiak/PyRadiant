@@ -273,35 +273,71 @@ class ZmqWorkerController(QtCore.QObject):
     # ------------------------------------------------------------------
 
     def _handle_job(self, msg: dict):
-        """Process an incoming job from the coordinator.
+        """Dispatch incoming messages by type."""
+        self.widget.zmq_gb.last_job_txt.setPlainText(json.dumps(msg, indent=2))
+        msg_type = msg.get("type")
+        if msg_type == "cursor":
+            self._handle_cursor(msg)
+        else:
+            self.job_started.emit(msg)
+            result = {
+                "filename":       msg.get("filename", ""),
+                "ds_temperature": 0.0,
+                "ds_error":       0.0,
+                "us_temperature": 0.0,
+                "us_error":       0.0,
+                "status":         "ok",
+                "message":        "placeholder — processing not yet implemented",
+            }
+            if self._thread is not None:
+                self._thread.send_result(result)
+            self.job_finished.emit(result)
 
-        Currently a placeholder: logs the received message and echoes a
-        result back.  Replace the body of this method to integrate with
-        the pyradiant data-loading and fitting pipeline.
+    def _handle_cursor(self, msg: dict):
+        """Handle a cursor message from epicsLogViewer.
+
+        Extracts the filename from data["CCD_FileName"] (stripping the
+        original Windows/Linux path), then looks for that file in
+        input_directory (from the message, falling back to the configured
+        input dir).  Tries common spectroradiometry extensions when the
+        path has none.
         """
-        filename = msg.get("filename", "")
-        self.widget.zmq_gb.last_job_txt.setPlainText(
-            json.dumps(msg, indent=2)
-        )
-        self.job_started.emit(msg)
+        import os
 
-        # --- placeholder: load file and fit via temperature_controller ---
-        # TODO: call self.temperature_controller.load_data(os.path.join(folder, filename))
-        #       then read fitted temperatures from the model and build result dict
-        result = {
-            "filename":       filename,
-            "ds_temperature": 0.0,
-            "ds_error":       0.0,
-            "us_temperature": 0.0,
-            "us_error":       0.0,
-            "status":         "ok",
-            "message":        "placeholder — processing not yet implemented",
-        }
+        data = msg.get("data", {})
+        ccd_path = data.get("CCD_FileName", "")
+        input_dir = msg.get("input_directory") or self._input_dir or ""
 
-        if self._thread is not None:
-            self._thread.send_result(result)
+        # Strip surrounding quotes that a user may have pasted (e.g. '/path' or "/path")
+        input_dir = input_dir.strip().strip("'\"")
 
-        self.job_finished.emit(result)
+        # Normalise Windows backslashes before splitting
+        basename = os.path.basename(ccd_path.replace("\\", "/"))
+
+        if not basename:
+            self.widget.zmq_gb.status_lbl.setText("Cursor: no filename in CCD_FileName")
+            return
+        if not input_dir:
+            self.widget.zmq_gb.status_lbl.setText("Cursor: no input_directory configured")
+            return
+
+        candidate = os.path.join(input_dir, basename)
+
+        # If the path has no extension try common spectroradiometry formats
+        if not os.path.splitext(basename)[1]:
+            for ext in (".spe", ".SPE", ".h5", ".hdf5"):
+                test = candidate + ext
+                if os.path.exists(test):
+                    candidate = test
+                    break
+
+        if not os.path.exists(candidate):
+            self.widget.zmq_gb.status_lbl.setText(f"Cursor: not found — {basename}")
+            return
+
+        self.widget.zmq_gb.status_lbl.setText(f"Cursor: loading {os.path.basename(candidate)}")
+        if self.temperature_controller is not None:
+            self.temperature_controller.load_data_file(filenames=[candidate])
 
     def cleanup(self):
         """Stop the listener thread cleanly (call on app close)."""
