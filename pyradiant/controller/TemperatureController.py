@@ -48,6 +48,8 @@ else:
     caget = None
     PV = None
 
+from .ZmqWorkerController import ZmqWorkerController
+
 
 class TemperatureController(QtCore.QObject):
 
@@ -90,7 +92,10 @@ class TemperatureController(QtCore.QObject):
 
         
         self._create_autoprocess_system()
-        
+
+        self.zmq_worker_controller = ZmqWorkerController(self.widget)
+        self.zmq_worker_controller.temperature_controller = self
+
         self.create_signals()
 
         # File system is default: AD checkbox starts disabled until live stream mode is selected
@@ -991,6 +996,10 @@ class TemperatureController(QtCore.QObject):
                           self.widget.connect_to_epics_cb.isChecked())
         settings.set("temperature epics monitor folder",
                           self.widget.monitor_folder_cb.isChecked())
+
+        zmq_config_path = self.zmq_worker_controller._config.get("_path", "")
+        settings.set("zmq_config_path", zmq_config_path)
+
         settings.dump()
 
     def load_conf_settings(self, conf):
@@ -1042,6 +1051,10 @@ class TemperatureController(QtCore.QObject):
         temperature_autoprocessing = str.lower(str(settings.get("temperature autoprocessing")) )== 'true'
         if temperature_autoprocessing:
             self.widget.autoprocess_cb.setChecked(True)
+
+        zmq_config_path = settings.get("zmq_config_path", "")
+        if zmq_config_path and os.path.exists(zmq_config_path):
+            self.zmq_worker_controller.load_config(zmq_config_path)
 
     def auto_process_cb_toggled(self):
 

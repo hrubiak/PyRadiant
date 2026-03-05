@@ -106,9 +106,10 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.t_function_type_section = TemperatureFitSettings()
 
         self.filter_section = FilterSettings()
-        
+
         self.settings_gb = SettingsGroupBox()
         self.epics_gb = EPICSGroupBox()
+        self.zmq_gb = ZmqWorkerGroupBox()
         
         self.roi_gb = self.roi_widget.roi_gb
         self.wl_range_widget = self.roi_widget.wl_range_widget
@@ -124,6 +125,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._other_settings_widget_layout.addWidget(self.t_function_type_section)
         
         self._other_settings_widget_layout.addWidget(self.epics_gb)
+        self._other_settings_widget_layout.addWidget(self.zmq_gb)
         self._other_settings_widget_layout.addSpacerItem(VerticalSpacerItem())
         
         self._settings_widget_layout.addWidget(self.roi_settings_widget)
@@ -392,6 +394,63 @@ class EPICSGroupBox(QtWidgets.QGroupBox):
         self._layout.addWidget(self.ad_last_update_lbl, 6, 0, 1, 2)
 
         self.setLayout(self._layout)
+
+
+class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__('ZMQ Worker')
+        self._layout = QtWidgets.QGridLayout()
+        self._layout.setHorizontalSpacing(6)
+        self._layout.setVerticalSpacing(4)
+
+        # Row 0 — config file
+        self.load_config_btn = QtWidgets.QPushButton("Load config.yaml")
+        self._layout.addWidget(self.load_config_btn, 0, 0, 1, 2)
+        self.config_lbl = QtWidgets.QLabel("—")
+        self.config_lbl.setStyleSheet("color: #888888;")
+        small = self.config_lbl.font()
+        small.setPointSize(small.pointSize() - 1)
+        self.config_lbl.setFont(small)
+        self.config_lbl.setWordWrap(True)
+        self._layout.addWidget(self.config_lbl, 1, 0, 1, 2)
+
+        # Row 2 — worker name / port / results port
+        self._layout.addWidget(QtWidgets.QLabel("Worker:"), 2, 0)
+        self.worker_name_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.worker_name_lbl, 2, 1)
+
+        self._layout.addWidget(QtWidgets.QLabel("Port:"), 3, 0)
+        self.port_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.port_lbl, 3, 1)
+
+        self._layout.addWidget(QtWidgets.QLabel("Results port:"), 4, 0)
+        self.results_port_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.results_port_lbl, 4, 1)
+
+        # Row 5 — listen toggle + status indicator
+        self.listen_btn = QtWidgets.QPushButton("Start Listening")
+        self.listen_btn.setEnabled(False)
+        self.status_indicator = StatusIndicator()
+        self.status_lbl = QtWidgets.QLabel("Idle")
+        status_row = QtWidgets.QWidget()
+        status_row_layout = QtWidgets.QHBoxLayout(status_row)
+        status_row_layout.setContentsMargins(0, 0, 0, 0)
+        status_row_layout.addWidget(self.status_indicator)
+        status_row_layout.addWidget(self.status_lbl)
+        status_row_layout.addStretch()
+        self._layout.addWidget(self.listen_btn, 5, 0)
+        self._layout.addWidget(status_row, 5, 1)
+
+        # Row 6 — last received job
+        self._layout.addWidget(QtWidgets.QLabel("Last job:"), 6, 0)
+        self.last_job_lbl = QtWidgets.QLabel("—")
+        self.last_job_lbl.setWordWrap(True)
+        self.last_job_lbl.setStyleSheet("color: #888888;")
+        self.last_job_lbl.setFont(small)
+        self._layout.addWidget(self.last_job_lbl, 7, 0, 1, 2)
+
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
 
 
 class SettingsGroupBox(QtWidgets.QGroupBox):

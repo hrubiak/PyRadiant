@@ -1,0 +1,21 @@
+# config.yaml
+ports:
+  coordinator_results: 5557
+
+workers:
+  xrd:
+    port: 5555
+    script: xrd_worker.py
+  xrf:
+    port: 5556
+    script: xrf_worker.py
+  imaging:
+    port: 5558
+    script: imaging_worker.py
+  spectroradiometry:
+    port: 5559
+    script: run_pyradiant.py
+
+data:
+  input_directory: /data/raw
+  output_directory: /data/processed
