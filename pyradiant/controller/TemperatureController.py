@@ -49,6 +49,7 @@ else:
     PV = None
 
 from .ZmqWorkerController import ZmqWorkerController
+from .ZmqPublisherController import ZmqPublisherController
 
 
 class TemperatureController(QtCore.QObject):
@@ -95,6 +96,7 @@ class TemperatureController(QtCore.QObject):
 
         self.zmq_worker_controller = ZmqWorkerController(self.widget)
         self.zmq_worker_controller.temperature_controller = self
+        self.zmq_publisher_controller = ZmqPublisherController(self.widget)
 
         self.create_signals()
 
@@ -416,6 +418,7 @@ class TemperatureController(QtCore.QObject):
                         # data_source_mode_changed(True) fires via signal and updates badge + labels
                     else:
                         self._set_source_mode_badge('file')
+                    self._send_temperature_trigger()
                 else:
                     pass
                     #print('file not found: ' + str(filename))
@@ -440,6 +443,31 @@ class TemperatureController(QtCore.QObject):
             self.widget.filename_lbl.setText("AD: " + record_name)
             self.widget.mtime.setText("Frame: " + ts)
             self.widget.ad_last_update_lbl.setText("Last update: " + ts)
+            self._send_temperature_trigger()
+
+    def _send_temperature_trigger(self):
+        """Build a data payload from the current fit and send to epicsLogger."""
+        if not self.widget.epicslogger_gb.publish_temperatures_cb.isChecked():
+            return
+        import math
+        cfg = self.model.current_configuration
+        data = {}
+        if hasattr(cfg, 'ds_temperature') and not math.isnan(cfg.ds_temperature):
+            data['ds_temperature_K'] = round(cfg.ds_temperature, 1)
+        if hasattr(cfg, 'ds_temperature_error') and not math.isnan(cfg.ds_temperature_error):
+            data['ds_temperature_err_K'] = round(cfg.ds_temperature_error, 1)
+        if hasattr(cfg, 'us_temperature') and not math.isnan(cfg.us_temperature):
+            data['us_temperature_K'] = round(cfg.us_temperature, 1)
+        if hasattr(cfg, 'us_temperature_error') and not math.isnan(cfg.us_temperature_error):
+            data['us_temperature_err_K'] = round(cfg.us_temperature_error, 1)
+        if cfg.filename:
+            data['filename'] = os.path.basename(cfg.filename)
+        self.zmq_publisher_controller.send_trigger(data if data else None)
+
+    def cleanup(self):
+        """Stop all background threads cleanly (called on app exit)."""
+        self.zmq_worker_controller.cleanup()
+        self.zmq_publisher_controller.cleanup()
 
     def file_dragged_in(self,files):
         self.load_data_file(filenames=files)
@@ -451,12 +479,12 @@ class TemperatureController(QtCore.QObject):
         else:
             mode = 'time'
         self.model.current_configuration.load_next_data_image(mode)
-        
+
         # hack, refactor later:
         self.process_multiframe()
 
     def load_previous_data_image(self):
-        
+
         if self.widget.browse_by_name_rb.isChecked():
             mode = 'number'
         else:
@@ -1000,6 +1028,10 @@ class TemperatureController(QtCore.QObject):
         zmq_config_path = self.zmq_worker_controller._config.get("_path", "")
         settings.set("zmq_config_path", zmq_config_path)
 
+        settings.set("zmq_publisher_config_path", self.zmq_publisher_controller._config_path)
+        settings.set("zmq_publish_temperatures",
+                     self.widget.epicslogger_gb.publish_temperatures_cb.isChecked())
+
         settings.dump()
 
     def load_conf_settings(self, conf):
@@ -1055,6 +1087,13 @@ class TemperatureController(QtCore.QObject):
         zmq_config_path = settings.get("zmq_config_path", "")
         if zmq_config_path and os.path.exists(zmq_config_path):
             self.zmq_worker_controller.load_config(zmq_config_path)
+
+        zmq_publisher_config_path = settings.get("zmq_publisher_config_path", "")
+        if zmq_publisher_config_path and os.path.exists(zmq_publisher_config_path):
+            self.zmq_publisher_controller.load_config(zmq_publisher_config_path)
+
+        zmq_publish = str.lower(str(settings.get("zmq_publish_temperatures", "false"))) == "true"
+        self.widget.epicslogger_gb.publish_temperatures_cb.setChecked(zmq_publish)
 
     def auto_process_cb_toggled(self):
 

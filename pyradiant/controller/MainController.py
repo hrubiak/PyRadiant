@@ -143,7 +143,7 @@ class MainController(object):
 
     def closeEvent(self, event):
         self.save_settings()
-      
+        self.temperature_controller.cleanup()
         self.main_widget.close()
         self.data_history_widget.close()
         self.temperature_controller.close_log()

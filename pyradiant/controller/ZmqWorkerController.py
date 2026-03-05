@@ -145,6 +145,8 @@ class ZmqWorkerController(QtCore.QObject):
         self._recv_port = None
         self._results_port = None
         self._health_port = None
+        self._input_dir = None
+        self._output_dir = None
         self._worker_name = "spectroradiometry"
         self.temperature_controller = None   # set by TemperatureController after init
 
@@ -179,7 +181,9 @@ class ZmqWorkerController(QtCore.QObject):
         _root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         if _root not in sys.path:
             sys.path.insert(0, _root)
-        from config import load_config, get_worker_port, get_results_port, get_worker_health_port
+        from config import (load_config, get_worker_port, get_results_port,
+                            get_worker_health_port, get_worker_input_directory,
+                            get_worker_output_directory)
         self._config = load_config(path)
         self._config["_path"] = path
 
@@ -199,6 +203,8 @@ class ZmqWorkerController(QtCore.QObject):
         self._recv_port    = get_worker_port(worker_name, self._config) if worker_name else None
         self._results_port = get_results_port(self._config)
         self._health_port  = get_worker_health_port(worker_name, self._config) if worker_name else None
+        self._input_dir    = get_worker_input_directory(worker_name, self._config) if worker_name else None
+        self._output_dir   = get_worker_output_directory(worker_name, self._config) if worker_name else None
 
         self.widget.zmq_gb.config_lbl.setText(os.path.basename(path))
         self.widget.zmq_gb.worker_name_lbl.setText(self._worker_name)
@@ -209,6 +215,8 @@ class ZmqWorkerController(QtCore.QObject):
         self.widget.zmq_gb.health_port_lbl.setText(
             str(self._health_port) if self._health_port else "—"
         )
+        self.widget.zmq_gb.input_dir_lbl.setText(self._input_dir or "—")
+        self.widget.zmq_gb.output_dir_lbl.setText(self._output_dir or "—")
         self.widget.zmq_gb.listen_btn.setEnabled(
             self._recv_port is not None and self._results_port is not None
         )
@@ -271,9 +279,10 @@ class ZmqWorkerController(QtCore.QObject):
         result back.  Replace the body of this method to integrate with
         the pyradiant data-loading and fitting pipeline.
         """
-        folder   = msg.get("folder", "")
         filename = msg.get("filename", "")
-        self.widget.zmq_gb.last_job_lbl.setText(f"{folder}/{filename}")
+        self.widget.zmq_gb.last_job_txt.setPlainText(
+            json.dumps(msg, indent=2)
+        )
         self.job_started.emit(msg)
 
         # --- placeholder: load file and fit via temperature_controller ---

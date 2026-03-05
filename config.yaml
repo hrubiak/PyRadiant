@@ -7,19 +7,24 @@ workers:
     port: 5555
     health_port: 5556
     script: xrd_worker.py
+    input_directory: /data/raw/xrd
+    output_directory: /data/processed/xrd
   xrf:
     port: 5557
     health_port: 5558
     script: xrf_worker.py
+    input_directory: /data/raw/xrf
+    output_directory: /data/processed/xrf
   imaging:
     port: 5559
     health_port: 5560
     script: imaging_worker.py
+    input_directory: /data/raw/imaging
+    output_directory: /data/processed/imaging
   spectroradiometry:
     port: 5561
     health_port: 5562
     script: run_pyradiant.py
+    input_directory: /data/raw/spectroradiometry
+    output_directory: /data/processed/spectroradiometry
 
-data:
-  input_directory: /data/raw
-  output_directory: /data/processed

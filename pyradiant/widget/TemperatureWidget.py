@@ -110,6 +110,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.settings_gb = SettingsGroupBox()
         self.epics_gb = EPICSGroupBox()
         self.zmq_gb = ZmqWorkerGroupBox()
+        self.epicslogger_gb = EpicsLoggerGroupBox()
         
         self.roi_gb = self.roi_widget.roi_gb
         self.wl_range_widget = self.roi_widget.wl_range_widget
@@ -126,6 +127,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         
         self._other_settings_widget_layout.addWidget(self.epics_gb)
         self._other_settings_widget_layout.addWidget(self.zmq_gb)
+        self._other_settings_widget_layout.addWidget(self.epicslogger_gb)
         self._other_settings_widget_layout.addSpacerItem(VerticalSpacerItem())
         
         self._settings_widget_layout.addWidget(self.roi_settings_widget)
@@ -334,6 +336,10 @@ class StatusIndicator(QtWidgets.QLabel):
         self.setStyleSheet(self._STYLE.format(color="#FF5555"))
         self.setToolTip("Connection failed")
 
+    def set_ready(self):
+        self.setStyleSheet(self._STYLE.format(color="#F0A500"))
+        self.setToolTip("Socket ready — awaiting confirmation from remote")
+
 
 class EPICSGroupBox(QtWidgets.QGroupBox):
     def __init__(self, *args, **kwargs):
@@ -414,7 +420,7 @@ class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
         self.config_lbl.setWordWrap(True)
         self._layout.addWidget(self.config_lbl, 1, 0, 1, 2)
 
-        # Row 2 — worker name / port / results port
+        # Row 2 — worker name / port / results port / health port / directories
         self._layout.addWidget(QtWidgets.QLabel("Worker:"), 2, 0)
         self.worker_name_lbl = QtWidgets.QLabel("—")
         self._layout.addWidget(self.worker_name_lbl, 2, 1)
@@ -431,7 +437,21 @@ class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
         self.health_port_lbl = QtWidgets.QLabel("—")
         self._layout.addWidget(self.health_port_lbl, 5, 1)
 
-        # Row 6 — listen toggle + status indicator
+        self._layout.addWidget(QtWidgets.QLabel("Input dir:"), 6, 0)
+        self.input_dir_lbl = QtWidgets.QLabel("—")
+        self.input_dir_lbl.setFont(small)
+        self.input_dir_lbl.setWordWrap(True)
+        self.input_dir_lbl.setStyleSheet("color: #888888;")
+        self._layout.addWidget(self.input_dir_lbl, 6, 1)
+
+        self._layout.addWidget(QtWidgets.QLabel("Output dir:"), 7, 0)
+        self.output_dir_lbl = QtWidgets.QLabel("—")
+        self.output_dir_lbl.setFont(small)
+        self.output_dir_lbl.setWordWrap(True)
+        self.output_dir_lbl.setStyleSheet("color: #888888;")
+        self._layout.addWidget(self.output_dir_lbl, 7, 1)
+
+        # Row 8 — listen toggle + status indicator
         self.listen_btn = QtWidgets.QPushButton("Start Listening")
         self.listen_btn.setEnabled(False)
         self.status_indicator = StatusIndicator()
@@ -442,16 +462,82 @@ class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
         status_row_layout.addWidget(self.status_indicator)
         status_row_layout.addWidget(self.status_lbl)
         status_row_layout.addStretch()
-        self._layout.addWidget(self.listen_btn, 6, 0)
-        self._layout.addWidget(status_row, 6, 1)
+        self._layout.addWidget(self.listen_btn, 8, 0)
+        self._layout.addWidget(status_row, 8, 1)
 
-        # Row 7 — last received job
-        self._layout.addWidget(QtWidgets.QLabel("Last job:"), 7, 0)
-        self.last_job_lbl = QtWidgets.QLabel("—")
-        self.last_job_lbl.setWordWrap(True)
-        self.last_job_lbl.setStyleSheet("color: #888888;")
-        self.last_job_lbl.setFont(small)
-        self._layout.addWidget(self.last_job_lbl, 8, 0, 1, 2)
+        # Row 9/10 — last received job (read-only text area showing raw JSON)
+        self._layout.addWidget(QtWidgets.QLabel("Last received:"), 9, 0, 1, 2)
+        self.last_job_txt = QtWidgets.QPlainTextEdit()
+        self.last_job_txt.setReadOnly(True)
+        self.last_job_txt.setPlaceholderText("No job received yet")
+        self.last_job_txt.setFont(small)
+        self.last_job_txt.setMaximumHeight(90)
+        self.last_job_txt.setStyleSheet(
+            "color: #cccccc; background-color: #2a2a2a; border: 1px solid #444;"
+        )
+        self._layout.addWidget(self.last_job_txt, 10, 0, 1, 2)
+
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+
+
+class EpicsLoggerGroupBox(QtWidgets.QGroupBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__('epicsLogger Publisher')
+        self._layout = QtWidgets.QGridLayout()
+        self._layout.setHorizontalSpacing(6)
+        self._layout.setVerticalSpacing(4)
+
+        # Row 0 — config file
+        self.load_config_btn = QtWidgets.QPushButton("Load config.yaml")
+        self._layout.addWidget(self.load_config_btn, 0, 0, 1, 2)
+        self.config_lbl = QtWidgets.QLabel("—")
+        self.config_lbl.setStyleSheet("color: #888888;")
+        small = self.config_lbl.font()
+        small.setPointSize(small.pointSize() - 1)
+        self.config_lbl.setFont(small)
+        self.config_lbl.setWordWrap(True)
+        self._layout.addWidget(self.config_lbl, 1, 0, 1, 2)
+
+        # Row 2 — host / port / health port
+        self._layout.addWidget(QtWidgets.QLabel("Host:"), 2, 0)
+        self.host_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.host_lbl, 2, 1)
+
+        self._layout.addWidget(QtWidgets.QLabel("Port:"), 3, 0)
+        self.port_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.port_lbl, 3, 1)
+
+        self._layout.addWidget(QtWidgets.QLabel("Health port:"), 4, 0)
+        self.health_port_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.health_port_lbl, 4, 1)
+
+        # Row 5 — connect toggle + status indicator
+        self.connect_btn = QtWidgets.QPushButton("Connect")
+        self.connect_btn.setEnabled(False)
+        self.status_indicator = StatusIndicator()
+        self.status_lbl = QtWidgets.QLabel("Idle")
+        status_row = QtWidgets.QWidget()
+        status_row_layout = QtWidgets.QHBoxLayout(status_row)
+        status_row_layout.setContentsMargins(0, 0, 0, 0)
+        status_row_layout.addWidget(self.status_indicator)
+        status_row_layout.addWidget(self.status_lbl)
+        status_row_layout.addStretch()
+        self._layout.addWidget(self.connect_btn, 5, 0)
+        self._layout.addWidget(status_row, 5, 1)
+
+        # Row 6 — publish temperatures checkbox + indicator
+        self.publish_temperatures_cb = QtWidgets.QCheckBox("Publish temperatures to ZMQ")
+        self.publish_indicator = StatusIndicator()
+        self._layout.addWidget(self.publish_temperatures_cb, 6, 0)
+        self._layout.addWidget(self.publish_indicator, 6, 1)
+
+        # Row 7 — last trigger timestamp
+        self._layout.addWidget(QtWidgets.QLabel("Last trigger:"), 7, 0)
+        self.last_trigger_lbl = QtWidgets.QLabel("—")
+        self.last_trigger_lbl.setFont(small)
+        self.last_trigger_lbl.setStyleSheet("color: #888888;")
+        self._layout.addWidget(self.last_trigger_lbl, 7, 1)
 
         self.setLayout(self._layout)
         self.setMaximumWidth(300)

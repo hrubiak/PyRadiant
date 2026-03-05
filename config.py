@@ -59,6 +59,32 @@ def get_worker_health_port(worker_name, config):
     return config.get("workers", {}).get(worker_name, {}).get("health_port")
 
 
+def get_worker_input_directory(worker_name, config):
+    """Return the input directory for *worker_name*, or None if not set."""
+    return config.get("workers", {}).get(worker_name, {}).get("input_directory")
+
+
+def get_worker_output_directory(worker_name, config):
+    """Return the output directory for *worker_name*, or None if not set."""
+    return config.get("workers", {}).get(worker_name, {}).get("output_directory")
+
+
+def get_epicslogger_connection(worker_name, config):
+    """Return the zmq_listeners entry for *worker_name*, or None if not found.
+
+    Returns a dict with keys: host, port, health_port, enabled.
+    """
+    entry = config.get("zmq_listeners", {}).get(worker_name)
+    if entry is None:
+        return None
+    return {
+        "host":        entry.get("host", "127.0.0.1"),
+        "port":        entry.get("port"),
+        "health_port": entry.get("health_port"),
+        "enabled":     entry.get("enabled", True),
+    }
+
+
 def get_worker_names(config):
     """Return the list of worker names defined in the config."""
     return list(config.get("workers", {}).keys())
