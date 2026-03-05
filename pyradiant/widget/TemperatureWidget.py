@@ -427,7 +427,11 @@ class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
         self.results_port_lbl = QtWidgets.QLabel("—")
         self._layout.addWidget(self.results_port_lbl, 4, 1)
 
-        # Row 5 — listen toggle + status indicator
+        self._layout.addWidget(QtWidgets.QLabel("Health port:"), 5, 0)
+        self.health_port_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.health_port_lbl, 5, 1)
+
+        # Row 6 — listen toggle + status indicator
         self.listen_btn = QtWidgets.QPushButton("Start Listening")
         self.listen_btn.setEnabled(False)
         self.status_indicator = StatusIndicator()
@@ -438,16 +442,16 @@ class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
         status_row_layout.addWidget(self.status_indicator)
         status_row_layout.addWidget(self.status_lbl)
         status_row_layout.addStretch()
-        self._layout.addWidget(self.listen_btn, 5, 0)
-        self._layout.addWidget(status_row, 5, 1)
+        self._layout.addWidget(self.listen_btn, 6, 0)
+        self._layout.addWidget(status_row, 6, 1)
 
-        # Row 6 — last received job
-        self._layout.addWidget(QtWidgets.QLabel("Last job:"), 6, 0)
+        # Row 7 — last received job
+        self._layout.addWidget(QtWidgets.QLabel("Last job:"), 7, 0)
         self.last_job_lbl = QtWidgets.QLabel("—")
         self.last_job_lbl.setWordWrap(True)
         self.last_job_lbl.setStyleSheet("color: #888888;")
         self.last_job_lbl.setFont(small)
-        self._layout.addWidget(self.last_job_lbl, 7, 0, 1, 2)
+        self._layout.addWidget(self.last_job_lbl, 8, 0, 1, 2)
 
         self.setLayout(self._layout)
         self.setMaximumWidth(300)

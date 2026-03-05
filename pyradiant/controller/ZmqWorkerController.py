@@ -51,10 +51,12 @@ class ZmqListenerThread(QtCore.QThread):
     job_received = QtCore.pyqtSignal(dict)
     error_occurred = QtCore.pyqtSignal(str)
 
-    def __init__(self, recv_port, results_port, parent=None):
+    def __init__(self, recv_port, results_port, health_port=None, worker_name="spectroradiometry", parent=None):
         super().__init__(parent)
         self.recv_port = recv_port
         self.results_port = results_port
+        self.health_port = health_port
+        self.worker_name = worker_name
         self._stop_flag = False
         self._results_socket = None
         self._context = None
@@ -72,8 +74,15 @@ class ZmqListenerThread(QtCore.QThread):
         self._results_socket = self._context.socket(zmq.PUSH)
         self._results_socket.connect(f"tcp://127.0.0.1:{self.results_port}")
 
+        health = None
+        if self.health_port is not None:
+            health = self._context.socket(zmq.REP)
+            health.bind(f"tcp://*:{self.health_port}")
+
         poller = zmq.Poller()
         poller.register(receiver, zmq.POLLIN)
+        if health is not None:
+            poller.register(health, zmq.POLLIN)
 
         while not self._stop_flag:
             try:
@@ -82,6 +91,13 @@ class ZmqListenerThread(QtCore.QThread):
                     raw = receiver.recv()
                     msg = json.loads(raw)
                     self.job_received.emit(msg)
+                if health is not None and health in ready:
+                    health.recv()   # consume the ping (content ignored)
+                    health.send_json({
+                        "type":   "pong",
+                        "status": "ready",
+                        "worker": self.worker_name,
+                    })
             except zmq.ZMQError as exc:
                 if not self._stop_flag:
                     self.error_occurred.emit(str(exc))
@@ -90,6 +106,8 @@ class ZmqListenerThread(QtCore.QThread):
                 self.error_occurred.emit(str(exc))
 
         receiver.close()
+        if health is not None:
+            health.close()
         if self._results_socket:
             self._results_socket.close()
         self._context.term()
@@ -126,6 +144,8 @@ class ZmqWorkerController(QtCore.QObject):
         self._config = {}
         self._recv_port = None
         self._results_port = None
+        self._health_port = None
+        self._worker_name = "spectroradiometry"
         self.temperature_controller = None   # set by TemperatureController after init
 
         self._connect_widget_signals()
@@ -159,7 +179,7 @@ class ZmqWorkerController(QtCore.QObject):
         _root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         if _root not in sys.path:
             sys.path.insert(0, _root)
-        from config import load_config, get_worker_port, get_results_port, get_worker_names
+        from config import load_config, get_worker_port, get_results_port, get_worker_health_port
         self._config = load_config(path)
         self._config["_path"] = path
 
@@ -175,14 +195,19 @@ class ZmqWorkerController(QtCore.QObject):
                     worker_name = name
                     break
 
-        self._recv_port = get_worker_port(worker_name, self._config) if worker_name else None
+        self._worker_name  = worker_name or "spectroradiometry"
+        self._recv_port    = get_worker_port(worker_name, self._config) if worker_name else None
         self._results_port = get_results_port(self._config)
+        self._health_port  = get_worker_health_port(worker_name, self._config) if worker_name else None
 
         self.widget.zmq_gb.config_lbl.setText(os.path.basename(path))
-        self.widget.zmq_gb.worker_name_lbl.setText(worker_name or "—")
+        self.widget.zmq_gb.worker_name_lbl.setText(self._worker_name)
         self.widget.zmq_gb.port_lbl.setText(str(self._recv_port) if self._recv_port else "—")
         self.widget.zmq_gb.results_port_lbl.setText(
             str(self._results_port) if self._results_port else "—"
+        )
+        self.widget.zmq_gb.health_port_lbl.setText(
+            str(self._health_port) if self._health_port else "—"
         )
         self.widget.zmq_gb.listen_btn.setEnabled(
             self._recv_port is not None and self._results_port is not None
@@ -204,7 +229,9 @@ class ZmqWorkerController(QtCore.QObject):
             self.widget.zmq_gb.status_indicator.set_error()
             return
 
-        self._thread = ZmqListenerThread(self._recv_port, self._results_port)
+        self._thread = ZmqListenerThread(self._recv_port, self._results_port,
+                                         health_port=self._health_port,
+                                         worker_name=self._worker_name)
         self._thread.job_received.connect(self._handle_job)
         self._thread.error_occurred.connect(self._handle_error)
         self._thread.finished.connect(self._on_thread_finished)

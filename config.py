@@ -54,6 +54,11 @@ def get_results_port(config):
     return config.get("ports", {}).get("coordinator_results")
 
 
+def get_worker_health_port(worker_name, config):
+    """Return the ZMQ health-check (REP) port for *worker_name*, or None if not set."""
+    return config.get("workers", {}).get(worker_name, {}).get("health_port")
+
+
 def get_worker_names(config):
     """Return the list of worker names defined in the config."""
     return list(config.get("workers", {}).keys())
