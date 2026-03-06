@@ -41,7 +41,8 @@ from .helper.signal import Signal
 
 from scipy.interpolate import interp1d
 
-from .helper.filter_oscillation import filter_oscillatory_component 
+from .helper.filter_oscillation import filter_oscillatory_component
+from .temperature_pipeline import pipeline, Stage
 
 
 T_LOG_FILE = 'T_log'
@@ -136,36 +137,53 @@ class TemperatureModelConfiguration(QtCore.QObject):
 
     # loading spe or h5 image files:
     #########################################################################
-    def load_data_image(self, filename, area_detector=None):
-        if area_detector == None:
-            if not self.filename or not os.path.dirname(self.filename) == os.path.dirname(filename):
+    def _load_raw_data(self, filename, area_detector=None):
+        """Stage LOAD helper: file I/O → data_img_file, _data_img, x_calibration.
 
+        Stores the image on each SingleTemperatureModel (store-only; no computation).
+        Called by TemperaturePipeline._stage_load() for the normal file path, and
+        also directly by load_data_image() for the area-detector path.
+        """
+        if area_detector is None:
+            if not self.filename or not os.path.dirname(self.filename) == os.path.dirname(filename):
                 lf = self.create_log_file(os.path.dirname(filename))
                 if lf is not None:
                     self.log_file_loaded_signal.emit()
             self.filename = filename
-            # Get the extension
             _, file_extension = os.path.splitext(filename)
-        if area_detector!=None:
-            area_detector.update_data()
-            self.data_img_file = area_detector
-        else:
             if file_extension == '.spe' or file_extension == '.SPE':
                 self.data_img_file = SpeFile(filename)
             elif file_extension == '.h5':
-                self.data_img_file = H5File(filename,self.x_calibration)
-
+                self.data_img_file = H5File(filename, self.x_calibration)
+            self._filename_iterator.update_filename(filename)
+            self.mtime = self.get_last_modified_time(filename)
+        else:
+            area_detector.update_data()
+            self.data_img_file = area_detector
 
         if self.data_img_file.num_frames > 1:
-            if not (self.current_frame >= 0 and self.current_frame< self.data_img_file.num_frames):
+            if not (self.current_frame >= 0 and self.current_frame < self.data_img_file.num_frames):
                 self.current_frame = 0
             self._data_img = self.data_img_file.img[self.current_frame]
         else:
             self.current_frame = 0
             self._data_img = self.data_img_file.img
+
+        # Store image data on each model (store-only; pipeline handles computation).
         self._update_temperature_models_data()
-        self._filename_iterator.update_filename(filename)
-        self.mtime = self.get_last_modified_time(filename)
+
+    def load_data_image(self, filename, area_detector=None):
+        """Load a data file and run the full calculation pipeline.
+
+        Stages: LOAD (file I/O + store) → DATA_SPEC → CALIB_SPEC → CORRECT → FIT.
+        Emits data_changed_signal when done.
+        """
+        if area_detector is None:
+            pipeline.run(self, Stage.LOAD, filename)
+        else:
+            # Area-detector path: file I/O handled inline, then compute from DATA_SPEC.
+            self._load_raw_data(filename, area_detector)
+            pipeline.run(self, Stage.DATA_SPEC)
         self.data_changed_emit(self.current_frame)
 
         
@@ -212,7 +230,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
             current_frame = 0
         self.current_frame = current_frame
         self._data_img = self.data_img_file.img[frame_number]
-        self._update_temperature_models_data()
+        self._update_temperature_models_data()   # store new frame image on each model
+        pipeline.run(self, Stage.DATA_SPEC)      # re-extract spectra, correct, fit
         self.data_changed_emit(self.current_frame)
         return True
     
@@ -299,24 +318,23 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def set_temperature_fit_function(self, function_type):
         if function_type == 'wien' or function_type == 'plank':
             self.temperature_fit_function_str = function_type
-            self._update_temperature_models_data()
+            self.ds_temperature_model.set_temperature_fit_function(function_type)
+            self.us_temperature_model.set_temperature_fit_function(function_type)
+            pipeline.run(self, Stage.FIT)
             self.data_changed_emit(self.current_frame)
 
 
 
-    def set_use_insitu_background(self, use_data_background,use_calibration_background):
-        if use_data_background != self.use_insitu_data_background or use_calibration_background !=self.use_insitu_calibration_background:
+    def set_use_insitu_background(self, use_data_background, use_calibration_background):
+        if use_data_background != self.use_insitu_data_background or use_calibration_background != self.use_insitu_calibration_background:
             self.use_insitu_data_background = use_data_background
             self.use_insitu_calibration_background = use_calibration_background
             self.ds_temperature_model.subtract_inistu_data_background = use_data_background
             self.us_temperature_model.subtract_inistu_data_background = use_data_background
             self.ds_temperature_model.subtract_inistu_calibration_background = use_calibration_background
             self.us_temperature_model.subtract_inistu_calibration_background = use_calibration_background
-            self.ds_temperature_model._update_calibration_spectrum()
-            self.us_temperature_model._update_calibration_spectrum()
-            
-            self._update_temperature_models_data()
-            
+            # Background flag affects both data and calibration extraction.
+            pipeline.run(self, Stage.DATA_SPEC)
             self.data_changed_emit(self.current_frame)
 
     def _update_temperature_models_data(self):
@@ -338,6 +356,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def data_img(self, value):
         self._data_img = value
         self._update_temperature_models_data()
+        pipeline.run(self, Stage.DATA_SPEC)
         self.data_changed_emit(self.current_frame)
 
     def has_data(self):
@@ -371,7 +390,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def ds_set_calibration_data(self):
         self.ds_temperature_model.set_calibration_data(self.ds_calibration_img_file,
                                                        self.ds_calibration_img_file.x_calibration)
-        
+        pipeline.run_ds(self, Stage.CALIB_SPEC)
 
     def load_us_calibration_image(self, filename):
         # Get the extension
@@ -391,7 +410,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def us_set_calibration_data(self):
         self.us_temperature_model.set_calibration_data(self.us_calibration_img_file,
                                                        self.us_calibration_img_file.x_calibration)
-        
+        pipeline.run_us(self, Stage.CALIB_SPEC)
+
 
     # setting standard interface
     #########################################################################
@@ -400,10 +420,12 @@ class TemperatureModelConfiguration(QtCore.QObject):
 
     def load_ds_standard_spectrum(self, filename):
         self.ds_temperature_model.load_standard_spectrum(filename)
+        pipeline.run_ds(self, Stage.CORRECT)
         self.ds_calculations_changed_emit()
 
     def load_us_standard_spectrum(self, filename):
         self.us_temperature_model.load_standard_spectrum(filename)
+        pipeline.run_us(self, Stage.CORRECT)
         self.us_calculations_changed_emit()
 
     def save_ds_standard_spectrum(self, filename):
@@ -414,18 +436,22 @@ class TemperatureModelConfiguration(QtCore.QObject):
 
     def set_ds_calibration_modus(self, modus):
         self.ds_temperature_model.set_calibration_modus(modus)
+        pipeline.run_ds(self, Stage.CORRECT)
         self.ds_calculations_changed_emit()
 
     def set_us_calibration_modus(self, modus):
         self.us_temperature_model.set_calibration_modus(modus)
+        pipeline.run_us(self, Stage.CORRECT)
         self.us_calculations_changed_emit()
 
     def set_ds_calibration_temperature(self, temperature):
         self.ds_temperature_model.set_calibration_temperature(temperature)
+        pipeline.run_ds(self, Stage.CORRECT)
         self.ds_calculations_changed_emit()
 
     def set_us_calibration_temperature(self, temperature):
         self.us_temperature_model.set_calibration_temperature(temperature)
+        pipeline.run_us(self, Stage.CORRECT)
         self.us_calculations_changed_emit()
 
     def save_setting(self, filename):
@@ -516,8 +542,6 @@ class TemperatureModelConfiguration(QtCore.QObject):
 
 
             self.ds_temperature_model.set_calibration_data(ds_img, x_calibration)
-            
-            self.ds_temperature_model._update_all_spectra()
 
 
         else:
@@ -566,7 +590,6 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.roi_data_manager.set_roi(3, img_dimension, us_group_roi_bg)
             self.us_temperature_model.set_calibration_data(us_img,
                                                            us_group['image'].attrs['x_calibration'][...])
-            self.us_temperature_model._update_all_spectra()
         else:
             self.us_temperature_model.reset_calibration_data()
             self.us_calibration_filename = None
@@ -597,12 +620,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
         temperature = float(us_group['temperature'][...])
         self.us_temperature_model.calibration_parameter.set_temperature(temperature)
 
-        self.ds_temperature_model._update_all_spectra()
-        self.us_temperature_model._update_all_spectra()
-
-        self.ds_temperature_model.fit_data()
-        self.us_temperature_model.fit_data()
-
+        pipeline.run(self, Stage.DATA_SPEC)
 
         self.data_changed_emit(self.current_frame)
 
@@ -780,10 +798,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
 
     @ds_roi.setter
     def ds_roi(self, ds_limits):
-    
         self.roi_data_manager.set_roi(0, self.data_img_file.get_dimension(), ds_limits)
-        self.ds_temperature_model._update_all_spectra()
-        self.ds_temperature_model.fit_data()
+        pipeline.run_ds(self, Stage.DATA_SPEC)
         self.ds_calculations_changed_emit()
 
     @property
@@ -798,8 +814,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
     @us_roi.setter
     def us_roi(self, us_limits):
         self.roi_data_manager.set_roi(1, self.data_img_file.get_dimension(), us_limits)
-        self.us_temperature_model._update_all_spectra()
-        self.us_temperature_model.fit_data()
+        pipeline.run_us(self, Stage.DATA_SPEC)
         self.us_calculations_changed_emit()
 
     @property
@@ -812,8 +827,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
     @ds_roi_bg.setter
     def ds_roi_bg(self, ds_bg_limits):
         self.roi_data_manager.set_roi(2, self.data_img_file.get_dimension(), ds_bg_limits)
-        self.ds_temperature_model._update_all_spectra()
-        self.ds_temperature_model.fit_data()
+        pipeline.run_ds(self, Stage.DATA_SPEC)
         self.ds_calculations_changed_emit()
 
     @property
@@ -826,8 +840,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
     @us_roi_bg.setter
     def us_roi_bg(self, us_bg_limits):
         self.roi_data_manager.set_roi(3, self.data_img_file.get_dimension(), us_bg_limits)
-        self.us_temperature_model._update_all_spectra()
-        self.us_temperature_model.fit_data()
+        pipeline.run_us(self, Stage.DATA_SPEC)
         self.us_calculations_changed_emit()
 
     @property
@@ -837,8 +850,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
     @ ds_filter_oscillation.setter
     def ds_filter_oscillation(self, apply_filter):
         self.ds_temperature_model.filter_oscillation = apply_filter
-        self.ds_temperature_model._update_all_spectra()
-        self.ds_temperature_model.fit_data()
+        pipeline.run_ds(self, Stage.CORRECT)
         self.ds_calculations_changed_emit()
 
     @property
@@ -848,8 +860,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
     @ us_filter_oscillation.setter
     def us_filter_oscillation(self, apply_filter):
         self.us_temperature_model.filter_oscillation = apply_filter
-        self.us_temperature_model._update_all_spectra()
-        self.us_temperature_model.fit_data()
+        pipeline.run_us(self, Stage.CORRECT)
         self.us_calculations_changed_emit()
 
     @property
@@ -860,11 +871,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def filter_freq_min(self, value):
         self.ds_temperature_model.filter_freq_min = value
         self.us_temperature_model.filter_freq_min = value
-        self.ds_temperature_model._update_all_spectra()
-        self.ds_temperature_model.fit_data()
+        pipeline.run(self, Stage.CORRECT)
         self.ds_calculations_changed_emit()
-        self.us_temperature_model._update_all_spectra()
-        self.us_temperature_model.fit_data()
         self.us_calculations_changed_emit()
 
     @property
@@ -875,11 +883,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def filter_freq_max(self, value):
         self.ds_temperature_model.filter_freq_max = value
         self.us_temperature_model.filter_freq_max = value
-        self.ds_temperature_model._update_all_spectra()
-        self.ds_temperature_model.fit_data()
+        pipeline.run(self, Stage.CORRECT)
         self.ds_calculations_changed_emit()
-        self.us_temperature_model._update_all_spectra()
-        self.us_temperature_model.fit_data()
         self.us_calculations_changed_emit()
 
     @property
@@ -1128,15 +1133,10 @@ class SingleTemperatureModel(QtCore.QObject):
         return self._data_img
 
     def set_data(self, img_data, x_calibration):
+        """Store raw image data. Computation is handled by TemperaturePipeline."""
         self._data_img = img_data
         self._data_img_x_calibration = x_calibration
         self._data_img_dimension = (img_data.shape[1], img_data.shape[0])
-
-
-        self._update_data_spectrum()
-        self._update_corrected_spectrum()
-        self.fit_data()
-        #self.data_changed_stm.emit()
 
     @property
     def calibration_img(self):
@@ -1177,12 +1177,7 @@ class SingleTemperatureModel(QtCore.QObject):
                 self._calibration_img = img_data    
 
         self._calibration_img_dimension = (self._calibration_img.shape[1], self._calibration_img.shape[0])
-       
-
-        self._update_calibration_spectrum()
-        self._update_corrected_spectrum()
-        self.fit_data()
-        #self.data_changed_stm.emit()
+        # Computation is handled by TemperaturePipeline (run_ds / run_us from CALIB_SPEC).
 
     def set_temperature_fit_function(self, function_type_str:str):
         if function_type_str == 'wien':
@@ -1205,9 +1200,8 @@ class SingleTemperatureModel(QtCore.QObject):
     # setting standard interface
     #########################################################################
     def load_standard_spectrum(self, filename):
+        """Load standard spectrum. Computation is handled by the caller via pipeline."""
         self.calibration_parameter.load_standard_spectrum(filename)
-        self._update_all_spectra()
-        self.fit_data()
 
     
 
@@ -1217,14 +1211,12 @@ class SingleTemperatureModel(QtCore.QObject):
   
 
     def set_calibration_modus(self, modus):
+        """Set calibration modus. Computation is handled by the caller via pipeline."""
         self.calibration_parameter.set_modus(modus)
-        self._update_all_spectra()
-        self.fit_data()
 
     def set_calibration_temperature(self, temperature):
+        """Set calibration temperature. Computation is handled by the caller via pipeline."""
         self.calibration_parameter.set_temperature(temperature)
-        self._update_all_spectra()
-        self.fit_data()
 
     # Spectrum calculations
     #########################################################################

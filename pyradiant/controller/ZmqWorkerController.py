@@ -302,7 +302,7 @@ class ZmqWorkerController(QtCore.QObject):
         self._thread = ZmqListenerThread(self._recv_port, self._results_port,
                                          health_port=self._health_port,
                                          worker_name=self._worker_name)
-        self._thread.job_received.connect(self._handle_job)
+        self._thread.job_received.connect(self._on_message_received)
         self._thread.error_occurred.connect(self._handle_error)
         self._thread.finished.connect(self._on_thread_finished)
         self._thread.start()
@@ -334,7 +334,7 @@ class ZmqWorkerController(QtCore.QObject):
     # Job handling
     # ------------------------------------------------------------------
 
-    def _handle_job(self, msg: dict):
+    def _on_message_received(self, msg: dict):
         """Entry point for all incoming ZMQ messages. Routes by type."""
         try:
             self.widget.zmq_gb.last_job_txt.setPlainText(json.dumps(msg, indent=2))
@@ -342,48 +342,15 @@ class ZmqWorkerController(QtCore.QObject):
             self.widget.zmq_gb.last_job_txt.setPlainText(repr(msg))
 
         msg_type = msg.get("type")
-
-        # Dispatch table: add new message types here
         _handlers = {
-            "cursor": self._handle_cursor,
-            "job":    self._handle_job_msg,
+            "job": self._handle_job,
         }
         handler = _handlers.get(msg_type)
         if handler is not None:
             self.widget.zmq_gb.status_lbl.setText(f"{msg_type} message received")
             handler(msg)
         else:
-            # Unknown type — treat as a plain job if folder/filename present, else ignore
-            if msg.get("filename"):
-                self._handle_job_msg(msg)
-            else:
-                self.widget.zmq_gb.status_lbl.setText(f"Unknown message type: {msg_type!r}")
-
-    def _handle_job_msg(self, msg: dict):
-        """Handle a plain job message: load file, fit, dispatch result."""
-        import os
-        if self._temperature_controller is None:
-            self._dispatch_error(msg, "temperature_controller not connected")
-            return
-
-        folder   = msg.get("folder", "")
-        filename = msg.get("filename", "")
-        filepath = os.path.join(folder, filename) if folder else filename
-
-        if not os.path.exists(filepath):
-            self._dispatch_error(msg, f"file not found: {filepath}")
-            return
-
-        self._last_dispatched_job = None   # prevent stale signal from triggering during load
-        self.widget.zmq_gb.status_lbl.setText(f"Loading {filename}…")
-        self.job_started.emit(msg)
-        try:
-            self._temperature_controller.load_data_file(filenames=[filepath])
-        except Exception as exc:
-            self._dispatch_error(msg, str(exc))
-            return
-        # Pipeline is synchronous — fitting is done by the time load_data_file returns
-        self._collect_and_dispatch(msg)
+            self.widget.zmq_gb.status_lbl.setText(f"Unknown message type: {msg_type!r}")
 
     def _collect_and_dispatch(self, msg: dict):
         """Collect fit results from the current configuration and dispatch them."""
@@ -480,16 +447,14 @@ class ZmqWorkerController(QtCore.QObject):
             "gain":                 gain,
         }
 
-    def _handle_cursor(self, msg: dict):
-        """Handle a cursor message from epicsLogViewer.
-
-        Extracts the filename from data["CCD_FileName"] (stripping the
-        original Windows/Linux path), then looks for that file in
-        input_directory (from the message, falling back to the configured
-        input dir).  Tries common spectroradiometry extensions when the
-        path has none.
-        """
+    def _handle_job(self, msg: dict):
+        """Handle a job message: resolve file from data["CCD_FileName"] + input_directory,
+        load, fit, dispatch result."""
         import os
+
+        if self._temperature_controller is None:
+            self._dispatch_error(msg, "temperature_controller not connected")
+            return
 
         data = msg.get("data", {})
         ccd_path = data.get("CCD_FileName", "")
@@ -502,10 +467,10 @@ class ZmqWorkerController(QtCore.QObject):
         basename = os.path.basename(ccd_path.replace("\\", "/"))
 
         if not basename:
-            self.widget.zmq_gb.status_lbl.setText("Cursor: no filename in CCD_FileName")
+            self._dispatch_error(msg, "no filename in CCD_FileName")
             return
         if not input_dir:
-            self.widget.zmq_gb.status_lbl.setText("Cursor: no input_directory configured")
+            self._dispatch_error(msg, "no input_directory configured")
             return
 
         candidate = os.path.join(input_dir, basename)
@@ -519,24 +484,24 @@ class ZmqWorkerController(QtCore.QObject):
                     break
 
         if not os.path.exists(candidate):
-            self.widget.zmq_gb.status_lbl.setText(f"Cursor: not found — {basename}")
+            self._dispatch_error(msg, f"file not found — {basename}")
             return
 
-        import os as _os
         self._last_dispatched_job = None   # prevent stale signal from triggering during load
-        self.widget.zmq_gb.status_lbl.setText(f"Cursor: loading {_os.path.basename(candidate)}")
-        if self.temperature_controller is not None:
-            try:
-                self.temperature_controller.load_data_file(filenames=[candidate])
-            except Exception as exc:
-                self._dispatch_error(msg, str(exc))
-                return
-            job = {
-                "filename":  _os.path.basename(candidate),
-                "row":       msg.get("row"),
-                "timestamp": msg.get("timestamp"),
-            }
-            self._collect_and_dispatch(job)
+        self.widget.zmq_gb.status_lbl.setText(f"Loading {os.path.basename(candidate)}…")
+        self.job_started.emit(msg)
+        try:
+            self._temperature_controller.load_data_file(filenames=[candidate])
+        except Exception as exc:
+            self._dispatch_error(msg, str(exc))
+            return
+        # Pipeline is synchronous — fitting is done by the time load_data_file returns
+        job = {
+            "filename":  os.path.basename(candidate),
+            "row":       msg.get("row"),
+            "timestamp": msg.get("timestamp"),
+        }
+        self._collect_and_dispatch(job)
 
     def cleanup(self):
         """Stop the listener thread cleanly (call on app close)."""
