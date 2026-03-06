@@ -425,6 +425,26 @@ class ZmqWorkerController(QtCore.QObject):
             return None
 
     @staticmethod
+    def _find_path_value(data: dict) -> str:
+        """Return the first file-path-like string found in *data*.
+
+        Checks a list of well-known key names first (in priority order), then
+        falls back to scanning all string values for anything that contains a
+        path separator.  This makes the worker agnostic to the exact field name
+        used by different coordinators.
+        """
+        preferred_keys = ("CCD_FileName", "filename", "file_path", "path", "file")
+        for key in preferred_keys:
+            val = data.get(key, "")
+            if isinstance(val, str) and val:
+                return val
+        # Fallback: first string value that looks like a path
+        for val in data.values():
+            if isinstance(val, str) and ("\\" in val or "/" in val):
+                return val
+        return ""
+
+    @staticmethod
     def collect_temperature_values(conf):
         """Return a JSON-safe values dict from a TemperatureModelConfiguration.
 
@@ -448,7 +468,7 @@ class ZmqWorkerController(QtCore.QObject):
         }
 
     def _handle_job(self, msg: dict):
-        """Handle a job message: resolve file from data["CCD_FileName"] + input_directory,
+        """Handle a job message: resolve file path from msg["data"] + input_directory,
         load, fit, dispatch result."""
         import os
 
@@ -457,7 +477,7 @@ class ZmqWorkerController(QtCore.QObject):
             return
 
         data = msg.get("data", {})
-        ccd_path = data.get("CCD_FileName", "")
+        ccd_path = self._find_path_value(data)
         input_dir = msg.get("input_directory") or self._input_dir or ""
 
         # Strip surrounding quotes that a user may have pasted (e.g. '/path' or "/path")
