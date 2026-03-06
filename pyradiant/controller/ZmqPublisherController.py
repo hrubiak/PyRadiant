@@ -24,7 +24,6 @@ Trigger message format (PyRadiant → epicsLogger)::
     }
 """
 
-import json
 from datetime import datetime
 
 from PyQt6 import QtCore
@@ -39,11 +38,17 @@ except ImportError:
 # Fields included in every trigger data payload.
 # Keep in sync with _send_temperature_trigger() in TemperatureController.
 CAPABILITIES_FIELDS = [
-    {"key": "ds_temperature_K",     "label": "DS Temperature (K)",       "type": "float"},
-    {"key": "ds_temperature_err_K", "label": "DS Temperature Error (K)",  "type": "float"},
-    {"key": "us_temperature_K",     "label": "US Temperature (K)",        "type": "float"},
-    {"key": "us_temperature_err_K", "label": "US Temperature Error (K)",  "type": "float"},
-    {"key": "filename",             "label": "Spectroradiometry Filename",  "type": "str"},
+    {"key": "ds_temperature",       "label": "DS Temperature (K)",        "type": "float"},
+    {"key": "ds_temperature_error", "label": "DS Temperature Error (K)",  "type": "float"},
+    {"key": "us_temperature",       "label": "US Temperature (K)",        "type": "float"},
+    {"key": "us_temperature_error", "label": "US Temperature Error (K)",  "type": "float"},
+    {"key": "ds_fringe_frequency",  "label": "DS Fringe Frequency (cm)",  "type": "float"},
+    {"key": "ds_fringe_nd_um",      "label": "DS n·d (μm)",               "type": "float"},
+    {"key": "us_fringe_frequency",  "label": "US Fringe Frequency (cm)",  "type": "float"},
+    {"key": "us_fringe_nd_um",      "label": "US n·d (μm)",               "type": "float"},
+    {"key": "exposure_time",        "label": "Exposure Time (s)",         "type": "float"},
+    {"key": "gain",                 "label": "Gain",                      "type": "float"},
+    {"key": "filename",             "label": "Spectroradiometry Filename", "type": "str"},
 ]
 
 

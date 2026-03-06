@@ -449,20 +449,11 @@ class TemperatureController(QtCore.QObject):
         """Build a data payload from the current fit and send to epicsLogger."""
         if not self.widget.epicslogger_gb.publish_temperatures_cb.isChecked():
             return
-        import math
         cfg = self.model.current_configuration
-        data = {}
-        if hasattr(cfg, 'ds_temperature') and not math.isnan(cfg.ds_temperature):
-            data['ds_temperature_K'] = round(cfg.ds_temperature, 1)
-        if hasattr(cfg, 'ds_temperature_error') and not math.isnan(cfg.ds_temperature_error):
-            data['ds_temperature_err_K'] = round(cfg.ds_temperature_error, 1)
-        if hasattr(cfg, 'us_temperature') and not math.isnan(cfg.us_temperature):
-            data['us_temperature_K'] = round(cfg.us_temperature, 1)
-        if hasattr(cfg, 'us_temperature_error') and not math.isnan(cfg.us_temperature_error):
-            data['us_temperature_err_K'] = round(cfg.us_temperature_error, 1)
+        data = ZmqWorkerController.collect_temperature_values(cfg)
         if cfg.filename:
             data['filename'] = os.path.basename(cfg.filename)
-        self.zmq_publisher_controller.send_trigger(data if data else None)
+        self.zmq_publisher_controller.send_trigger(data if any(v is not None for v in data.values()) else None)
 
     def cleanup(self):
         """Stop all background threads cleanly (called on app exit)."""

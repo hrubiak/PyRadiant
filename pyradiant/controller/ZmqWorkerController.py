@@ -193,6 +193,8 @@ class ZmqWorkerController(QtCore.QObject):
         self._output_dir = None
         self._worker_name = "spectroradiometry"
         self._temperature_controller = None
+        self._last_dispatched_job = None     # job dict of the last successfully sent result
+        self._last_dispatched_values = None  # values dict — used to skip no-change re-dispatches
 
         self._connect_widget_signals()
 
@@ -202,7 +204,17 @@ class ZmqWorkerController(QtCore.QObject):
 
     @temperature_controller.setter
     def temperature_controller(self, controller):
+        if self._temperature_controller is not None:
+            m = self._temperature_controller.model
+            m.data_changed_signal.disconnect(self._on_user_recalculation)
+            m.ds_calculations_changed.disconnect(self._on_user_recalculation)
+            m.us_calculations_changed.disconnect(self._on_user_recalculation)
         self._temperature_controller = controller
+        if controller is not None:
+            m = controller.model
+            m.data_changed_signal.connect(self._on_user_recalculation)
+            m.ds_calculations_changed.connect(self._on_user_recalculation)
+            m.us_calculations_changed.connect(self._on_user_recalculation)
 
     # ------------------------------------------------------------------
     # Widget signal wiring
@@ -212,7 +224,6 @@ class ZmqWorkerController(QtCore.QObject):
         w = self.widget.zmq_gb
         w.load_config_btn.clicked.connect(self.load_config_clicked)
         w.listen_btn.clicked.connect(self.toggle_listening)
-        w.test_job_btn.clicked.connect(self._send_test_job)
 
     # ------------------------------------------------------------------
     # Config loading
@@ -268,8 +279,6 @@ class ZmqWorkerController(QtCore.QObject):
         self.widget.zmq_gb.health_port_lbl.setText(
             str(self._health_port) if self._health_port else "—"
         )
-        self.widget.zmq_gb.input_dir_lbl.setText(self._input_dir or "—")
-        self.widget.zmq_gb.output_dir_lbl.setText(self._output_dir or "—")
         self.widget.zmq_gb.listen_btn.setEnabled(
             self._recv_port is not None and self._results_port is not None
         )
@@ -325,24 +334,6 @@ class ZmqWorkerController(QtCore.QObject):
     # Job handling
     # ------------------------------------------------------------------
 
-    def _send_test_job(self):
-        """Inject a synthetic job using the currently loaded file (if any)."""
-        import os
-        conf = (self._temperature_controller.model.current_configuration
-                if self._temperature_controller else None)
-        if conf and conf.filename:
-            folder   = os.path.dirname(conf.filename)
-            filename = os.path.basename(conf.filename)
-        else:
-            folder, filename = "", ""
-        msg = {
-            "folder":    folder,
-            "filename":  filename,
-            "row":       0,
-            "timestamp": None,
-        }
-        self._handle_job(msg)
-
     def _handle_job(self, msg: dict):
         """Entry point for all incoming ZMQ messages. Routes by type."""
         try:
@@ -383,6 +374,7 @@ class ZmqWorkerController(QtCore.QObject):
             self._dispatch_error(msg, f"file not found: {filepath}")
             return
 
+        self._last_dispatched_job = None   # prevent stale signal from triggering during load
         self.widget.zmq_gb.status_lbl.setText(f"Loading {filename}…")
         self.job_started.emit(msg)
         try:
@@ -396,10 +388,6 @@ class ZmqWorkerController(QtCore.QObject):
     def _collect_and_dispatch(self, msg: dict):
         """Collect fit results from the current configuration and dispatch them."""
         conf = self._temperature_controller.model.current_configuration
-        sf   = self._safe_float
-        data_file = conf.data_img_file
-        gain = getattr(data_file, 'EMIccd_gain', None) or getattr(data_file, 'gain', None)
-
         result = {
             "type":      "result",
             "worker":    self._worker_name,
@@ -408,20 +396,32 @@ class ZmqWorkerController(QtCore.QObject):
             "filename":  msg.get("filename", ""),
             "status":    "ok",
             "message":   "",
-            "values": {
-                "ds_temperature":       sf(conf.ds_temperature),
-                "ds_temperature_error": sf(conf.ds_temperature_error),
-                "us_temperature":       sf(conf.us_temperature),
-                "us_temperature_error": sf(conf.us_temperature_error),
-                "ds_fringe_frequency":  sf(conf.ds_fringe_frequency),
-                "ds_fringe_nd_um":      sf(conf.ds_fringe_nd_um),
-                "us_fringe_frequency":  sf(conf.us_fringe_frequency),
-                "us_fringe_nd_um":      sf(conf.us_fringe_nd_um),
-                "exposure_time":        sf(getattr(data_file, 'exposure_time', None)),
-                "gain":                 gain,
-            },
+            "values":    self.collect_temperature_values(conf),
         }
         self._dispatch_result(result)
+        self._last_dispatched_job = msg
+        self._last_dispatched_values = result["values"]
+
+    def _on_user_recalculation(self):
+        """Called when any model signal fires (data_changed, ds/us_calculations_changed).
+
+        Dispatches an updated result if a ZMQ job context exists for the current
+        file and the computed values have actually changed since the last dispatch.
+        Skipping unchanged values prevents duplicate sends when ds and us signals
+        both fire for a single user action.
+        """
+        if self._last_dispatched_job is None:
+            return
+        if self._thread is None or not self._thread.isRunning():
+            return
+        import os
+        conf = self._temperature_controller.model.current_configuration
+        if os.path.basename(conf.filename or "") != self._last_dispatched_job.get("filename", ""):
+            return
+        new_values = self.collect_temperature_values(conf)
+        if new_values == self._last_dispatched_values:
+            return
+        self._collect_and_dispatch(self._last_dispatched_job)
 
     def _dispatch_result(self, result: dict):
         if self._thread is not None:
@@ -456,6 +456,29 @@ class ZmqWorkerController(QtCore.QObject):
             return None if (math.isnan(f) or math.isinf(f) or f == 0) else f
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def collect_temperature_values(conf):
+        """Return a JSON-safe values dict from a TemperatureModelConfiguration.
+
+        This is the canonical way to extract fit results from the model for any
+        outgoing ZMQ message (worker results and epicsLogger triggers alike).
+        """
+        sf = ZmqWorkerController._safe_float
+        data_file = conf.data_img_file
+        gain = getattr(data_file, 'EMIccd_gain', None) or getattr(data_file, 'gain', None)
+        return {
+            "ds_temperature":       sf(conf.ds_temperature),
+            "ds_temperature_error": sf(conf.ds_temperature_error),
+            "us_temperature":       sf(conf.us_temperature),
+            "us_temperature_error": sf(conf.us_temperature_error),
+            "ds_fringe_frequency":  sf(conf.ds_fringe_frequency),
+            "ds_fringe_nd_um":      sf(conf.ds_fringe_nd_um),
+            "us_fringe_frequency":  sf(conf.us_fringe_frequency),
+            "us_fringe_nd_um":      sf(conf.us_fringe_nd_um),
+            "exposure_time":        sf(getattr(data_file, 'exposure_time', None)),
+            "gain":                 gain,
+        }
 
     def _handle_cursor(self, msg: dict):
         """Handle a cursor message from epicsLogViewer.
@@ -500,6 +523,7 @@ class ZmqWorkerController(QtCore.QObject):
             return
 
         import os as _os
+        self._last_dispatched_job = None   # prevent stale signal from triggering during load
         self.widget.zmq_gb.status_lbl.setText(f"Cursor: loading {_os.path.basename(candidate)}")
         if self.temperature_controller is not None:
             try:

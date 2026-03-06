@@ -437,21 +437,7 @@ class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
         self.health_port_lbl = QtWidgets.QLabel("—")
         self._layout.addWidget(self.health_port_lbl, 5, 1)
 
-        self._layout.addWidget(QtWidgets.QLabel("Input dir:"), 6, 0)
-        self.input_dir_lbl = QtWidgets.QLabel("—")
-        self.input_dir_lbl.setFont(small)
-        self.input_dir_lbl.setWordWrap(True)
-        self.input_dir_lbl.setStyleSheet("color: #888888;")
-        self._layout.addWidget(self.input_dir_lbl, 6, 1)
-
-        self._layout.addWidget(QtWidgets.QLabel("Output dir:"), 7, 0)
-        self.output_dir_lbl = QtWidgets.QLabel("—")
-        self.output_dir_lbl.setFont(small)
-        self.output_dir_lbl.setWordWrap(True)
-        self.output_dir_lbl.setStyleSheet("color: #888888;")
-        self._layout.addWidget(self.output_dir_lbl, 7, 1)
-
-        # Row 8 — listen toggle + status indicator
+        # Row 6 — listen toggle + status indicator
         self.listen_btn = QtWidgets.QPushButton("Start Listening")
         self.listen_btn.setEnabled(False)
         self.status_indicator = StatusIndicator()
@@ -462,11 +448,11 @@ class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
         status_row_layout.addWidget(self.status_indicator)
         status_row_layout.addWidget(self.status_lbl)
         status_row_layout.addStretch()
-        self._layout.addWidget(self.listen_btn, 8, 0)
-        self._layout.addWidget(status_row, 8, 1)
+        self._layout.addWidget(self.listen_btn, 6, 0)
+        self._layout.addWidget(status_row, 6, 1)
 
-        # Row 9/10 — last received job (read-only text area showing raw JSON)
-        self._layout.addWidget(QtWidgets.QLabel("Last received:"), 9, 0, 1, 2)
+        # Row 7/8 — last received job (read-only text area showing raw JSON)
+        self._layout.addWidget(QtWidgets.QLabel("Last received:"), 7, 0, 1, 2)
         self.last_job_txt = QtWidgets.QPlainTextEdit()
         self.last_job_txt.setReadOnly(True)
         self.last_job_txt.setPlaceholderText("No job received yet")
@@ -475,10 +461,10 @@ class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
         self.last_job_txt.setStyleSheet(
             "color: #cccccc; background-color: #2a2a2a; border: 1px solid #444;"
         )
-        self._layout.addWidget(self.last_job_txt, 10, 0, 1, 2)
+        self._layout.addWidget(self.last_job_txt, 8, 0, 1, 2)
 
-        # Row 11/12 — last dispatched result (read-only text area showing raw JSON)
-        self._layout.addWidget(QtWidgets.QLabel("Last dispatched:"), 11, 0, 1, 2)
+        # Row 9/10 — last dispatched result (read-only text area showing raw JSON)
+        self._layout.addWidget(QtWidgets.QLabel("Last dispatched:"), 9, 0, 1, 2)
         self.last_result_txt = QtWidgets.QPlainTextEdit()
         self.last_result_txt.setReadOnly(True)
         self.last_result_txt.setPlaceholderText("No result dispatched yet")
@@ -487,11 +473,7 @@ class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
         self.last_result_txt.setStyleSheet(
             "color: #cccccc; background-color: #2a2a2a; border: 1px solid #444;"
         )
-        self._layout.addWidget(self.last_result_txt, 12, 0, 1, 2)
-
-        # Row 13 — test button (injects a synthetic job without needing the coordinator)
-        self.test_job_btn = QtWidgets.QPushButton("Send test job")
-        self._layout.addWidget(self.test_job_btn, 13, 0, 1, 2)
+        self._layout.addWidget(self.last_result_txt, 10, 0, 1, 2)
 
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
