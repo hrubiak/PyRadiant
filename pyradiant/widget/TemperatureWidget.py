@@ -477,6 +477,22 @@ class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
         )
         self._layout.addWidget(self.last_job_txt, 10, 0, 1, 2)
 
+        # Row 11/12 — last dispatched result (read-only text area showing raw JSON)
+        self._layout.addWidget(QtWidgets.QLabel("Last dispatched:"), 11, 0, 1, 2)
+        self.last_result_txt = QtWidgets.QPlainTextEdit()
+        self.last_result_txt.setReadOnly(True)
+        self.last_result_txt.setPlaceholderText("No result dispatched yet")
+        self.last_result_txt.setFont(small)
+        self.last_result_txt.setMaximumHeight(90)
+        self.last_result_txt.setStyleSheet(
+            "color: #cccccc; background-color: #2a2a2a; border: 1px solid #444;"
+        )
+        self._layout.addWidget(self.last_result_txt, 12, 0, 1, 2)
+
+        # Row 13 — test button (injects a synthetic job without needing the coordinator)
+        self.test_job_btn = QtWidgets.QPushButton("Send test job")
+        self._layout.addWidget(self.test_job_btn, 13, 0, 1, 2)
+
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
 

@@ -30,6 +30,22 @@ import json
 
 from PyQt6 import QtCore
 
+# Schema advertised to the coordinator via the "schema" query on the health port.
+# The "name" keys must exactly match the keys in the "values" dict of every
+# result message pushed back to the coordinator.
+SPECTRORADIOMETRY_SCHEMA = [
+    {"name": "ds_temperature",       "label": "DS Temperature",       "unit": "K"},
+    {"name": "ds_temperature_error", "label": "DS Temperature Error", "unit": "K"},
+    {"name": "us_temperature",       "label": "US Temperature",       "unit": "K"},
+    {"name": "us_temperature_error", "label": "US Temperature Error", "unit": "K"},
+    {"name": "ds_fringe_frequency",  "label": "DS Fringe Frequency",  "unit": "cm"},
+    {"name": "ds_fringe_nd_um",      "label": "DS n·d",               "unit": "μm"},
+    {"name": "us_fringe_frequency",  "label": "US Fringe Frequency",  "unit": "cm"},
+    {"name": "us_fringe_nd_um",      "label": "US n·d",               "unit": "μm"},
+    {"name": "exposure_time",        "label": "Exposure Time",        "unit": "s"},
+    {"name": "gain",                 "label": "Gain",                 "unit": ""},
+]
+
 try:
     import zmq
     ZMQ_AVAILABLE = True
@@ -69,15 +85,28 @@ class ZmqListenerThread(QtCore.QThread):
         self._context = zmq.Context()
 
         receiver = self._context.socket(zmq.PULL)
+        receiver.set(zmq.LINGER, 0)
         receiver.connect(f"tcp://127.0.0.1:{self.recv_port}")
 
         self._results_socket = self._context.socket(zmq.PUSH)
+        self._results_socket.set(zmq.LINGER, 0)
         self._results_socket.connect(f"tcp://127.0.0.1:{self.results_port}")
 
         health = None
         if self.health_port is not None:
             health = self._context.socket(zmq.REP)
-            health.bind(f"tcp://*:{self.health_port}")
+            health.set(zmq.LINGER, 0)
+            try:
+                health.bind(f"tcp://*:{self.health_port}")
+            except zmq.ZMQError as exc:
+                health.close()
+                receiver.close()
+                self._results_socket.close()
+                self._context.term()
+                self._context = None
+                self._results_socket = None
+                self.error_occurred.emit(f"Cannot bind health port {self.health_port}: {exc}")
+                return
 
         poller = zmq.Poller()
         poller.register(receiver, zmq.POLLIN)
@@ -92,12 +121,27 @@ class ZmqListenerThread(QtCore.QThread):
                     msg = json.loads(raw)
                     self.job_received.emit(msg)
                 if health is not None and health in ready:
-                    health.recv()   # consume the ping (content ignored)
-                    health.send_json({
-                        "type":   "pong",
-                        "status": "ready",
-                        "worker": self.worker_name,
-                    })
+                    try:
+                        req = health.recv_json()
+                    except Exception:
+                        req = {}
+                    msg_type = req.get("type")
+                    if msg_type == "schema":
+                        health.send_json({
+                            "type":    "schema_reply",
+                            "columns": SPECTRORADIOMETRY_SCHEMA,
+                        })
+                    elif msg_type == "ping" or msg_type is None:
+                        health.send_json({
+                            "type":   "pong",
+                            "status": "ready",
+                            "worker": self.worker_name,
+                        })
+                    else:
+                        health.send_json({
+                            "type":    "error",
+                            "message": f"unknown type: {msg_type}",
+                        })
             except zmq.ZMQError as exc:
                 if not self._stop_flag:
                     self.error_occurred.emit(str(exc))
@@ -148,9 +192,17 @@ class ZmqWorkerController(QtCore.QObject):
         self._input_dir = None
         self._output_dir = None
         self._worker_name = "spectroradiometry"
-        self.temperature_controller = None   # set by TemperatureController after init
+        self._temperature_controller = None
 
         self._connect_widget_signals()
+
+    @property
+    def temperature_controller(self):
+        return self._temperature_controller
+
+    @temperature_controller.setter
+    def temperature_controller(self, controller):
+        self._temperature_controller = controller
 
     # ------------------------------------------------------------------
     # Widget signal wiring
@@ -160,6 +212,7 @@ class ZmqWorkerController(QtCore.QObject):
         w = self.widget.zmq_gb
         w.load_config_btn.clicked.connect(self.load_config_clicked)
         w.listen_btn.clicked.connect(self.toggle_listening)
+        w.test_job_btn.clicked.connect(self._send_test_job)
 
     # ------------------------------------------------------------------
     # Config loading
@@ -269,29 +322,140 @@ class ZmqWorkerController(QtCore.QObject):
         self.status_changed.emit("error")
 
     # ------------------------------------------------------------------
-    # Job handling (placeholder — extend here)
+    # Job handling
     # ------------------------------------------------------------------
 
-    def _handle_job(self, msg: dict):
-        """Dispatch incoming messages by type."""
-        self.widget.zmq_gb.last_job_txt.setPlainText(json.dumps(msg, indent=2))
-        msg_type = msg.get("type")
-        if msg_type == "cursor":
-            self._handle_cursor(msg)
+    def _send_test_job(self):
+        """Inject a synthetic job using the currently loaded file (if any)."""
+        import os
+        conf = (self._temperature_controller.model.current_configuration
+                if self._temperature_controller else None)
+        if conf and conf.filename:
+            folder   = os.path.dirname(conf.filename)
+            filename = os.path.basename(conf.filename)
         else:
-            self.job_started.emit(msg)
-            result = {
-                "filename":       msg.get("filename", ""),
-                "ds_temperature": 0.0,
-                "ds_error":       0.0,
-                "us_temperature": 0.0,
-                "us_error":       0.0,
-                "status":         "ok",
-                "message":        "placeholder — processing not yet implemented",
-            }
-            if self._thread is not None:
-                self._thread.send_result(result)
-            self.job_finished.emit(result)
+            folder, filename = "", ""
+        msg = {
+            "folder":    folder,
+            "filename":  filename,
+            "row":       0,
+            "timestamp": None,
+        }
+        self._handle_job(msg)
+
+    def _handle_job(self, msg: dict):
+        """Entry point for all incoming ZMQ messages. Routes by type."""
+        try:
+            self.widget.zmq_gb.last_job_txt.setPlainText(json.dumps(msg, indent=2))
+        except Exception:
+            self.widget.zmq_gb.last_job_txt.setPlainText(repr(msg))
+
+        msg_type = msg.get("type")
+
+        # Dispatch table: add new message types here
+        _handlers = {
+            "cursor": self._handle_cursor,
+            "job":    self._handle_job_msg,
+        }
+        handler = _handlers.get(msg_type)
+        if handler is not None:
+            self.widget.zmq_gb.status_lbl.setText(f"{msg_type} message received")
+            handler(msg)
+        else:
+            # Unknown type — treat as a plain job if folder/filename present, else ignore
+            if msg.get("filename"):
+                self._handle_job_msg(msg)
+            else:
+                self.widget.zmq_gb.status_lbl.setText(f"Unknown message type: {msg_type!r}")
+
+    def _handle_job_msg(self, msg: dict):
+        """Handle a plain job message: load file, fit, dispatch result."""
+        import os
+        if self._temperature_controller is None:
+            self._dispatch_error(msg, "temperature_controller not connected")
+            return
+
+        folder   = msg.get("folder", "")
+        filename = msg.get("filename", "")
+        filepath = os.path.join(folder, filename) if folder else filename
+
+        if not os.path.exists(filepath):
+            self._dispatch_error(msg, f"file not found: {filepath}")
+            return
+
+        self.widget.zmq_gb.status_lbl.setText(f"Loading {filename}…")
+        self.job_started.emit(msg)
+        try:
+            self._temperature_controller.load_data_file(filenames=[filepath])
+        except Exception as exc:
+            self._dispatch_error(msg, str(exc))
+            return
+        # Pipeline is synchronous — fitting is done by the time load_data_file returns
+        self._collect_and_dispatch(msg)
+
+    def _collect_and_dispatch(self, msg: dict):
+        """Collect fit results from the current configuration and dispatch them."""
+        conf = self._temperature_controller.model.current_configuration
+        sf   = self._safe_float
+        data_file = conf.data_img_file
+        gain = getattr(data_file, 'EMIccd_gain', None) or getattr(data_file, 'gain', None)
+
+        result = {
+            "type":      "result",
+            "worker":    self._worker_name,
+            "row":       msg.get("row"),
+            "timestamp": msg.get("timestamp"),
+            "filename":  msg.get("filename", ""),
+            "status":    "ok",
+            "message":   "",
+            "values": {
+                "ds_temperature":       sf(conf.ds_temperature),
+                "ds_temperature_error": sf(conf.ds_temperature_error),
+                "us_temperature":       sf(conf.us_temperature),
+                "us_temperature_error": sf(conf.us_temperature_error),
+                "ds_fringe_frequency":  sf(conf.ds_fringe_frequency),
+                "ds_fringe_nd_um":      sf(conf.ds_fringe_nd_um),
+                "us_fringe_frequency":  sf(conf.us_fringe_frequency),
+                "us_fringe_nd_um":      sf(conf.us_fringe_nd_um),
+                "exposure_time":        sf(getattr(data_file, 'exposure_time', None)),
+                "gain":                 gain,
+            },
+        }
+        self._dispatch_result(result)
+
+    def _dispatch_result(self, result: dict):
+        if self._thread is not None:
+            self._thread.send_result(result)
+        try:
+            txt = json.dumps(result, indent=2)
+        except Exception as exc:
+            txt = f"[json error] {exc}\n{result!r}"
+        self.widget.zmq_gb.last_result_txt.setPlainText(txt)
+        self.widget.zmq_gb.status_lbl.setText(f"Result dispatched — status: {result.get('status', '?')}")
+        self.job_finished.emit(result)
+
+    def _dispatch_error(self, msg: dict, message: str):
+        result = {
+            "type":      "result",
+            "worker":    self._worker_name,
+            "row":       msg.get("row"),
+            "timestamp": msg.get("timestamp"),
+            "filename":  msg.get("filename", ""),
+            "status":    "error",
+            "message":   message,
+            "values":    {},
+        }
+        self._dispatch_result(result)
+
+    @staticmethod
+    def _safe_float(v):
+        """Return v as a JSON-safe float, or None if it is NaN, Inf, or falsy."""
+        import math
+        try:
+            f = float(v)
+            return None if (math.isnan(f) or math.isinf(f) or f == 0) else f
+        except (TypeError, ValueError):
+            return None
 
     def _handle_cursor(self, msg: dict):
         """Handle a cursor message from epicsLogViewer.
@@ -335,9 +499,20 @@ class ZmqWorkerController(QtCore.QObject):
             self.widget.zmq_gb.status_lbl.setText(f"Cursor: not found — {basename}")
             return
 
-        self.widget.zmq_gb.status_lbl.setText(f"Cursor: loading {os.path.basename(candidate)}")
+        import os as _os
+        self.widget.zmq_gb.status_lbl.setText(f"Cursor: loading {_os.path.basename(candidate)}")
         if self.temperature_controller is not None:
-            self.temperature_controller.load_data_file(filenames=[candidate])
+            try:
+                self.temperature_controller.load_data_file(filenames=[candidate])
+            except Exception as exc:
+                self._dispatch_error(msg, str(exc))
+                return
+            job = {
+                "filename":  _os.path.basename(candidate),
+                "row":       msg.get("row"),
+                "timestamp": msg.get("timestamp"),
+            }
+            self._collect_and_dispatch(job)
 
     def cleanup(self):
         """Stop the listener thread cleanly (call on app close)."""
