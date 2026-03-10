@@ -111,7 +111,7 @@ The `"schema"` response advertises what fields the worker puts in `"values"`:
 ```json
 {
     "type": "schema_reply",
-    "columns": [
+    "parameters": [
         {"name": "ds_temperature",       "label": "DS Temperature",       "unit": "K"},
         {"name": "ds_temperature_error", "label": "DS Temperature Error", "unit": "K"},
         {"name": "exposure_time",        "label": "Exposure Time",        "unit": "s"}
@@ -223,8 +223,8 @@ class ZmqListenerThread(QtCore.QThread):
                     req_type = req.get("type")
                     if req_type == "schema":
                         health.send_json({
-                            "type":    "schema_reply",
-                            "columns": MY_SCHEMA,
+                            "type":       "schema_reply",
+                            "parameters": MY_SCHEMA,
                         })
                     elif req_type == "ping" or req_type is None:
                         health.send_json({

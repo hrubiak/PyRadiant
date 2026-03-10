@@ -128,8 +128,8 @@ class ZmqListenerThread(QtCore.QThread):
                     msg_type = req.get("type")
                     if msg_type == "schema":
                         health.send_json({
-                            "type":    "schema_reply",
-                            "columns": SPECTRORADIOMETRY_SCHEMA,
+                            "type":       "schema_reply",
+                            "parameters": SPECTRORADIOMETRY_SCHEMA,
                         })
                     elif msg_type == "ping" or msg_type is None:
                         health.send_json({
