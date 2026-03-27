@@ -465,7 +465,7 @@ def detect_fft_peaks(freqs, power, prominence_ratio=0.05, freq_min=0.0, freq_max
 
 # === MAIN TEST CODE ===
 if __name__ == "__main__":
-    filename = "/Users/hrubiak/Desktop/20250624-melt-devel_00115_ds.txt"  # Replace with your file
+    filename = "/Users/ross/Desktop/20250108_Pt-wire-run17_00048_ds.txt"  # Replace with your file
     wavelengths, ds_data = read_spectral_data(filename)
 
     # Convert to cm⁻¹

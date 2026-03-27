@@ -62,6 +62,7 @@ class ConfigurationController(object):
         )
 
     def configuration_selected(self):
+        self.update_configuration_widget()
         datalog_controller: DataLogController
         datalog_controller = self.controllers[1]
         datalog_controller.disconnect_models()

@@ -106,9 +106,11 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.t_function_type_section = TemperatureFitSettings()
 
         self.filter_section = FilterSettings()
-        
+
         self.settings_gb = SettingsGroupBox()
         self.epics_gb = EPICSGroupBox()
+        self.zmq_gb = ZmqWorkerGroupBox()
+        self.epicslogger_gb = EpicsLoggerGroupBox()
         
         self.roi_gb = self.roi_widget.roi_gb
         self.wl_range_widget = self.roi_widget.wl_range_widget
@@ -124,6 +126,8 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._other_settings_widget_layout.addWidget(self.t_function_type_section)
         
         self._other_settings_widget_layout.addWidget(self.epics_gb)
+        self._other_settings_widget_layout.addWidget(self.zmq_gb)
+        self._other_settings_widget_layout.addWidget(self.epicslogger_gb)
         self._other_settings_widget_layout.addSpacerItem(VerticalSpacerItem())
         
         self._settings_widget_layout.addWidget(self.roi_settings_widget)
@@ -220,19 +224,33 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.graph_mouse_pos_lbl = self.graph_status_bar.left_lbl
         self.graph_info_lbl = self.graph_status_bar.right_lbl
 
-        self.setup_epics_pb = self.epics_gb. setup_epics_pb
-        self.connect_to_epics_cb = self.epics_gb. connect_to_epics_cb
+        self.setup_epics_pb = self.epics_gb.setup_epics_pb
+        self.connect_to_epics_cb = self.epics_gb.connect_to_epics_cb
         self.connect_to_epics_datalog_cb = self.epics_gb.connect_to_epics_datalog_cb
-        self.connect_to_ad_cb = self.epics_gb. connect_to_ad_cb
+        self.monitor_folder_cb = self.epics_gb.monitor_folder_cb
+        self.connect_to_ad_cb = self.epics_gb.connect_to_ad_cb
+        self.epics_publish_indicator = self.epics_gb.epics_publish_indicator
+        self.monitor_folder_indicator = self.epics_gb.monitor_folder_indicator
+        self.ad_indicator = self.epics_gb.ad_indicator
+        self.monitor_folder_path_lbl = self.epics_gb.monitor_folder_path_lbl
+        self.ad_last_update_lbl = self.epics_gb.ad_last_update_lbl
+        self.file_system_rb = self.epics_gb.file_system_rb
+        self.live_stream_rb = self.epics_gb.live_stream_rb
 
 
-        self.browse_by_name_rb = self.control_widget.file_gb.browse_by_name_rb 
-        self.browse_by_time_rb = self.control_widget.file_gb.browse_by_time_rb 
+        self.source_mode_badge = self.control_widget.file_gb.source_mode_badge
+
+        self.browse_by_name_rb = self.control_widget.file_gb.browse_by_name_rb
+        self.browse_by_time_rb = self.control_widget.file_gb.browse_by_time_rb
 
         self.temperature_function_plank_rb = self.t_function_type_section.plank_btn
         self.temperature_function_wien_rb = self.t_function_type_section.wien_btn
 
-        self.interference_filter_cb = self.filter_section.filter_btn
+        self.ds_interference_filter_cb = self.filter_section.ds_filter_btn
+        self.us_interference_filter_cb = self.filter_section.us_filter_btn
+        self.save_filtered_cb = self.filter_section.save_filtered_cb
+        self.filter_freq_min_sb = self.filter_section.freq_min_sb
+        self.filter_freq_max_sb = self.filter_section.freq_max_sb
 
         self.use_backbround_data_cb = self.roi_widget.use_backbround_data_cb
         self.use_backbround_calibration_cb = self.roi_widget.use_backbround_calibration_cb
@@ -298,22 +316,227 @@ class TemperatureFileNavigation(QtWidgets.QWidget):
         
 
 
+class StatusIndicator(QtWidgets.QLabel):
+    _STYLE = "background-color: {color}; border-radius: 5px;"
+
+    def __init__(self):
+        super().__init__()
+        self.setFixedSize(10, 10)
+        self.set_inactive()
+
+    def set_active(self):
+        self.setStyleSheet(self._STYLE.format(color="#4DDECD"))
+        self.setToolTip("Connected")
+
+    def set_inactive(self):
+        self.setStyleSheet(self._STYLE.format(color="#505050"))
+        self.setToolTip("Not connected")
+
+    def set_error(self):
+        self.setStyleSheet(self._STYLE.format(color="#FF5555"))
+        self.setToolTip("Connection failed")
+
+    def set_ready(self):
+        self.setStyleSheet(self._STYLE.format(color="#F0A500"))
+        self.setToolTip("Socket ready — awaiting confirmation from remote")
+
+
 class EPICSGroupBox(QtWidgets.QGroupBox):
     def __init__(self, *args, **kwargs):
         super().__init__('EPICS')
 
         self._layout = QtWidgets.QGridLayout()
-   
+
         self.setup_epics_pb = QtWidgets.QPushButton("Setup EPICS")
-        self.connect_to_epics_cb = QtWidgets.QCheckBox("Connect to EPICS")
+        self.connect_to_epics_cb = QtWidgets.QCheckBox("Publish temperatures to EPICS")
         self.connect_to_epics_datalog_cb = QtWidgets.QCheckBox("Connect to datalog")
-        self.connect_to_ad_cb = QtWidgets.QCheckBox("Connect to AD")
-        self.connect_to_epics_cb.setLayoutDirection(QtCore.Qt.LayoutDirection.RightToLeft)
-        self.connect_to_ad_cb.setLayoutDirection(QtCore.Qt.LayoutDirection.RightToLeft)
-        self._layout.addWidget(self.setup_epics_pb,0,0)
-        self._layout.addWidget(self.connect_to_epics_cb,0,1)
-        self._layout.addWidget(self.connect_to_ad_cb,1,1)
-        
+        self.monitor_folder_cb = QtWidgets.QCheckBox("Monitor file folder via EPICS")
+        self.connect_to_ad_cb = QtWidgets.QCheckBox("Stream from Area Detector")
+        self.epics_publish_indicator = StatusIndicator()
+        self.monitor_folder_indicator = StatusIndicator()
+        self.ad_indicator = StatusIndicator()
+
+        # Data source mode selector
+        self.data_source_bg = QtWidgets.QButtonGroup()
+        self.file_system_rb = QtWidgets.QRadioButton("File system")
+        self.live_stream_rb = QtWidgets.QRadioButton("Live AD stream")
+        self.data_source_bg.addButton(self.file_system_rb)
+        self.data_source_bg.addButton(self.live_stream_rb)
+        self.file_system_rb.setChecked(True)
+
+        mode_widget = QtWidgets.QWidget()
+        mode_layout = QtWidgets.QHBoxLayout(mode_widget)
+        mode_layout.setContentsMargins(0, 2, 0, 2)
+        mode_layout.setSpacing(6)
+        mode_lbl = QtWidgets.QLabel("Source:")
+        mode_layout.addWidget(mode_lbl)
+        mode_layout.addWidget(self.file_system_rb)
+        mode_layout.addWidget(self.live_stream_rb)
+        mode_layout.addStretch()
+
+        self.monitor_folder_path_lbl = QtWidgets.QLabel("")
+        self.monitor_folder_path_lbl.setWordWrap(True)
+        self.monitor_folder_path_lbl.setStyleSheet("color: #888888; padding-left: 4px;")
+        small_font = self.monitor_folder_path_lbl.font()
+        small_font.setPointSize(small_font.pointSize() - 1)
+        self.monitor_folder_path_lbl.setFont(small_font)
+
+        self.ad_last_update_lbl = QtWidgets.QLabel("")
+        self.ad_last_update_lbl.setWordWrap(True)
+        self.ad_last_update_lbl.setStyleSheet("color: #888888; padding-left: 4px;")
+        small_font2 = self.ad_last_update_lbl.font()
+        small_font2.setPointSize(small_font2.pointSize() - 1)
+        self.ad_last_update_lbl.setFont(small_font2)
+
+        self._layout.addWidget(self.setup_epics_pb, 0, 0, 1, 2)
+        self._layout.addWidget(mode_widget, 1, 0, 1, 2)
+        self._layout.addWidget(self.connect_to_epics_cb, 2, 0)
+        self._layout.addWidget(self.epics_publish_indicator, 2, 1)
+        self._layout.addWidget(self.monitor_folder_cb, 3, 0)
+        self._layout.addWidget(self.monitor_folder_indicator, 3, 1)
+        self._layout.addWidget(self.monitor_folder_path_lbl, 4, 0, 1, 2)
+        self._layout.addWidget(self.connect_to_ad_cb, 5, 0)
+        self._layout.addWidget(self.ad_indicator, 5, 1)
+        self._layout.addWidget(self.ad_last_update_lbl, 6, 0, 1, 2)
+
+        self.setLayout(self._layout)
+
+
+class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__('ZMQ Worker')
+        self._layout = QtWidgets.QGridLayout()
+        self._layout.setHorizontalSpacing(6)
+        self._layout.setVerticalSpacing(4)
+
+        # Row 0 — config file
+        self.load_config_btn = QtWidgets.QPushButton("Load config.yaml")
+        self._layout.addWidget(self.load_config_btn, 0, 0, 1, 2)
+        self.config_lbl = QtWidgets.QLabel("—")
+        self.config_lbl.setStyleSheet("color: #888888;")
+        small = self.config_lbl.font()
+        small.setPointSize(small.pointSize() - 1)
+        self.config_lbl.setFont(small)
+        self.config_lbl.setWordWrap(True)
+        self._layout.addWidget(self.config_lbl, 1, 0, 1, 2)
+
+        # Row 2 — worker name / port / results port / health port / directories
+        self._layout.addWidget(QtWidgets.QLabel("Worker:"), 2, 0)
+        self.worker_name_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.worker_name_lbl, 2, 1)
+
+        self._layout.addWidget(QtWidgets.QLabel("Port:"), 3, 0)
+        self.port_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.port_lbl, 3, 1)
+
+        self._layout.addWidget(QtWidgets.QLabel("Results port:"), 4, 0)
+        self.results_port_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.results_port_lbl, 4, 1)
+
+        self._layout.addWidget(QtWidgets.QLabel("Health port:"), 5, 0)
+        self.health_port_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.health_port_lbl, 5, 1)
+
+        # Row 6 — listen toggle + status indicator
+        self.listen_btn = QtWidgets.QPushButton("Start Listening")
+        self.listen_btn.setEnabled(False)
+        self.status_indicator = StatusIndicator()
+        self.status_lbl = QtWidgets.QLabel("Idle")
+        status_row = QtWidgets.QWidget()
+        status_row_layout = QtWidgets.QHBoxLayout(status_row)
+        status_row_layout.setContentsMargins(0, 0, 0, 0)
+        status_row_layout.addWidget(self.status_indicator)
+        status_row_layout.addWidget(self.status_lbl)
+        status_row_layout.addStretch()
+        self._layout.addWidget(self.listen_btn, 6, 0)
+        self._layout.addWidget(status_row, 6, 1)
+
+        # Row 7/8 — last received job (read-only text area showing raw JSON)
+        self._layout.addWidget(QtWidgets.QLabel("Last received:"), 7, 0, 1, 2)
+        self.last_job_txt = QtWidgets.QPlainTextEdit()
+        self.last_job_txt.setReadOnly(True)
+        self.last_job_txt.setPlaceholderText("No job received yet")
+        self.last_job_txt.setFont(small)
+        self.last_job_txt.setMaximumHeight(90)
+        self.last_job_txt.setStyleSheet(
+            "color: #cccccc; background-color: #2a2a2a; border: 1px solid #444;"
+        )
+        self._layout.addWidget(self.last_job_txt, 8, 0, 1, 2)
+
+        # Row 9/10 — last dispatched result (read-only text area showing raw JSON)
+        self._layout.addWidget(QtWidgets.QLabel("Last dispatched:"), 9, 0, 1, 2)
+        self.last_result_txt = QtWidgets.QPlainTextEdit()
+        self.last_result_txt.setReadOnly(True)
+        self.last_result_txt.setPlaceholderText("No result dispatched yet")
+        self.last_result_txt.setFont(small)
+        self.last_result_txt.setMaximumHeight(90)
+        self.last_result_txt.setStyleSheet(
+            "color: #cccccc; background-color: #2a2a2a; border: 1px solid #444;"
+        )
+        self._layout.addWidget(self.last_result_txt, 10, 0, 1, 2)
+
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+
+
+class EpicsLoggerGroupBox(QtWidgets.QGroupBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__('epicsLogger Publisher')
+        self._layout = QtWidgets.QGridLayout()
+        self._layout.setHorizontalSpacing(6)
+        self._layout.setVerticalSpacing(4)
+
+        # Row 0 — config file
+        self.load_config_btn = QtWidgets.QPushButton("Load config.yaml")
+        self._layout.addWidget(self.load_config_btn, 0, 0, 1, 2)
+        self.config_lbl = QtWidgets.QLabel("—")
+        self.config_lbl.setStyleSheet("color: #888888;")
+        small = self.config_lbl.font()
+        small.setPointSize(small.pointSize() - 1)
+        self.config_lbl.setFont(small)
+        self.config_lbl.setWordWrap(True)
+        self._layout.addWidget(self.config_lbl, 1, 0, 1, 2)
+
+        # Row 2 — host / port / health port
+        self._layout.addWidget(QtWidgets.QLabel("Host:"), 2, 0)
+        self.host_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.host_lbl, 2, 1)
+
+        self._layout.addWidget(QtWidgets.QLabel("Port:"), 3, 0)
+        self.port_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.port_lbl, 3, 1)
+
+        self._layout.addWidget(QtWidgets.QLabel("Health port:"), 4, 0)
+        self.health_port_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.health_port_lbl, 4, 1)
+
+        # Row 5 — connect toggle + status indicator
+        self.connect_btn = QtWidgets.QPushButton("Connect")
+        self.connect_btn.setEnabled(False)
+        self.status_indicator = StatusIndicator()
+        self.status_lbl = QtWidgets.QLabel("Idle")
+        status_row = QtWidgets.QWidget()
+        status_row_layout = QtWidgets.QHBoxLayout(status_row)
+        status_row_layout.setContentsMargins(0, 0, 0, 0)
+        status_row_layout.addWidget(self.status_indicator)
+        status_row_layout.addWidget(self.status_lbl)
+        status_row_layout.addStretch()
+        self._layout.addWidget(self.connect_btn, 5, 0)
+        self._layout.addWidget(status_row, 5, 1)
+
+        # Row 6 — publish temperatures checkbox + indicator
+        self.publish_temperatures_cb = QtWidgets.QCheckBox("Publish temperatures to ZMQ")
+        self.publish_indicator = StatusIndicator()
+        self._layout.addWidget(self.publish_temperatures_cb, 6, 0)
+        self._layout.addWidget(self.publish_indicator, 6, 1)
+
+        # Row 7 — last trigger timestamp
+        self._layout.addWidget(QtWidgets.QLabel("Last trigger:"), 7, 0)
+        self.last_trigger_lbl = QtWidgets.QLabel("—")
+        self.last_trigger_lbl.setFont(small)
+        self.last_trigger_lbl.setStyleSheet("color: #888888;")
+        self._layout.addWidget(self.last_trigger_lbl, 7, 1)
+
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
 
@@ -386,16 +609,59 @@ class TemperatureFitSettings(QtWidgets.QGroupBox):
 class FilterSettings(QtWidgets.QGroupBox):
     def __init__(self, *args, **kwargs):
         super().__init__('Interference filter')
-        self._layout = QtWidgets.QHBoxLayout()
+        self._layout = QtWidgets.QGridLayout()
+        self._layout.setHorizontalSpacing(8)
+        self._layout.setVerticalSpacing(4)
 
-        self.filter_btn = QtWidgets.QCheckBox("Apply filter")
-        
+        # Header row
+        self._layout.addWidget(QtWidgets.QLabel(''),       0, 0)
+        self._layout.addWidget(QtWidgets.QLabel('Apply'),  0, 1)
+        self._layout.addWidget(QtWidgets.QLabel('Fringe (cm)'), 0, 2)
+        self._layout.addWidget(QtWidgets.QLabel('n·d (μm)'),    0, 3)
 
-        self._layout.addWidget(self.filter_btn)
-    
-        self.filter_btn.setChecked(False)
+        # DS row
+        self._layout.addWidget(QtWidgets.QLabel('DS'), 1, 0)
+        self.ds_filter_btn = QtWidgets.QCheckBox()
+        self.ds_filter_btn.setChecked(False)
+        self._layout.addWidget(self.ds_filter_btn, 1, 1)
+        self.ds_fringe_lbl = QtWidgets.QLabel('—')
+        self.ds_nd_lbl     = QtWidgets.QLabel('—')
+        self._layout.addWidget(self.ds_fringe_lbl, 1, 2)
+        self._layout.addWidget(self.ds_nd_lbl,     1, 3)
 
-        #self._layout.addSpacerItem(VerticalSpacerItem())
+        # US row
+        self._layout.addWidget(QtWidgets.QLabel('US'), 2, 0)
+        self.us_filter_btn = QtWidgets.QCheckBox()
+        self.us_filter_btn.setChecked(False)
+        self._layout.addWidget(self.us_filter_btn, 2, 1)
+        self.us_fringe_lbl = QtWidgets.QLabel('—')
+        self.us_nd_lbl     = QtWidgets.QLabel('—')
+        self._layout.addWidget(self.us_fringe_lbl, 2, 2)
+        self._layout.addWidget(self.us_nd_lbl,     2, 3)
+
+        # Save filtered output option
+        self._layout.addWidget(QtWidgets.QLabel('Save filtered'), 3, 0, 1, 2)
+        self.save_filtered_cb = QtWidgets.QCheckBox()
+        self.save_filtered_cb.setChecked(False)
+        self._layout.addWidget(self.save_filtered_cb, 3, 2, 1, 2)
+
+        # Frequency search range rows
+        self._layout.addWidget(QtWidgets.QLabel('f min (cm)'), 4, 0, 1, 2)
+        self.freq_min_sb = QtWidgets.QDoubleSpinBox()
+        self.freq_min_sb.setDecimals(4)
+        self.freq_min_sb.setRange(0.0, 0.5)
+        self.freq_min_sb.setSingleStep(0.0005)
+        self.freq_min_sb.setValue(0.0005)
+        self._layout.addWidget(self.freq_min_sb, 4, 2, 1, 2)
+
+        self._layout.addWidget(QtWidgets.QLabel('f max (cm)'), 5, 0, 1, 2)
+        self.freq_max_sb = QtWidgets.QDoubleSpinBox()
+        self.freq_max_sb.setDecimals(4)
+        self.freq_max_sb.setRange(0.0, 0.5)
+        self.freq_max_sb.setSingleStep(0.001)
+        self.freq_max_sb.setValue(0.05)
+        self._layout.addWidget(self.freq_max_sb, 5, 2, 1, 2)
+
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
 

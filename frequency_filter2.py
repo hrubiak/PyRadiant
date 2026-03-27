@@ -117,7 +117,7 @@ def plot_fft_peaks(freqs, power, peaks, threshold, left_edge_freq=None, right_ed
     plt.show()
 
 if __name__ == "__main__":
-    filename = "/Users/hrubiak/Desktop/20250624-melt-devel_00115_ds.txt"
+    filename = "/Users/ross/Desktop/20250108_Pt-wire-run17_00048_ds.txt"
     wavelengths, ds_data = read_spectral_data(filename)
 
     lambda_min = wavelengths[0]

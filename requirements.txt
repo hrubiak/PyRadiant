@@ -17,5 +17,7 @@ fabio>=2024.0
 pyFAI>=2024.0
 silx>=2.1
 natsort
+pyzmq>=25.0
+pyyaml>=6.0
 
 

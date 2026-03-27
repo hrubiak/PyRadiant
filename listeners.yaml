@@ -1,0 +1,5 @@
+zmq_listeners:
+  spectroradiometry:
+    port: 5070
+    enabled: true
+    health_port: 5071

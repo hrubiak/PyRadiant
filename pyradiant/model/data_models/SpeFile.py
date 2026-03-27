@@ -250,7 +250,11 @@ class SpeFile(DataModel):
             window_height = None
 
         self.readout_mode = mode
-        self.kinetics_window_height = int(window_height)
+        if window_height is not None:
+
+            self.kinetics_window_height = int(window_height)
+        else:
+            self.kinetics_window_height = None
 
     def _read_sensor_information_from_dom(self):
         """Reads the x calibration of the image from the xml footer and saves 
@@ -316,6 +320,26 @@ class SpeFile(DataModel):
             self.detector = self._camera[0].getAttribute('model')
         else:
             self.detector = 'unspecified'
+
+    @staticmethod
+    def read_detector(filename):
+        """Reads only the detector model name from a SPE file without loading image data.
+        Returns 'unspecified' for v2 files or if detector info is unavailable."""
+        try:
+            with open(filename, 'rb') as fid:
+                fid.seek(678)
+                xml_offset = np.frombuffer(fid.read(8), dtype=np.int64)[0]
+                if xml_offset <= 0:
+                    return 'unspecified'
+                fid.seek(int(xml_offset))
+                xml_string = fid.read()
+                dom = parseString(xml_string)
+                cameras = dom.getElementsByTagName('Camera')
+                if len(cameras) >= 1:
+                    return cameras[0].getAttribute('model')
+        except Exception:
+            pass
+        return 'unspecified'
 
     def _read_grating_from_dom(self):
         """Reads the type of grating from the dom Model"""

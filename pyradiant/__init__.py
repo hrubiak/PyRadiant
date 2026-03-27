@@ -35,12 +35,12 @@ style_path = os.path.join(resources_path, 'style')
 
 EPICS_INSTALLED = False
 try:
-    from epics import PV, caget, camonitor, camonitor_clear, ca, pv
+    from epics import PV, caget, camonitor, camonitor_clear, ca, pv 
     import socket
     import gc
     EPICS_INSTALLED = True
 except:
-    pass
+    pass 
 
 from .controller.MainController import MainController
 

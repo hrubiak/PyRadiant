@@ -42,9 +42,15 @@ class FileGroupBox(QtWidgets.QGroupBox):
         self._second_row_widget_layout = QtWidgets.QHBoxLayout(self._second_row_widget)
         self._second_row_widget_layout.setContentsMargins(0, 0, 0, 0)
         self._second_row_widget_layout.setSpacing(0)
-        #self._second_row_widget_layout.addWidget(self.dirname_lbl)
 
-        #self._second_row_widget_layout.addWidget(QtWidgets.QLabel(os.path.sep))
+        self.source_mode_badge = QtWidgets.QLabel("FILE")
+        self.source_mode_badge.setStyleSheet(
+            "background-color: #505050; color: #cccccc; border-radius: 3px;"
+            " padding: 1px 5px; font-weight: bold;"
+        )
+        self.source_mode_badge.setFixedHeight(18)
+        self._second_row_widget_layout.addWidget(self.source_mode_badge)
+        self._second_row_widget_layout.addSpacing(6)
         self._second_row_widget_layout.addWidget(self.filename_lbl)
         self._second_row_widget_layout.addSpacerItem(HorizontalSpacerItem())
         self._second_row_widget_layout.addWidget(self.frame_control_widget)

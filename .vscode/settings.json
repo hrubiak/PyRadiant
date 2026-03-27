@@ -1,5 +1,6 @@
 {
     "restructuredtext.confPath": "",
   
-    "python.pythonPath": "C:\\Users\\hrubiak\\Anaconda3\\envs\\pyradiant_env_3.12\\python.exe"
+    "python.pythonPath": "C:\\Users\\hrubiak\\Anaconda3\\envs\\pyradiant_env_3.12\\python.exe",
+    "claudeCode.environmentVariables": []
 }

@@ -18,6 +18,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
+from datetime import datetime
 
 from PyQt6 import QtWidgets, QtCore
 
@@ -29,6 +30,7 @@ from ..model.helper.FileNameIterator import get_file_and_extension
 from ..model import epics_settings as eps
 from .NewFileInDirectoryWatcher import NewFileInDirectoryWatcher
 from ..model.data_models.ADWatcher import ADWatcher
+from ..model.data_models.SpeFile import SpeFile
 import numpy as np
 from ..model.helper.HelperModule import get_partial_index , get_partial_value
 from .. widget.DataHistoryWidget import dataHistoryWidget
@@ -45,6 +47,9 @@ else:
     camonitor_clear = None
     caget = None
     PV = None
+
+from .ZmqWorkerController import ZmqWorkerController
+from .ZmqPublisherController import ZmqPublisherController
 
 
 class TemperatureController(QtCore.QObject):
@@ -88,52 +93,76 @@ class TemperatureController(QtCore.QObject):
 
         
         self._create_autoprocess_system()
-        
+
+        self.zmq_worker_controller = ZmqWorkerController(self.widget)
+        self.zmq_worker_controller.temperature_controller = self
+        self.zmq_publisher_controller = ZmqPublisherController(self.widget)
+
         self.create_signals()
+
+        # File system is default: AD checkbox starts disabled until live stream mode is selected
+        self.widget.connect_to_ad_cb.setEnabled(False)
+        self.widget.connect_to_ad_cb.setChecked(False)
 
         if not EPICS_INSTALLED:
             self.widget.connect_to_epics_cb.setEnabled(False)
             self.widget.connect_to_epics_cb.setChecked(False)
+            self.widget.monitor_folder_cb.setEnabled(False)
+            self.widget.monitor_folder_cb.setChecked(False)
             self.widget.connect_to_ad_cb.setEnabled(False)
             self.widget.connect_to_ad_cb.setChecked(False)
+            self.widget.live_stream_rb.setEnabled(False)
             
         # testing only: remove in production
         self.setup_epics_datalog_file_monitor()
         self.widget.connect_to_epics_datalog_cb.setChecked(True)
 
     def connect_epics(self):
+        if not hasattr(self, 'setup_epics_dialog'):
+            if EPICS_INSTALLED:
+                self.setup_epics_dialog = SetupEpicsDialog(self.widget)
+            else:
+                self.widget.epics_gb.hide()
 
-        
-        if  EPICS_INSTALLED:
-            self.setup_epics_dialog = SetupEpicsDialog(self.widget)
-        else:
-            self.widget.epics_gb.hide()
         self.epics_available = False
 
         if EPICS_INSTALLED:
-            
             if self.check_pv(eps.epics_settings['T_folder']):
                 self.epics_available = True
-                self.setup_temperature_file_folder_monitor()
-                
+                self.widget.epics_publish_indicator.set_active()
             else:
-                self.epics_available = False
-                
                 self.widget.connect_to_epics_cb.setChecked(False)
+                self.widget.epics_publish_indicator.set_error()
                 self.widget.show_error_dialog("Couldn't connect to EPICS.", "Connection Error")
-                
-        
+
     def disconnect_epics(self):
         self.epics_available = False
+        self.widget.epics_publish_indicator.set_inactive()
+
+    def connect_folder_monitor(self):
+        if EPICS_INSTALLED:
+            if self.check_pv(eps.epics_settings['T_folder']):
+                self.setup_temperature_file_folder_monitor()
+                self.widget.monitor_folder_indicator.set_active()
+                folder_path = caget(eps.epics_settings['T_folder'], as_string=True) or ''
+                self.widget.monitor_folder_path_lbl.setText(folder_path)
+            else:
+                self.widget.monitor_folder_cb.setChecked(False)
+                self.widget.monitor_folder_indicator.set_error()
+                self.widget.show_error_dialog("Couldn't connect to EPICS folder monitor.", "Connection Error")
+
+    def disconnect_folder_monitor(self):
         if eps.epics_settings['T_folder'] is not None \
                 and eps.epics_settings['T_folder'] != 'None':
             try:
                 camonitor_clear(eps.epics_settings['T_folder'])
             except:
                 pass
+        self.widget.monitor_folder_indicator.set_inactive()
+        self.widget.monitor_folder_path_lbl.setText("")
 
     def connect_to_area_detector(self):
-    
+
         if EPICS_INSTALLED:
             ad_on = self.widget.connect_to_ad_cb.isChecked()
             if ad_on:
@@ -143,18 +172,21 @@ class TemperatureController(QtCore.QObject):
                     if self._AD_watcher.initialized:
                         self._AD_watcher.file_added.connect(self.load_data_file_ad)
                         self._AD_watcher.activate()
+                        self.widget.ad_indicator.set_active()
                     else:
                         self.widget.show_error_dialog("Couldn't connect to Area Detector.", "Connection Error")
                         self.widget.connect_to_ad_cb.setChecked(False)
+                        self.widget.ad_indicator.set_error()
                         self._AD_watcher = None
-                
-    
+
     def disconnect_from_area_detector(self):
         if self._AD_watcher != None:
             if self._AD_watcher.initialized:
                 self._AD_watcher.deactivate()
                 self._AD_watcher.file_added.disconnect(self.load_data_file_ad)
                 self._AD_watcher = None
+        self.widget.ad_indicator.set_inactive()
+        self.widget.ad_last_update_lbl.setText("")
 
     def create_signals(self):
         # File signals
@@ -201,7 +233,11 @@ class TemperatureController(QtCore.QObject):
         self.widget.temperature_function_plank_rb.clicked.connect(self.temperature_function_callback)
         self.widget.temperature_function_wien_rb.clicked.connect(self.temperature_function_callback)
 
-        self.widget.interference_filter_cb.clicked.connect(self.filter_setting_callback)
+        self.widget.ds_interference_filter_cb.clicked.connect(self.filter_setting_callback)
+        self.widget.us_interference_filter_cb.clicked.connect(self.filter_setting_callback)
+        self.widget.save_filtered_cb.clicked.connect(self.save_filtered_callback)
+        self.widget.filter_freq_min_sb.valueChanged.connect(self.filter_freq_range_callback)
+        self.widget.filter_freq_max_sb.valueChanged.connect(self.filter_freq_range_callback)
 
         # Setting signals
         self.connect_click_function(self.widget.load_setting_btn, self.load_setting_file)
@@ -228,8 +264,10 @@ class TemperatureController(QtCore.QObject):
         
 
         # epics stuff
+        self.widget.file_system_rb.toggled.connect(self.data_source_mode_changed)
         self.widget.connect_to_ad_cb.clicked.connect(self.connect_to_ad_cb_callback)
         self.widget.connect_to_epics_cb.clicked.connect(self.connect_to_epics_cb_callback)
+        self.widget.monitor_folder_cb.clicked.connect(self.connect_to_monitor_folder_cb_callback)
 
         self.widget.use_backbround_data_cb.toggled.connect(self.use_backbround_cb_callback)
         self.widget.use_backbround_calibration_cb.toggled.connect(self.use_backbround_cb_callback)
@@ -282,6 +320,63 @@ class TemperatureController(QtCore.QObject):
         else:
             self.disconnect_epics()
 
+    def connect_to_monitor_folder_cb_callback(self):
+        if self.widget.monitor_folder_cb.isChecked():
+            self.connect_folder_monitor()
+        else:
+            self.disconnect_folder_monitor()
+
+    def _set_source_mode_badge(self, mode):
+        """Update the source mode badge in the file navigation bar.
+        mode: 'file' or 'ad'
+        """
+        badge = self.widget.source_mode_badge
+        if mode == 'ad':
+            badge.setText("AD LIVE")
+            badge.setStyleSheet(
+                "background-color: #4DDECD; color: #1a1a1a; border-radius: 3px;"
+                " padding: 1px 5px; font-weight: bold;"
+            )
+        else:
+            badge.setText("FILE")
+            badge.setStyleSheet(
+                "background-color: #505050; color: #cccccc; border-radius: 3px;"
+                " padding: 1px 5px; font-weight: bold;"
+            )
+
+    def data_source_mode_changed(self, file_system_selected):
+        if file_system_selected:
+            # Switching to file system mode
+            if self.widget.connect_to_ad_cb.isChecked():
+                self.widget.connect_to_ad_cb.setChecked(False)
+                self.disconnect_from_area_detector()
+            self.widget.connect_to_ad_cb.setEnabled(False)
+            self.widget.monitor_folder_cb.setEnabled(True)
+            self._set_source_mode_badge('file')
+            cfg = self.model.current_configuration
+            if cfg.filename:
+                fname = os.path.split(cfg.filename)[-1]
+                dirname = os.path.sep.join(os.path.dirname(cfg.filename).split(os.path.sep)[-2:])
+                self.widget.filename_lbl.setText(os.path.join(dirname, fname))
+                if cfg.mtime:
+                    self.widget.mtime.setText('Timestamp: ' + str(cfg.mtime))
+            else:
+                self.widget.filename_lbl.setText('Select File...')
+                self.widget.mtime.setText('')
+        else:
+            # Switching to live AD stream mode
+            if self.widget.monitor_folder_cb.isChecked():
+                self.widget.monitor_folder_cb.setChecked(False)
+                self.disconnect_folder_monitor()
+            self.widget.monitor_folder_cb.setEnabled(False)
+            self.widget.connect_to_ad_cb.setEnabled(True)
+            self._set_source_mode_badge('ad')
+            record_name = eps.epics_settings.get('area_detector', '?')
+            if self._AD_watcher is not None and self._AD_watcher.record_name:
+                record_name = self._AD_watcher.record_name
+            self.widget.filename_lbl.setText("AD: " + str(record_name))
+            self.widget.mtime.setText("Frame: \u2014")
+
 
     def process_multiframe(self):
         # hack, refactor later:
@@ -312,20 +407,58 @@ class TemperatureController(QtCore.QObject):
             if filename != '':
                 if os.path.isfile(filename):
                     self._exp_working_dir = os.path.dirname(str(filename))
+                    self._auto_switch_configuration_by_detector(filename)
                     self.model.current_configuration.load_data_image(str(filename))
                     self._directory_watcher.path = self._exp_working_dir
                     # hack, refactor later:
                     self.process_multiframe()
-                    #print('Loaded File: ', filename)
+                    # Ensure file system mode is active and badge reflects it
+                    if not self.widget.file_system_rb.isChecked():
+                        self.widget.file_system_rb.setChecked(True)
+                        # data_source_mode_changed(True) fires via signal and updates badge + labels
+                    else:
+                        self._set_source_mode_badge('file')
+                    self._send_temperature_trigger()
                 else:
                     pass
                     #print('file not found: ' + str(filename))
+
+    def _auto_switch_configuration_by_detector(self, filename):
+        """Switch to the configuration whose calibration files match the detector of the given file."""
+        _, ext = os.path.splitext(filename)
+        if ext.lower() != '.spe':
+            return
+        detector = SpeFile.read_detector(filename)
+        ind = self.model.find_configuration_for_detector(detector)
+        if ind is not None and ind != self.model.configuration_ind:
+            self.model.select_configuration(ind)
 
     def load_data_file_ad(self, filename=None):
         if isinstance(filename, str):
             self.model.current_configuration.load_data_image_ad(self._AD_watcher)
             # hack, refactor later:
             self.process_multiframe()
+            ts = datetime.now().strftime('%H:%M:%S')
+            record_name = self._AD_watcher.record_name if self._AD_watcher else '?'
+            self.widget.filename_lbl.setText("AD: " + record_name)
+            self.widget.mtime.setText("Frame: " + ts)
+            self.widget.ad_last_update_lbl.setText("Last update: " + ts)
+            self._send_temperature_trigger()
+
+    def _send_temperature_trigger(self):
+        """Build a data payload from the current fit and send to epicsLogger."""
+        if not self.widget.epicslogger_gb.publish_temperatures_cb.isChecked():
+            return
+        cfg = self.model.current_configuration
+        data = ZmqWorkerController.collect_temperature_values(cfg)
+        if cfg.filename:
+            data['filename'] = os.path.basename(cfg.filename)
+        self.zmq_publisher_controller.send_trigger(data if any(v is not None for v in data.values()) else None)
+
+    def cleanup(self):
+        """Stop all background threads cleanly (called on app exit)."""
+        self.zmq_worker_controller.cleanup()
+        self.zmq_publisher_controller.cleanup()
 
     def file_dragged_in(self,files):
         self.load_data_file(filenames=files)
@@ -337,12 +470,12 @@ class TemperatureController(QtCore.QObject):
         else:
             mode = 'time'
         self.model.current_configuration.load_next_data_image(mode)
-        
+
         # hack, refactor later:
         self.process_multiframe()
 
     def load_previous_data_image(self):
-        
+
         if self.widget.browse_by_name_rb.isChecked():
             mode = 'number'
         else:
@@ -417,9 +550,34 @@ class TemperatureController(QtCore.QObject):
         self.model.current_configuration.set_temperature_fit_function(function_type)
 
     def filter_setting_callback(self):
-        apply_filter = self.widget.interference_filter_cb.isChecked()
-        self.model.current_configuration.ds_filter_oscillation = apply_filter
-        self.model.current_configuration.us_filter_oscillation = apply_filter
+        self.model.current_configuration.ds_filter_oscillation = \
+            self.widget.ds_interference_filter_cb.isChecked()
+        self.model.current_configuration.us_filter_oscillation = \
+            self.widget.us_interference_filter_cb.isChecked()
+
+    def save_filtered_callback(self):
+        self.model.current_configuration.save_filtered_spectrum = \
+            self.widget.save_filtered_cb.isChecked()
+
+    def filter_freq_range_callback(self):
+        step = self.widget.filter_freq_min_sb.singleStep()
+        freq_min = self.widget.filter_freq_min_sb.value()
+        freq_max = self.widget.filter_freq_max_sb.value()
+
+        # Keep max > min by adjusting each spinbox's range (block signals to avoid loops)
+        self.widget.filter_freq_max_sb.blockSignals(True)
+        self.widget.filter_freq_max_sb.setMinimum(freq_min + step)
+        self.widget.filter_freq_max_sb.blockSignals(False)
+
+        self.widget.filter_freq_min_sb.blockSignals(True)
+        self.widget.filter_freq_min_sb.setMaximum(freq_max - step)
+        self.widget.filter_freq_min_sb.blockSignals(False)
+
+        # Re-read in case clamping shifted a value
+        self.model.current_configuration.filter_freq_min = \
+            self.widget.filter_freq_min_sb.value()
+        self.model.current_configuration.filter_freq_max = \
+            self.widget.filter_freq_max_sb.value()
 
     def load_ds_standard_file(self, filename=None):
         if filename is None or filename is False:
@@ -671,6 +829,11 @@ class TemperatureController(QtCore.QObject):
         
         self.widget.temperature_spectrum_widget.update_ds_roi_max_txt(self.model.current_configuration.ds_temperature_model.data_roi_max)
 
+        f = self.model.current_configuration.ds_fringe_frequency
+        nd = self.model.current_configuration.ds_fringe_nd_um
+        self.widget.filter_section.ds_fringe_lbl.setText(f'{f:.4f}' if f is not None else '—')
+        self.widget.filter_section.ds_nd_lbl.setText(f'{nd:.1f}' if nd is not None else '—')
+
         if self.widget.connect_to_epics_cb.isChecked():
             if self.epics_available:
                 ds_temp_pv = eps.epics_settings['ds_last_temp']
@@ -724,6 +887,11 @@ class TemperatureController(QtCore.QObject):
 
         
         self.widget.temperature_spectrum_widget.update_us_roi_max_txt(self.model.current_configuration.us_temperature_model.data_roi_max)
+
+        f = self.model.current_configuration.us_fringe_frequency
+        nd = self.model.current_configuration.us_fringe_nd_um
+        self.widget.filter_section.us_fringe_lbl.setText(f'{f:.4f}' if f is not None else '—')
+        self.widget.filter_section.us_nd_lbl.setText(f'{nd:.1f}' if nd is not None else '—')
 
         if self.widget.connect_to_epics_cb.isChecked():
             if self.epics_available:
@@ -845,6 +1013,16 @@ class TemperatureController(QtCore.QObject):
 
         settings.set("temperature epics connected",
                           self.widget.connect_to_epics_cb.isChecked())
+        settings.set("temperature epics monitor folder",
+                          self.widget.monitor_folder_cb.isChecked())
+
+        zmq_config_path = self.zmq_worker_controller._config.get("_path", "")
+        settings.set("zmq_config_path", zmq_config_path)
+
+        settings.set("zmq_publisher_config_path", self.zmq_publisher_controller._config_path)
+        settings.set("zmq_publish_temperatures",
+                     self.widget.epicslogger_gb.publish_temperatures_cb.isChecked())
+
         settings.dump()
 
     def load_conf_settings(self, conf):
@@ -884,14 +1062,29 @@ class TemperatureController(QtCore.QObject):
         if try_epics:
             self.connect_epics()
             if not self.epics_available:
-                settings.set("temperature epics connected",
-                          False)
+                settings.set("temperature epics connected", False)
                 self.widget.connect_to_epics_cb.setChecked(False)
             else:
                 self.widget.connect_to_epics_cb.setChecked(True)
+
+        try_monitor_folder = str.lower(str(settings.get("temperature epics monitor folder"))) == 'true'
+        if try_monitor_folder:
+            self.widget.monitor_folder_cb.setChecked(True)
+            self.connect_folder_monitor()
         temperature_autoprocessing = str.lower(str(settings.get("temperature autoprocessing")) )== 'true'
         if temperature_autoprocessing:
             self.widget.autoprocess_cb.setChecked(True)
+
+        zmq_config_path = settings.get("zmq_config_path", "")
+        if zmq_config_path and os.path.exists(zmq_config_path):
+            self.zmq_worker_controller.load_config(zmq_config_path)
+
+        zmq_publisher_config_path = settings.get("zmq_publisher_config_path", "")
+        if zmq_publisher_config_path and os.path.exists(zmq_publisher_config_path):
+            self.zmq_publisher_controller.load_config(zmq_publisher_config_path)
+
+        zmq_publish = str.lower(str(settings.get("zmq_publish_temperatures", "false"))) == "true"
+        self.widget.epicslogger_gb.publish_temperatures_cb.setChecked(zmq_publish)
 
     def auto_process_cb_toggled(self):
 
@@ -933,12 +1126,11 @@ class TemperatureController(QtCore.QObject):
         return value is not None
  
     def setup_epics_datalog_file_monitor(self):
-        if eps.epics_settings['epics_datalog'] is not None \
-                and eps.epics_settings['epics_datalog'] != 'None':
-            
+        pv = eps.epics_settings.get('epics_datalog')
+        if pv is not None and pv != 'None':
             if camonitor_clear is not None:
-                camonitor_clear(eps.epics_settings['epics_datalog'])
-                camonitor(eps.epics_settings['epics_datalog'], callback=self.epics_datalog_changed)
+                camonitor_clear(pv)
+                camonitor(pv, callback=self.epics_datalog_changed)
 
     def setup_temperature_file_folder_monitor(self):
         if eps.epics_settings['T_folder'] is not None \
@@ -963,9 +1155,12 @@ class TemperatureController(QtCore.QObject):
             self.temperature_folder_changed.emit()
 
     def temperature_folder_changed_emitted(self):
-        if  self.epics_available:
+        if self.epics_available:
             self._exp_working_dir = caget(eps.epics_settings['T_folder'], as_string=True)
             self._directory_watcher.path = self._exp_working_dir
+        if self.widget.monitor_folder_cb.isChecked():
+            folder_path = caget(eps.epics_settings['T_folder'], as_string=True) or ''
+            self.widget.monitor_folder_path_lbl.setText(folder_path)
 
     def epics_datalog_file_changed_emitted(self, filename):
         
@@ -982,6 +1177,8 @@ class TemperatureController(QtCore.QObject):
         
 
     def setup_epics_pb_clicked(self):
+        if not hasattr(self, 'setup_epics_dialog'):
+            self.setup_epics_dialog = SetupEpicsDialog(self.widget)
         self.setup_epics_dialog.ok_btn.setEnabled(True)
         self.setup_epics_dialog.us_temp_pv = eps.epics_settings['us_last_temp']
         self.setup_epics_dialog.ds_temp_pv = eps.epics_settings['ds_last_temp']
