@@ -2,5 +2,7 @@
     "restructuredtext.confPath": "",
   
     "python.pythonPath": "C:\\Users\\hrubiak\\Anaconda3\\envs\\pyradiant_env_3.12\\python.exe",
-    "claudeCode.environmentVariables": []
+    "claudeCode.environmentVariables": [],
+    "python-envs.defaultEnvManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:conda"
 }
