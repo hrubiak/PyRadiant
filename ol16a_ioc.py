@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 # EPICS IOC for Optronic Laboratories OL-16A (asyncio + pythonSoftIOC)
-# Requires: pythonSoftIOC (softioc, builder), your ol16a_driver module with OL16A/OL16AConfig.
+# Requires: pythonSoftIOC (softioc, builder), and your working ol16a_driver (OL16A/OL16AConfig)
 
 import asyncio
 import math
 import os
-from typing import Optional
 import time
+from typing import Optional
 from softioc import softioc, builder
 
-# ---- import your working backend ----
-# Change this import to match your module name / path.
-from ol16a_driver import OL16A, OL16AConfig  # <-- you already have this working
+# ---- backend driver you already have ----
+from ol16a_driver import OL16A, OL16AConfig
+
+# Debug flag (1=verbose, 0=quiet). Override with OL16A_DEBUG=0/1
+DEBUG = 1 #int(os.environ.get("OL16A_DEBUG", "1"))
+
+def dprint(*args, **kwargs):
+    if DEBUG:
+        print(*args, **kwargs)
 
 
 class OL16AIOC:
@@ -21,6 +27,7 @@ class OL16AIOC:
     """
 
     def __init__(self, prefix: str = "OL16A:"):
+        dprint("[IOC] __init__ starting")
         self.prefix = prefix
         self.dev: Optional[OL16A] = None
         self.lock = asyncio.Lock()
@@ -31,8 +38,11 @@ class OL16AIOC:
         self._port = os.environ.get("OL16A_PORT", "/dev/tty.usbserial-1440")
         self._addr = int(os.environ.get("OL16A_ADDR", "1"))
 
-        # --- PVs ---
+        dprint(f"[IOC] prefix={self.prefix} port={self._port} addr={self._addr}")
         builder.SetDeviceName(self.prefix)
+
+        # --- PVs ---
+        dprint("[IOC] Defining PVs")
 
         # config / connection
         self.pv_port = builder.stringOut(self._p("PORT"), initial_value=self._port,
@@ -42,6 +52,13 @@ class OL16AIOC:
         self.pv_connect = builder.boolOut(self._p("CONNECT"),
                                           on_update=self._on_connect_cmd, ZNAM="DISCONNECT", ONAM="CONNECT")
         self.pv_connected = builder.boolIn(self._p("CONNECTED_RBV"), initial_value=False)
+
+        # status / heartbeat
+        self.pv_state   = builder.stringIn(self._p("STATE_RBV"), initial_value="DISCONNECTED")
+        self.pv_info    = builder.stringIn(self._p("INFO_RBV"), initial_value="")
+        self.pv_conn_ts = builder.stringIn(self._p("CONN_TS_RBV"), initial_value="-")
+        self.pv_uptime  = builder.longIn(self._p("UPTIME_S_RBV"), initial_value=0)
+        self.pv_hb      = builder.longIn(self._p("HEARTBEAT"), initial_value=0)
 
         # polling interval
         self.pv_poll_ms = builder.longOut(self._p("POLL_MS"), initial_value=self.poll_ms,
@@ -70,25 +87,20 @@ class OL16AIOC:
         self.pv_imeas = builder.aIn(self._p("IMEAS_RBV"), initial_value=float("nan"), EGU="A", PREC=6)
         self.pv_vmeas = builder.aIn(self._p("VMEAS_RBV"), initial_value=float("nan"), EGU="V", PREC=6)
 
-        # status
+        # status bits/flags
         self.pv_stat_hex = builder.stringIn(self._p("STATUS_HEX_RBV"), initial_value="00")
-        self.pv_flags = builder.stringIn(self._p("FLAGS_RBV"), initial_value="OK/IDLE")
-        self.pv_busy = builder.boolIn(self._p("BUSY_RBV"), initial_value=False)
+        self.pv_flags    = builder.stringIn(self._p("FLAGS_RBV"), initial_value="OK/IDLE")
+        self.pv_busy     = builder.boolIn(self._p("BUSY_RBV"), initial_value=False)
 
         # misc last error
         self.pv_last_err = builder.stringIn(self._p("LAST_ERROR_RBV"), initial_value="")
 
-        self.pv_state   = builder.stringIn(self._p("STATE_RBV"), initial_value="DISCONNECTED")
-        self.pv_info    = builder.stringIn(self._p("INFO_RBV"), initial_value="")
-        self.pv_conn_ts = builder.stringIn(self._p("CONN_TS_RBV"), initial_value="-")
-        self.pv_uptime  = builder.longIn(self._p("UPTIME_S_RBV"), initial_value=0)
-        self.pv_hb      = builder.longIn(self._p("HEARTBEAT"), initial_value=0)
-
         self._t0 = time.time()
         self._hb_task: Optional[asyncio.Task] = None
 
-        # publish the DB
+        dprint("[IOC] Loading EPICS database…")
         builder.LoadDatabase()
+        dprint("[IOC] Database loaded OK")
 
     # ------------- helpers -------------
     def _p(self, name: str) -> str:
@@ -96,26 +108,34 @@ class OL16AIOC:
 
     async def _dev_call(self, func, *args, **kwargs):
         """Serialize access and run blocking backend calls in a thread."""
+        dprint(f"[IOC] _dev_call -> {getattr(func, '__name__', func)} args={args} kwargs={kwargs}")
         async with self.lock:
-            return await asyncio.to_thread(func, *args, **kwargs)
+            try:
+                result = await asyncio.to_thread(func, *args, **kwargs)
+                dprint(f"[IOC] _dev_call <- OK {getattr(func, '__name__', func)}")
+                return result
+            except Exception as e:
+                dprint(f"[IOC] _dev_call <- EXC {e}")
+                raise
 
     def _note_error(self, msg: str):
-        # store error text in LAST_ERROR_RBV (non-throwing)
+        dprint(f"[IOC] ERROR: {msg}")
         self.pv_last_err.set(str(msg))
 
     # ------------- PV callbacks -------------
     def _on_set_port(self, v: str):
-        # can only change while disconnected
+        dprint(f"[IOC] _on_set_port: {v}")
         self._port = v
 
     def _on_set_addr(self, v: int):
-        # can only change while disconnected
+        dprint(f"[IOC] _on_set_addr: {v}")
         try:
             self._addr = int(v)
         except Exception:
             self._note_error(f"Bad ADDR value {v}")
 
     def _on_set_poll_ms(self, v: int):
+        dprint(f"[IOC] _on_set_poll_ms: {v}")
         try:
             ms = int(max(100, min(5000, v)))
             self.poll_ms = ms
@@ -124,34 +144,37 @@ class OL16AIOC:
 
     async def _connect(self):
         if self.dev is not None:
+            dprint("[IOC] _connect: already connected")
             return
         cfg = OL16AConfig(port=self._port, address=self._addr, debug=False)
+        dprint(f"[IOC] _connect: creating OL16A(port={self._port}, addr={self._addr})")
         try:
             self.dev = await asyncio.to_thread(OL16A, cfg)
-            # ensure slot PV reflects actual slot
+            dprint("[IOC] _connect: OL16A object created")
+            # read initial target & slot
             t = await self._dev_call(self.dev.read_target)
+            dprint(f"[IOC] _connect: initial target {t}")
             self.pv_slot_rbv.set(int(t.get("mode", 0)))
-            self.pv_connected.set(True)
-            self._note_error("")
-            # start poller
-            self._start_poller()
-            self.dev = await asyncio.to_thread(OL16A, cfg)
-            # reflect state
+            # set connection PVs
             self.pv_connected.set(True)
             self.pv_state.set("CONNECTED")
             self.pv_info.set(f"PORT={self._port} ADDR={self._addr}")
             self.pv_conn_ts.set(time.strftime("%Y-%m-%d %H:%M:%S"))
             self._note_error("")
-            self._start_poller()
+            # start tasks
             self._start_heartbeat()
-            print(f"[OL16A IOC] Connected to {self._port} addr {self._addr}")
+            self._start_poller()
+            dprint("[IOC] _connect: success")
         except Exception as e:
             self.dev = None
             self.pv_connected.set(False)
             self._note_error(f"Connect failed: {e}")
+            dprint(f"[IOC] _connect: FAILED {e}")
 
     async def _disconnect(self):
+        dprint("[IOC] _disconnect: requested")
         if self.dev is None:
+            dprint("[IOC] _disconnect: already disconnected")
             return
         self._stop_poller()
         try:
@@ -159,8 +182,11 @@ class OL16AIOC:
         except Exception:
             pass
         self.dev = None
+        # reflect disconnect in PVs
         self.pv_connected.set(False)
-
+        self.pv_state.set("DISCONNECTED")
+        self.pv_info.set("")
+        self.pv_conn_ts.set("-")
         # clear measured PVs to NaN on disconnect
         for pv in (self.pv_imeas, self.pv_vmeas, self.pv_i_rbv, self.pv_v_rbv):
             pv.set(float("nan"))
@@ -168,25 +194,22 @@ class OL16AIOC:
         self.pv_flags.set("DISCONNECTED")
         self.pv_stat_hex.set("--")
         self.pv_busy.set(False)
-
-        self.pv_connected.set(False)
-        self.pv_state.set("DISCONNECTED")
-        self.pv_info.set("")
-        self.pv_conn_ts.set("-")
         self._stop_heartbeat()
-        print("[OL16A IOC] Disconnected")
+        dprint("[IOC] _disconnect: done")
 
     def _start_heartbeat(self):
+        dprint("[IOC] _start_heartbeat")
         if self._hb_task is None:
             self._hb_task = asyncio.create_task(self._hb_loop())
 
     def _stop_heartbeat(self):
+        dprint("[IOC] _stop_heartbeat")
         if self._hb_task:
             self._hb_task.cancel()
             self._hb_task = None
 
     async def _hb_loop(self):
-        # Runs regardless of connection; shows uptime and increments a counter.
+        dprint("[IOC] hb loop started")
         while True:
             try:
                 self.pv_hb.set((self.pv_hb.get() or 0) + 1)
@@ -196,6 +219,7 @@ class OL16AIOC:
             await asyncio.sleep(1.0)
 
     def _on_connect_cmd(self, val: int):
+        dprint(f"[IOC] _on_connect_cmd: {val}")
         # 1 = connect, 0 = disconnect
         if val:
             asyncio.create_task(self._connect())
@@ -203,7 +227,7 @@ class OL16AIOC:
             asyncio.create_task(self._disconnect())
 
     def _on_set_slot(self, slot: int):
-        # select 1..9 (only when connected)
+        dprint(f"[IOC] _on_set_slot: {slot}")
         if self.dev is None:
             self._note_error("Select slot while disconnected")
             return
@@ -212,16 +236,16 @@ class OL16AIOC:
                 s = int(slot)
                 s = max(1, min(9, s))
                 await self._dev_call(self.dev.select_lamp, s)
-                # update readback
                 t = await self._dev_call(self.dev.read_target)
                 self.pv_slot_rbv.set(int(t.get("mode", s)))
-                # refresh targets RBV
                 await self._update_targets_from_target(t)
+                dprint(f"[IOC] slot now {self.pv_slot_rbv.get()}")
             except Exception as e:
                 self._note_error(f"Select slot failed: {e}")
         asyncio.create_task(do())
 
     def _on_output_cmd(self, on: int):
+        dprint(f"[IOC] _on_output_cmd: {on}")
         if self.dev is None:
             self._note_error("Output cmd while disconnected")
             self.pv_out_cmd.set(0)  # revert
@@ -234,32 +258,33 @@ class OL16AIOC:
                     await self._dev_call(self.dev.lamp_off)
                 st = await self._dev_call(self.dev.read_output_state)
                 self.pv_out_rbv.set(bool(st.get("on", False)))
+                dprint(f"[IOC] output state -> {self.pv_out_rbv.get()}")
             except Exception as e:
                 self._note_error(f"Output cmd failed: {e}")
-                # re-sync RBV
                 try:
                     st = await self._dev_call(self.dev.read_output_state)
                     self.pv_out_rbv.set(bool(st.get("on", False)))
                 except Exception:
                     pass
-                # revert command
                 self.pv_out_cmd.set(1 if self.pv_out_rbv.get() else 0)
         asyncio.create_task(do())
 
     def _on_set_current(self, amps: float):
+        dprint(f"[IOC] _on_set_current: {amps}")
         if self.dev is None:
             self._note_error("Set current while disconnected")
             return
         async def do():
             try:
-                # set target current only (does not toggle output)
                 t = await self._dev_call(self.dev.set_current, float(amps))
                 await self._update_targets_from_target(t)
+                dprint(f"[IOC] target after I set: {t}")
             except Exception as e:
                 self._note_error(f"Set current failed: {e}")
         asyncio.create_task(do())
 
     def _on_set_voltage(self, volts: float):
+        dprint(f"[IOC] _on_set_voltage: {volts}")
         if self.dev is None:
             self._note_error("Set voltage while disconnected")
             return
@@ -267,6 +292,7 @@ class OL16AIOC:
             try:
                 t = await self._dev_call(self.dev.set_voltage, float(volts))
                 await self._update_targets_from_target(t)
+                dprint(f"[IOC] target after V set: {t}")
             except Exception as e:
                 self._note_error(f"Set voltage failed: {e}")
         asyncio.create_task(do())
@@ -278,90 +304,108 @@ class OL16AIOC:
             val = float(t.get("value"))
             if unit == "A":
                 self.pv_i_rbv.set(val)
-                # leave V_RBV unchanged
             elif unit == "V":
                 self.pv_v_rbv.set(val)
-            # status/flags
             ss = t.get("status", "00")
             flags = ", ".join(t.get("flags", [])) or "OK/IDLE"
             self.pv_stat_hex.set(ss)
             self.pv_flags.set(flags)
-            self.pv_busy.set("BUSY" in flags or "SEEKING_CURRENT" in flags)
-        except Exception:
-            pass
+            self.pv_busy.set(("BUSY" in flags) or ("SEEKING_CURRENT" in flags))
+            dprint(f"[IOC] update_targets: unit={unit} val={val} ss={ss} flags={flags}")
+        except Exception as e:
+            dprint(f"[IOC] update_targets: EXC {e}")
 
     # ------------- poller -------------
     def _start_poller(self):
+        dprint("[IOC] _start_poller")
         if self.poll_task is None:
             self.poll_task = asyncio.create_task(self._poll_loop())
 
     def _stop_poller(self):
+        dprint("[IOC] _stop_poller")
         if self.poll_task:
             self.poll_task.cancel()
             self.poll_task = None
 
     async def _poll_loop(self):
+        dprint("[IOC] poll loop started")
+        loop_count = 0
         while self.dev is not None:
             try:
-                # read state + target
                 t = await self._dev_call(self.dev.read_target)
                 st = await self._dev_call(self.dev.read_output_state)
 
-                # update slot RBV, target RBVs, status
                 self.pv_slot_rbv.set(int(t.get("mode", 0)))
                 await self._update_targets_from_target(t)
                 self.pv_out_rbv.set(bool(st.get("on", False)))
 
-                # measured values only when ON
                 if st.get("on", False):
-                    # tolerate transient NAKs: per-channel try/except
                     try:
                         i = await self._dev_call(self.dev.read_current)
                         self.pv_imeas.set(float(i.get("amps", math.nan)))
-                    except Exception:
+                    except Exception as e:
+                        dprint(f"[IOC] poll: read_current EXC {e}")
                         self.pv_imeas.set(float("nan"))
                     try:
                         v = await self._dev_call(self.dev.read_voltage)
                         self.pv_vmeas.set(float(v.get("volts", math.nan)))
-                    except Exception:
+                    except Exception as e:
+                        dprint(f"[IOC] poll: read_voltage EXC {e}")
                         self.pv_vmeas.set(float("nan"))
                 else:
                     self.pv_imeas.set(float("nan"))
                     self.pv_vmeas.set(float("nan"))
 
+                # print every ~10 cycles to avoid spam
+                loop_count += 1
+                if loop_count % 10 == 0:
+                    dprint(f"[IOC] poll #{loop_count}: slot={self.pv_slot_rbv.get()} on={self.pv_out_rbv.get()} "
+                           f"Irbv={self.pv_i_rbv.get()} Vrbv={self.pv_v_rbv.get()} "
+                           f"Imeas={self.pv_imeas.get()} Vmeas={self.pv_vmeas.get()}")
             except Exception as e:
-                # don't spam; store last error and keep polling
                 self._note_error(f"Poll error: {e}")
-
             await asyncio.sleep(self.poll_ms / 1000.0)
 
 
 # -------------------- asyncio softIOC startup --------------------
-OL16A_AUTOCONNECT=1
+OL16A_AUTOCONNECT = bool(int(os.environ.get("OL16A_AUTOCONNECT", "1")))
+
+def _print_ca_env():
+    # helps diagnose addr list issues when starting the IOC
+    keys = [
+        "EPICS_CAS_INTF_ADDR_LIST", "EPICS_CAS_AUTO_BEACON_ADDR_LIST", "EPICS_CAS_BEACON_ADDR_LIST",
+        "EPICS_CAS_SERVER_PORT", "EPICS_CA_AUTO_ADDR_LIST", "EPICS_CA_ADDR_LIST",
+        "EPICS_CA_NAME_SERVERS", "EPICS_CA_SERVER_PORT",
+    ]
+    dprint("[IOC] CA env snapshot:")
+    for k in keys:
+        v = os.environ.get(k, "")
+        dprint(f"   {k}={v!r}")
+
 
 async def start_softioc(prefix: str = "OL16A:"):
+    dprint("[IOC] start_softioc()")
+    _print_ca_env()
     ioc = OL16AIOC(prefix=prefix)
 
     # Use asyncio loop as dispatcher (no cothread)
     loop = asyncio.get_running_loop()
-
     def asyncio_dispatcher(func, *args, **kwargs):
+        dprint(f"[IOC] dispatcher: scheduling {getattr(func, '__name__', func)}")
         loop.call_soon(func, *args)
 
+    dprint("[IOC] calling iocInit()")
     softioc.iocInit(dispatcher=asyncio_dispatcher)
+    dprint("[IOC] iocInit complete")
 
- 
-
-    # Optional: auto-connect at boot (set via env OL16A_AUTOCONNECT=1)
     if OL16A_AUTOCONNECT:
-        print("[OL16A IOC] Autoconnect requested (OL16A_AUTOCONNECT=1)")
+        dprint("[IOC] Autoconnect requested (OL16A_AUTOCONNECT=1)")
         ioc.pv_connect.set(1)
 
-    # stay alive
+    dprint("[IOC] entering interactive_ioc()")
     await softioc.interactive_ioc(globals())
 
 
 if __name__ == "__main__":
-    # You can set a custom prefix via env: EPICS_PVA_ADDR_LIST etc.
-    # To change prefix here, pass argument to start_softioc("MY:PREFIX:")
+    dprint("[IOC] __main__ starting")
     asyncio.run(start_softioc(prefix=os.environ.get("OL16A_PREFIX", "OL16A:")))
