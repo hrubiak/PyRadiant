@@ -109,9 +109,14 @@ class ConfigurationWidget(QtWidgets.QWidget):
         self.configuration_btns = []
 
         for ind, configuration in enumerate(configurations):
-            new_button = CheckableButton(str(ind + 1))
-            new_button.setFixedSize(25, 25)
-            new_button.setToolTip("Switch to configuration {}".format(ind + 1))
+            dirty = bool(getattr(configuration, 'dirty', False))
+            label = f"{ind + 1}*" if dirty else str(ind + 1)
+            new_button = CheckableButton(label)
+            new_button.setFixedSize(32, 25)
+            tooltip = "Switch to configuration {}".format(ind + 1)
+            if dirty:
+                tooltip += " (unsaved changes)"
+            new_button.setToolTip(tooltip)
             self.configuration_btn_group.addButton(new_button)
             self.configuration_btns.append(new_button)
             self.configurations_btn_layout.addWidget(new_button)

@@ -101,6 +101,8 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._side_bar_close_btn_widget_layout.addWidget(self.side_bar_close_btn)
         self._side_bar_close_btn_widget_layout.addSpacerItem(HorizontalSpacerItem())
         
+        self.wavelength_calibration_gb = WavelengthCalibrationGB()
+
         self.calibration_section = TemperatureCalibrationSection()
         
         self.t_function_type_section = TemperatureFitSettings()
@@ -121,6 +123,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._other_settings_widget_layout.addWidget(self.settings_gb)
         self._other_settings_widget_layout.addWidget(self.wl_range_widget)
         self._other_settings_widget_layout.addWidget(self.roi_gb)
+        self._other_settings_widget_layout.addWidget(self.wavelength_calibration_gb)
         self._other_settings_widget_layout.addWidget(self.calibration_section)
         self._other_settings_widget_layout.addWidget(self.filter_section)
         self._other_settings_widget_layout.addWidget(self.t_function_type_section)
@@ -183,6 +186,10 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.filename_lbl = self.control_widget.file_gb.filename_lbl
         self.dirname_lbl = self.control_widget.file_gb.dirname_lbl
         self.mtime = self.control_widget.file_gb.mtime
+
+        self.load_wavelength_calibration_btn = self.wavelength_calibration_gb.load_btn
+        self.clear_wavelength_calibration_btn = self.wavelength_calibration_gb.clear_btn
+        self.wavelength_calibration_filename_lbl = self.wavelength_calibration_gb.file_lbl
 
         self.load_ds_calibration_file_btn = self.calibration_section.downstream_gb.load_file_btn
         self.load_us_calibration_file_btn = self.calibration_section.upstream_gb.load_file_btn
@@ -570,6 +577,33 @@ class SettingsGroupBox(QtWidgets.QGroupBox):
         self._layout.addLayout(self._btns_layout)
 
 
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+
+
+class WavelengthCalibrationGB(QtWidgets.QGroupBox):
+    """Explicit-load wavelength calibration for TIFF files.
+
+    User picks a calibration.json produced by photron/calibrate.py; the
+    polynomial coefficients are stored on the current configuration and
+    applied to every TIFF loaded thereafter (until cleared or overwritten).
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__('Wavelength calibration (TIFF)')
+        self._layout = QtWidgets.QHBoxLayout()
+        self._layout.setContentsMargins(6, 4, 6, 4)
+        self._layout.setSpacing(6)
+
+        self.load_btn = QtWidgets.QPushButton('Load...')
+        self.load_btn.setToolTip('Load a calibration.json produced by photron/calibrate.py')
+        self.clear_btn = QtWidgets.QPushButton('Clear')
+        self.clear_btn.setToolTip('Remove the current wavelength calibration; TIFFs revert to pixel-index x-axis')
+        self.file_lbl = QtWidgets.QLabel('None loaded')
+        self.file_lbl.setStyleSheet('color: gray;')
+
+        self._layout.addWidget(self.load_btn)
+        self._layout.addWidget(self.file_lbl, 1)
+        self._layout.addWidget(self.clear_btn)
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
 

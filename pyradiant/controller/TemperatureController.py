@@ -213,6 +213,9 @@ class TemperatureController(QtCore.QObject):
         self.connect_click_function(self.widget.load_ds_calibration_file_btn, self.load_ds_calibration_file)
         self.connect_click_function(self.widget.load_us_calibration_file_btn, self.load_us_calibration_file)
 
+        self.connect_click_function(self.widget.load_wavelength_calibration_btn, self.load_wavelength_calibration_file)
+        self.connect_click_function(self.widget.clear_wavelength_calibration_btn, self.clear_wavelength_calibration)
+
         self.widget.us_calibration_start_frame.editingFinished.connect(self.us_calibration_frame_range_callback)
         self.widget.ds_calibration_start_frame.editingFinished.connect(self.ds_calibration_frame_range_callback)
         self.widget.us_calibration_end_frame.editingFinished.connect(self.us_calibration_frame_range_callback)
@@ -401,7 +404,8 @@ class TemperatureController(QtCore.QObject):
             filenames = [filenames]
         if filenames is None or filenames is False:
             filenames = open_files_dialog(self.widget, caption="Load Experiment SPE",
-                                          directory=self._exp_working_dir)
+                                          directory=self._exp_working_dir,
+                                          filter="Spectra (*.spe *.SPE *.h5 *.tif *.tiff);;All files (*)")
 
         for filename in filenames:
             if filename != '':
@@ -496,7 +500,8 @@ class TemperatureController(QtCore.QObject):
     def load_ds_calibration_file(self, filename=None):
         if filename is None or filename is False:
             filename = open_file_dialog(self.widget, caption="Load Downstream Calibration SPE",
-                                        directory=self._exp_working_dir)
+                                        directory=self._exp_working_dir,
+                                        filter="Spectra (*.spe *.SPE *.h5 *.tif *.tiff);;All files (*)")
 
         if filename != '':
             self._exp_working_dir = os.path.dirname(filename)
@@ -508,7 +513,8 @@ class TemperatureController(QtCore.QObject):
     def load_us_calibration_file(self, filename=None):
         if filename is None or filename is False:
             filename = open_file_dialog(self.widget, caption="Load Upstream Calibration SPE",
-                                        directory=self._exp_working_dir)
+                                        directory=self._exp_working_dir,
+                                        filter="Spectra (*.spe *.SPE *.h5 *.tif *.tiff);;All files (*)")
 
         if filename != '':
             self._exp_working_dir = os.path.dirname(filename)
@@ -518,6 +524,57 @@ class TemperatureController(QtCore.QObject):
             self.model.current_configuration.us_temperature_model.calibration_frames = [us_start_frame,us_end_frame]
 
             self.model.current_configuration.load_us_calibration_image(filename)
+
+    def load_wavelength_calibration_file(self, filename=None):
+        if filename is None or filename is False:
+            filename = open_file_dialog(
+                self.widget,
+                caption="Load Wavelength Calibration (calibration.json)",
+                directory=self._exp_working_dir,
+                filter="Calibration JSON (*.json);;All files (*)",
+            )
+        if not filename:
+            return
+        cfg = self.model.current_configuration
+        try:
+            cfg.load_photron_wavelength_calibration(filename)
+        except (OSError, ValueError, KeyError) as exc:
+            QtWidgets.QMessageBox.warning(
+                self.widget,
+                "Wavelength calibration",
+                f"Failed to load calibration file:\n{filename}\n\n{exc}",
+            )
+            return
+        self._update_wavelength_calibration_label()
+        self._reload_current_tif_if_any()
+
+    def clear_wavelength_calibration(self):
+        cfg = self.model.current_configuration
+        cfg.clear_photron_wavelength_calibration()
+        self._update_wavelength_calibration_label()
+        self._reload_current_tif_if_any()
+
+    def _update_wavelength_calibration_label(self):
+        cfg = self.model.current_configuration
+        wc = cfg.photron_wavelength_calibration
+        lbl = self.widget.wavelength_calibration_filename_lbl
+        clear_btn = self.widget.clear_wavelength_calibration_btn
+        if wc is None:
+            lbl.setText('None loaded')
+            lbl.setStyleSheet('color: gray;')
+            lbl.setToolTip('')
+            clear_btn.setEnabled(False)
+        else:
+            src = wc.get('source_filename', '') or ''
+            lbl.setText(os.path.basename(src) if src else '(from settings)')
+            lbl.setStyleSheet('')
+            lbl.setToolTip(src)
+            clear_btn.setEnabled(True)
+
+    def _reload_current_tif_if_any(self):
+        cfg = self.model.current_configuration
+        if cfg.filename and cfg.filename.lower().endswith(('.tif', '.tiff')):
+            cfg.load_data_image(cfg.filename)
 
     def us_calibration_frame_range_callback(self, *args):
         us_start_frame = int(self.widget.us_calibration_start_frame.text())
@@ -618,12 +675,16 @@ class TemperatureController(QtCore.QObject):
     def save_setting_file(self, filename=None):
         if filename is None or filename is False:
             filename = save_file_dialog(self.widget, caption="Save setting file",
-                                        directory=self.model.current_configuration._setting_working_dir)
+                                        directory=self.model.current_configuration._setting_working_dir,
+                                        filter="Settings (*.trs);;All files (*)")
 
         if filename != '':
+            if not filename.lower().endswith('.trs'):
+                filename += '.trs'
             self.model.current_configuration._setting_working_dir = os.path.dirname(filename)
             self.model.current_configuration.save_setting(filename)
             self.update_setting_combobox(filename)
+            self._refresh_configuration_buttons()
 
     def load_setting_file(self, filename=None):
         if filename is None or filename is False:
@@ -674,20 +735,20 @@ class TemperatureController(QtCore.QObject):
             for file in files:
                 if file.endswith('.trs') and not file.startswith('.'):
                     self._settings_files_list.append(file)
-                    name_for_list = file.split('.')[:-1][0]
+                    name_for_list = os.path.splitext(file)[0]
                     self._settings_file_names_list.append(name_for_list)
         except:
             pass
         if not len(self._settings_files_list):
             self._settings_files_list.append(filename)
-            name_for_list = filename.split('.')[:-1][0]
+            name_for_list = os.path.splitext(os.path.basename(filename))[0]
             self._settings_file_names_list.append(name_for_list)
-        
+
         self.widget.settings_cb.blockSignals(True)
         self.widget.settings_cb.clear()
         self.widget.settings_cb.addItems(self._settings_file_names_list)
 
-        selected_name = os.path.split(filename)[1].split('.')[:-1][0]
+        selected_name = os.path.splitext(os.path.basename(filename))[0]
         ind = self._settings_file_names_list.index(selected_name)
         self.widget.settings_cb.setCurrentIndex(ind)
         self.widget.settings_cb.blockSignals(False)
@@ -764,8 +825,18 @@ class TemperatureController(QtCore.QObject):
 
         self.use_background_update()
 
+        self._update_wavelength_calibration_label()
+        self._refresh_configuration_buttons()
+
         self.ds_calculations_changed()
         self.us_calculations_changed()
+
+    def _refresh_configuration_buttons(self):
+        """Sync the config-button labels (e.g. unsaved-changes asterisk) to model state."""
+        self.widget.config_widget.update_configuration_btns(
+            configurations=self.model.configurations,
+            cur_ind=self.model.configuration_ind,
+        )
 
         self.widget.temperature_spectrum_widget.normalize_range()
         
@@ -783,6 +854,7 @@ class TemperatureController(QtCore.QObject):
         self.widget.frame_num_txt.blockSignals(False)
 
     def ds_calculations_changed(self):
+        self._refresh_configuration_buttons()
         curr_frame = self.model.current_configuration.current_frame
         ds_fit_ok = True
         if hasattr(self.model, 'ds_temperatures'):
@@ -842,6 +914,7 @@ class TemperatureController(QtCore.QObject):
                 
 
     def us_calculations_changed(self):
+        self._refresh_configuration_buttons()
         curr_frame = self.model.current_configuration.current_frame
         us_fit_ok = True
         if hasattr(self.model, 'us_temperatures'):
@@ -988,7 +1061,7 @@ class TemperatureController(QtCore.QObject):
         for conf in self.model.configurations:
             if not conf.setting_filename is None:
                 set_fname =  os.path.split(conf.setting_filename)[-1]
-                name_for_list = set_fname.split('.')[:-1][0]
+                name_for_list = os.path.splitext(set_fname)[0]
                 conf_dict = {}
                 if conf.data_img_file:
                     data_file = conf.data_img_file.filename
@@ -1028,12 +1101,18 @@ class TemperatureController(QtCore.QObject):
     def load_conf_settings(self, conf):
         settings_file_path = os.path.join(str(conf["temperature settings directory"]),
                                           str(conf["temperature settings file"]) + ".trs")
+        loaded_setting = False
         if os.path.exists(settings_file_path):
             self.load_setting_file(settings_file_path)
+            loaded_setting = True
         if 'temperature data file' in conf:
             temperature_data_path = str(conf["temperature data file"])
             if os.path.exists(temperature_data_path) and len(temperature_data_path)>4:
                 self.load_data_file(temperature_data_path)
+        # Workspace restore just re-hydrates the previously-saved state; not user edits.
+        if loaded_setting:
+            self.model.current_configuration.dirty = False
+            self._refresh_configuration_buttons()
 
     def load_settings(self, settings):
         settings : AppSettings

@@ -1,0 +1,17 @@
+{
+  "polynomial_coeffs": [
+    610.0072640802747,
+    0.17719322045398636,
+    -1.082415994543798e-06
+  ],
+  "convention": "ascending_zero_indexed",
+  "center_wl": 700.0,
+  "grating": "",
+  "source_tif": "20260810_135352_C001H001S0001000001.tif",
+  "rms_nm": 0.029385992437869306,
+  "n_matches": 20,
+  "band_center": 512,
+  "band_half_height": 100,
+  "dispersion_axis": "horizontal",
+  "created": "2026-08-10T16:16:44"
+}

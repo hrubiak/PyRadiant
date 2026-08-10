@@ -28,11 +28,13 @@ import h5py
 import math
 import datetime
 import time
+import json
 from .data_models.DataModel import DataModel
 from .Spectrum import Spectrum
-from .RoiData import RoiDataManager, Roi, get_roi_max, get_roi_sum, get_roi_img
+from .RoiData import RoiDataManager, Roi, get_roi_max, get_roi_sum, get_roi_img, validate_roi
 from .data_models.SpeFile import SpeFile
 from .data_models.H5File import H5File
+from .data_models.TifFile import TifFile
 from .helper import FileNameIterator
 from .radiation import fit_linear, wien_pre_transform, m_to_T, m_b_wien
 from .helper.HelperModule import get_partial_index, get_partial_value
@@ -79,7 +81,20 @@ class TemperatureModelConfiguration(QtCore.QObject):
 
         self.x_calibration = None
 
+        # Wavelength calibration for TIFF files (Photron camera etc.).
+        # Populated by load_photron_wavelength_calibration(); persisted in .trs.
+        # Shape: {'polynomial_coeffs': [c0, c1, c2],  # ascending, zero-indexed
+        #         'convention': 'ascending_zero_indexed',
+        #         'source_filename': '/path/to/calibration.json',
+        #         ...other metadata...}
+        self.photron_wavelength_calibration = None
+
         self.temperature_fit_function_str = 'plank'
+
+        # True when this configuration has unsaved changes (data/calibration/ROI/etc.
+        # loaded or modified since the last save_setting or load_setting call).
+        # Consumed at app-close to prompt for saving.
+        self.dirty = False
 
         self._filename_iterator = FileNameIterator()
 
@@ -135,6 +150,44 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def load_data_image_ad(self, area_detector):
         self.load_data_image(area_detector.record_name, area_detector=area_detector)
 
+    # Photron TIFF wavelength calibration (explicit load; per-configuration)
+    #########################################################################
+    def load_photron_wavelength_calibration(self, json_filename):
+        """Load a wavelength-calibration JSON produced by photron/calibrate.py.
+
+        Validates presence of polynomial_coeffs and stores the dict on the
+        configuration. The convention is ascending-order coefficients evaluated
+        at zero-indexed pixel positions.
+
+        Raises ValueError if the file is malformed.
+        """
+        with open(json_filename, 'r') as f:
+            data = json.load(f)
+        if 'polynomial_coeffs' not in data:
+            raise ValueError(
+                f"{json_filename}: missing required 'polynomial_coeffs' field"
+            )
+        coeffs = data['polynomial_coeffs']
+        if not (isinstance(coeffs, list) and len(coeffs) >= 1
+                and all(isinstance(c, (int, float)) for c in coeffs)):
+            raise ValueError(
+                f"{json_filename}: 'polynomial_coeffs' must be a list of numbers"
+            )
+        data['source_filename'] = os.path.abspath(json_filename)
+        self.photron_wavelength_calibration = data
+        self.dirty = True
+
+    def clear_photron_wavelength_calibration(self):
+        if self.photron_wavelength_calibration is not None:
+            self.dirty = True
+        self.photron_wavelength_calibration = None
+
+    def _photron_coeffs(self):
+        """Return the current wavelength-polynomial coefficients, or None."""
+        if self.photron_wavelength_calibration is None:
+            return None
+        return self.photron_wavelength_calibration.get('polynomial_coeffs')
+
     # loading spe or h5 image files:
     #########################################################################
     def _load_raw_data(self, filename, area_detector=None):
@@ -155,8 +208,11 @@ class TemperatureModelConfiguration(QtCore.QObject):
                 self.data_img_file = SpeFile(filename)
             elif file_extension == '.h5':
                 self.data_img_file = H5File(filename, self.x_calibration)
+            elif file_extension.lower() in ('.tif', '.tiff'):
+                self.data_img_file = TifFile(filename, self._photron_coeffs())
             self._filename_iterator.update_filename(filename)
             self.mtime = self.get_last_modified_time(filename)
+            self.dirty = True
         else:
             area_detector.update_data()
             self.data_img_file = area_detector
@@ -322,6 +378,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.us_temperature_model.set_temperature_fit_function(function_type)
             pipeline.run(self, Stage.FIT)
             self.data_changed_emit(self.current_frame)
+            self.dirty = True
 
 
 
@@ -336,6 +393,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
             # Background flag affects both data and calibration extraction.
             pipeline.run(self, Stage.DATA_SPEC)
             self.data_changed_emit(self.current_frame)
+            self.dirty = True
 
     def _update_temperature_models_data(self):
 
@@ -380,12 +438,15 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.ds_calibration_img_file = SpeFile(filename)
         elif str.lower(file_extension)  == '.h5':
             self.ds_calibration_img_file = H5File(filename,self.x_calibration)
+        elif str.lower(file_extension) in ('.tif', '.tiff'):
+            self.ds_calibration_img_file = TifFile(filename, self._photron_coeffs())
 
         #self.ds_calibration_img_file = SpeFile(filename)
         
         self.ds_calibration_filename = filename
         self.ds_set_calibration_data()
         self.ds_calculations_changed_emit()
+        self.dirty = True
 
     def ds_set_calibration_data(self):
         self.ds_temperature_model.set_calibration_data(self.ds_calibration_img_file,
@@ -399,13 +460,16 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.us_calibration_img_file = SpeFile(filename)
         elif str.lower(file_extension)  == '.h5':
             self.us_calibration_img_file = H5File(filename,self.x_calibration)
+        elif str.lower(file_extension) in ('.tif', '.tiff'):
+            self.us_calibration_img_file = TifFile(filename, self._photron_coeffs())
 
         #self.us_calibration_img_file = SpeFile(filename)
         self.us_calibration_filename = filename
 
-        
+
         self.us_set_calibration_data()
         self.us_calculations_changed_emit()
+        self.dirty = True
 
     def us_set_calibration_data(self):
         self.us_temperature_model.set_calibration_data(self.us_calibration_img_file,
@@ -422,11 +486,13 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.ds_temperature_model.load_standard_spectrum(filename)
         pipeline.run_ds(self, Stage.CORRECT)
         self.ds_calculations_changed_emit()
+        self.dirty = True
 
     def load_us_standard_spectrum(self, filename):
         self.us_temperature_model.load_standard_spectrum(filename)
         pipeline.run_us(self, Stage.CORRECT)
         self.us_calculations_changed_emit()
+        self.dirty = True
 
     def save_ds_standard_spectrum(self, filename):
         self.ds_temperature_model.save_standard_spectrum(filename)
@@ -438,21 +504,25 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.ds_temperature_model.set_calibration_modus(modus)
         pipeline.run_ds(self, Stage.CORRECT)
         self.ds_calculations_changed_emit()
+        self.dirty = True
 
     def set_us_calibration_modus(self, modus):
         self.us_temperature_model.set_calibration_modus(modus)
         pipeline.run_us(self, Stage.CORRECT)
         self.us_calculations_changed_emit()
+        self.dirty = True
 
     def set_ds_calibration_temperature(self, temperature):
         self.ds_temperature_model.set_calibration_temperature(temperature)
         pipeline.run_ds(self, Stage.CORRECT)
         self.ds_calculations_changed_emit()
+        self.dirty = True
 
     def set_us_calibration_temperature(self, temperature):
         self.us_temperature_model.set_calibration_temperature(temperature)
         pipeline.run_us(self, Stage.CORRECT)
         self.us_calculations_changed_emit()
+        self.dirty = True
 
     def save_setting(self, filename):
         f = h5py.File(filename, 'w')
@@ -504,7 +574,21 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.us_temperature_model.calibration_parameter.get_standard_filename()
         us_group['standard_spectrum'].attrs['subtract_bg'] = self.use_insitu_calibration_background
 
+        if self.photron_wavelength_calibration is not None:
+            wl_group = f.create_group('photron_wavelength_calibration')
+            wl_group.attrs['polynomial_coeffs'] = np.asarray(
+                self.photron_wavelength_calibration['polynomial_coeffs'], dtype=float
+            )
+            wl_group.attrs['convention'] = self.photron_wavelength_calibration.get(
+                'convention', 'ascending_zero_indexed'
+            )
+            wl_group.attrs['source_filename'] = str(
+                self.photron_wavelength_calibration.get('source_filename', '')
+            )
+
         f.close()
+        self.setting_filename = filename
+        self.dirty = False
 
     
     def load_setting(self, filename):
@@ -620,11 +704,25 @@ class TemperatureModelConfiguration(QtCore.QObject):
         temperature = float(us_group['temperature'][...])
         self.us_temperature_model.calibration_parameter.set_temperature(temperature)
 
+        if 'photron_wavelength_calibration' in f:
+            wl_group = f['photron_wavelength_calibration']
+            coeffs = wl_group.attrs['polynomial_coeffs'][...].tolist()
+            convention = wl_group.attrs.get('convention', 'ascending_zero_indexed')
+            source_filename = wl_group.attrs.get('source_filename', '')
+            self.photron_wavelength_calibration = {
+                'polynomial_coeffs': coeffs,
+                'convention': str(convention),
+                'source_filename': str(source_filename),
+            }
+        else:
+            self.photron_wavelength_calibration = None
+
         pipeline.run(self, Stage.DATA_SPEC)
 
         self.data_changed_emit(self.current_frame)
 
         self.setting_filename = filename
+        self.dirty = False
 
 
     
@@ -917,6 +1015,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.ds_roi = limits[0]
         self.us_roi_bg = limits[3]
         self.ds_roi_bg = limits[2]
+        self.dirty = True
 
 
     def get_roi_data_list(self):
@@ -1243,6 +1342,15 @@ class SingleTemperatureModel(QtCore.QObject):
         if self._data_img is not None:
             _data_img_as_array = np.asarray(self._data_img)
             roi = self.roi_data_manager.get_roi(self.ind, self._data_img_dimension)
+            # Clamp ROI to image bounds so mask, x-slice, and data_y agree in size.
+            # validate_roi swaps out-of-order pairs and clamps min>=0; here we also
+            # clamp max to image extents (numpy would otherwise wrap negative starts).
+            roi = validate_roi(roi)
+            h, w = _data_img_as_array.shape
+            if roi.x_max >= w:
+                roi.x_max = w - 1
+            if roi.y_max >= h:
+                roi.y_max = h - 1
             if self.subtract_inistu_data_background:
                 roi_bg = self.roi_data_manager.get_roi(self.ind+2, self._data_img_dimension)
                 roi_bg.x_max = roi.x_max
@@ -1270,6 +1378,12 @@ class SingleTemperatureModel(QtCore.QObject):
     def _update_calibration_spectrum(self):
         if self.calibration_img is not None:
             roi = self.roi_data_manager.get_roi(self.ind, self._calibration_img_dimension)
+            roi = validate_roi(roi)
+            h, w = np.asarray(self.calibration_img).shape[-2:]
+            if roi.x_max >= w:
+                roi.x_max = w - 1
+            if roi.y_max >= h:
+                roi.y_max = h - 1
             if self.subtract_inistu_calibration_background:
                 roi_bg = self.roi_data_manager.get_roi(self.ind+2, self._calibration_img_dimension)
                 roi_bg.x_max = roi.x_max

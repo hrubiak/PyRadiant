@@ -142,11 +142,57 @@ class MainController(object):
         self.main_widget.raman_widget.hide()'''
 
     def closeEvent(self, event):
+        if not self._prompt_save_dirty_configs(event):
+            return
         self.save_settings()
         self.temperature_controller.cleanup()
         self.main_widget.close()
         self.data_history_widget.close()
         self.temperature_controller.close_log()
         event.accept()
+
+    def _prompt_save_dirty_configs(self, event):
+        """If any configuration has unsaved changes, ask the user Save/Discard/Cancel.
+        Returns True to proceed with close, False if the user cancelled.
+        """
+        dirty = [(i, c) for i, c in enumerate(self.temperature_model.configurations)
+                 if getattr(c, 'dirty', False)]
+        if not dirty:
+            return True
+
+        lines = []
+        for ind, cfg in dirty:
+            name = ('unsaved' if cfg.setting_filename is None
+                    else os.path.basename(cfg.setting_filename))
+            lines.append(f"  Config {ind + 1}: {name}")
+        msg = ("You have unsaved changes in the following configurations:\n\n"
+               + "\n".join(lines)
+               + "\n\nSave before closing?")
+        reply = QtWidgets.QMessageBox.question(
+            self.main_widget,
+            "Unsaved configurations",
+            msg,
+            QtWidgets.QMessageBox.StandardButton.SaveAll
+            | QtWidgets.QMessageBox.StandardButton.Discard
+            | QtWidgets.QMessageBox.StandardButton.Cancel,
+            QtWidgets.QMessageBox.StandardButton.SaveAll,
+        )
+        if reply == QtWidgets.QMessageBox.StandardButton.Cancel:
+            event.ignore()
+            return False
+        if reply == QtWidgets.QMessageBox.StandardButton.Discard:
+            return True
+
+        # SaveAll: switch to each dirty config and reuse the standard save path
+        # (opens a file dialog if the config has no .trs filename yet).
+        original_ind = self.temperature_model.configuration_ind
+        for ind, cfg in dirty:
+            self.temperature_model.select_configuration(ind)
+            self.temperature_controller.save_setting_file()
+            if cfg.dirty:  # user cancelled the file dialog for this one
+                self.temperature_model.select_configuration(original_ind)
+                event.ignore()
+                return False
+        return True
 
     
