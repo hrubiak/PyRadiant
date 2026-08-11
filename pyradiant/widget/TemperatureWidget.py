@@ -290,6 +290,8 @@ class TemperatureWidget(QtWidgets.QWidget):
 
 
         self.source_mode_badge = self.control_widget.file_gb.source_mode_badge
+        self.kinetics_badge = self.control_widget.file_gb.kinetics_badge
+        self.set_kinetics_badge = self.control_widget.file_gb.set_kinetics_badge
 
         self.browse_by_name_rb = self.control_widget.file_gb.browse_by_name_rb
         self.browse_by_time_rb = self.control_widget.file_gb.browse_by_time_rb

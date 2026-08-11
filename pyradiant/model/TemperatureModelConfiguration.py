@@ -117,6 +117,20 @@ class TemperatureModelConfiguration(QtCore.QObject):
         # so the existing property surface and .trs schema remain intact.
         self.mode = 'dual'
 
+        # Kinetics readout mode of the loaded data file. Diagnostic/UI-facing
+        # in this pass; downstream extraction is unchanged (SpeFile._read_frame
+        # already invisibly reconstructs each strip as a full-sensor canvas).
+        #   'off'         : normal full-frame or unknown readout.
+        #   'interleaved' : PI-MAX4 kinetics with DS and US on the same sensor,
+        #                   temporally offset by row-shift time. Only a subset
+        #                   of strip indices have DS+US exposure overlap.
+        #   'true_single' : (future) single-side kinetics, no interleaving.
+        # kinetics_info carries geometry (window_height, n_strips, sensor) now
+        # and will be extended with timing fields (shift_time_per_row,
+        # readout_edge, strip_timestamps) when time-unscrambling lands.
+        self.kinetics_mode = 'off'
+        self.kinetics_info = {}
+
         # True when this configuration has unsaved changes (data/calibration/ROI/etc.
         # loaded or modified since the last save_setting or load_setting call).
         # Consumed at app-close to prompt for saving.
@@ -251,8 +265,34 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.current_frame = 0
             self._data_img = self.data_img_file.img
 
+        self._sync_kinetics_from_file()
+        self._sync_cross_mode_rois()
+
         # Store image data on each model (store-only; pipeline handles computation).
         self._update_temperature_models_data()
+
+    def _sync_kinetics_from_file(self):
+        """Update kinetics_mode/kinetics_info from the currently-loaded reader.
+
+        Downstream extraction is agnostic: SpeFile._read_frame already pastes
+        each kinetics strip onto a full-sensor canvas. This just surfaces the
+        readout mode + geometry for the UI (badge, strip-counter relabel) and
+        for future time-unscrambling work.
+        """
+        reader = self.data_img_file
+        mode_str = str(getattr(reader, 'readout_mode', '') or '').lower()
+        if reader is not None and mode_str == 'kinetics':
+            self.kinetics_mode = 'interleaved'
+            self.kinetics_info = {
+                'window_height': int(getattr(reader, 'kinetics_window_height', 0) or 0),
+                'n_strips': int(getattr(reader, 'num_frames', 0) or 0),
+                'sensor_height': int(getattr(reader, 'sensor_height', 0) or 0),
+                'sensor_width': int(getattr(reader, 'sensor_width', 0) or 0),
+                'window_y': int(getattr(reader, 'kinetics_window_y', 0) or 0),
+            }
+        else:
+            self.kinetics_mode = 'off'
+            self.kinetics_info = {}
 
     def load_data_image(self, filename, area_detector=None):
         """Load a data file and run the full calculation pipeline.
@@ -601,6 +641,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
         #self.ds_calibration_img_file = SpeFile(filename)
         
         self.ds_calibration_filename = filename
+        self._sync_cross_mode_rois()
         self.ds_set_calibration_data()
         self.dirty = True
         self.ds_calculations_changed_emit()
@@ -623,7 +664,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
         #self.us_calibration_img_file = SpeFile(filename)
         self.us_calibration_filename = filename
 
-
+        self._sync_cross_mode_rois()
         self.us_set_calibration_data()
         self.dirty = True
         self.us_calculations_changed_emit()
@@ -720,6 +761,15 @@ class TemperatureModelConfiguration(QtCore.QObject):
             xdim, ydim = self.data_img_file.get_dimension()
             f.attrs['data_img_xdim'] = int(xdim)
             f.attrs['data_img_ydim'] = int(ydim)
+
+        # Kinetics readout state. Persisted so a reopened .trs restores the
+        # badge and strip-counter labelling even though the raw reader isn't
+        # persisted with the file.
+        f.attrs['kinetics_mode'] = self.kinetics_mode
+        if self.kinetics_info:
+            kg = f.create_group('kinetics_info')
+            for k, v in self.kinetics_info.items():
+                kg.attrs[k] = v
 
         # Prerecorded dark frames per side (only stored when present). The
         # image is embedded in the .trs so the config is self-contained even
@@ -862,6 +912,13 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.us_dark_frame_img = None
             self.us_dark_frame_filename = None
             self.us_dark_frame_scale = 1.0
+        # Kinetics readout state (backward compat: absent → 'off', empty info).
+        self.kinetics_mode = str(f.attrs.get('kinetics_mode', 'off'))
+        if 'kinetics_info' in f:
+            self.kinetics_info = {k: (v.item() if hasattr(v, 'item') else v)
+                                  for k, v in f['kinetics_info'].attrs.items()}
+        else:
+            self.kinetics_info = {}
         ds_group = f['downstream_calibration']
         # DS intensity calibration image (optional — single-sided/no-cal configs skip)
         if 'image' in ds_group:
@@ -999,6 +1056,17 @@ class TemperatureModelConfiguration(QtCore.QObject):
             m.subtract_inistu_calibration_background = insitu
         self._propagate_dark_to_models()
 
+        # The .trs's saved kinetics_mode reflects the session it was saved
+        # from, but extraction operates on the currently-loaded data file.
+        # If a data file is already present, let it be authoritative — this
+        # keeps things consistent when the user switches .trs files (e.g.
+        # from a kinetics-cal .trs to a full-chip-cal .trs) without touching
+        # the loaded kinetics data.
+        if self.data_img_file is not None:
+            self._sync_kinetics_from_file()
+
+        self._sync_cross_mode_rois()
+
         pipeline.run(self, Stage.DATA_SPEC)
 
         self.data_changed_emit(self.current_frame)
@@ -1092,8 +1160,11 @@ class TemperatureModelConfiguration(QtCore.QObject):
     @property
     def wl_range(self):
         try:
-            ds_roi = self.roi_data_manager.get_roi(0, self.data_img_file.get_dimension())
+            dim = self._effective_roi_dimension()
             wl = self.x_calibration
+            if dim is None or wl is None or len(wl) == 0:
+                return [0, 0]
+            ds_roi = self.roi_data_manager.get_roi(0, dim)
             min_ind = int(round(ds_roi.x_min))
             max_ind = int(round(ds_roi.x_max))
             if min_ind < 0:
@@ -1143,10 +1214,13 @@ class TemperatureModelConfiguration(QtCore.QObject):
         us_bg_limits[0] = x_start
         us_bg_limits[1] = x_end
 
-        ds_roi = self.roi_data_manager.get_roi(0, self.data_img_file.get_dimension())
-        us_roi = self.roi_data_manager.get_roi(1, self.data_img_file.get_dimension())
-        ds_bg_roi = self.roi_data_manager.get_roi(2, self.data_img_file.get_dimension())
-        us_bg_roi = self.roi_data_manager.get_roi(3, self.data_img_file.get_dimension())
+        dim = self._effective_roi_dimension()
+        if dim is None:
+            return
+        ds_roi = self.roi_data_manager.get_roi(0, dim)
+        us_roi = self.roi_data_manager.get_roi(1, dim)
+        ds_bg_roi = self.roi_data_manager.get_roi(2, dim)
+        us_bg_roi = self.roi_data_manager.get_roi(3, dim)
 
         ds_limits[2] = ds_roi.y_min
         ds_limits[3] = ds_roi.y_max
@@ -1157,70 +1231,207 @@ class TemperatureModelConfiguration(QtCore.QObject):
         us_bg_limits[2] = us_bg_roi.y_min
         us_bg_limits[3] = us_bg_roi.y_max
 
-        self.roi_data_manager.set_roi(0, self.data_img_file.get_dimension(), ds_limits)
-        self.roi_data_manager.set_roi(1, self.data_img_file.get_dimension(), us_limits)
-        self.roi_data_manager.set_roi(2, self.data_img_file.get_dimension(), ds_bg_limits)
-        self.roi_data_manager.set_roi(3, self.data_img_file.get_dimension(), us_bg_limits)
+        self.roi_data_manager.set_roi(0, dim, ds_limits)
+        self.roi_data_manager.set_roi(1, dim, us_limits)
+        self.roi_data_manager.set_roi(2, dim, ds_bg_limits)
+        self.roi_data_manager.set_roi(3, dim, us_bg_limits)
 
         '''self.ds_temperature_model._update_all_spectra()
         self.ds_temperature_model.fit_data()
         self.ds_calculations_changed_emit()'''
 
+    def _sync_cross_mode_rois(self):
+        """Derive kinetics-dim ROIs from full-chip cal-dim ROIs using the
+        modular geometry of PI-MAX4 kinetics readout: charge shifts up by
+        h = window_height rows per frame, so a DS/US band at physical cal
+        row Y appears at row ((Y - win_y) mod h) of every kinetics frame.
+        Idempotent."""
+        if self.kinetics_mode != 'interleaved':
+            return
+        if self.data_img_file is None:
+            return
+        win_y = int(self.kinetics_info.get('window_y', 0) or 0)
+        h = int(self.kinetics_info.get('window_height', 0) or 0)
+        if h <= 0:
+            return
+        try:
+            data_dim = self.data_img_file.get_dimension()
+        except Exception:
+            return
+        for side, cal_file in (('ds', self.ds_calibration_img_file),
+                               ('us', self.us_calibration_img_file)):
+            if cal_file is None or getattr(cal_file, 'img', None) is None:
+                continue
+            cal_shape = np.asarray(cal_file.img).shape
+            if len(cal_shape) != 2:
+                continue  # 3D kinetics cal stack already lives at data-dim
+            cal_dim = (cal_shape[1], cal_shape[0])
+            if cal_dim == data_dim:
+                continue
+            # Only signal ROIs (idx 0=DS, 1=US) get the modular mapping —
+            # their positions are fixed by a permanent physical mask on the
+            # CCD, so the geometry carries over. Background ROIs (idx 2, 3)
+            # are chosen for local darkness; a "dark" full-chip row is not
+            # necessarily dark in the shifted/interleaved kinetics stack.
+            # Backgrounds stay per-dim independent.
+            idx = 0 if side == 'ds' else 1
+            cal_roi = self.roi_data_manager.get_roi(idx, cal_dim)
+            y_min_shifted = int(cal_roi.y_min) - win_y
+            y_max_shifted = int(cal_roi.y_max) - win_y
+            new_y_min = y_min_shifted % h
+            new_y_max = y_max_shifted % h
+            if new_y_min > new_y_max:
+                # Band straddles a kinetics-frame boundary — split across
+                # two frames. Refuse to auto-adapt this side.
+                continue
+            self.roi_data_manager.set_roi(idx, data_dim,
+                [int(cal_roi.x_min), int(cal_roi.x_max),
+                 new_y_min, new_y_max])
+
+    def _mirror_roi_to_cal_dim(self, idx, data_dim, limits):
+        """When the user drags a signal ROI in the kinetics view, update
+        the cal-dim ROI to reflect the same physical sensor row. The user
+        changes the row-within-frame; the frame-index quotient
+        (Y_cal - win_y) // h is preserved from the pre-drag cal-dim ROI
+        so the physical DS/US band position stays consistent.
+
+        Background ROIs (idx 2, 3) are not mirrored — dark regions are
+        chosen independently for each readout mode."""
+        if self.kinetics_mode != 'interleaved':
+            return
+        if idx not in (0, 1):
+            return
+        win_y = int(self.kinetics_info.get('window_y', 0) or 0)
+        h = int(self.kinetics_info.get('window_height', 0) or 0)
+        if h <= 0:
+            return
+        cal_file = self.ds_calibration_img_file if idx == 0 \
+            else self.us_calibration_img_file
+        if cal_file is None or getattr(cal_file, 'img', None) is None:
+            return
+        cal_shape = np.asarray(cal_file.img).shape
+        if len(cal_shape) != 2:
+            return
+        cal_dim = (cal_shape[1], cal_shape[0])
+        if cal_dim == data_dim:
+            return
+        x_min, x_max, ky_min, ky_max = (int(v) for v in limits)
+        prev = self.roi_data_manager.get_roi(idx, cal_dim)
+        q_min = (int(prev.y_min) - win_y) // h
+        q_max = (int(prev.y_max) - win_y) // h
+        new_cal_y_min = q_min * h + win_y + ky_min
+        new_cal_y_max = q_max * h + win_y + ky_max
+        cal_h = cal_shape[0]
+        new_cal_y_min = max(0, min(cal_h - 1, new_cal_y_min))
+        new_cal_y_max = max(0, min(cal_h - 1, new_cal_y_max))
+        if new_cal_y_min > new_cal_y_max:
+            return
+        self.roi_data_manager.set_roi(idx, cal_dim,
+            [x_min, x_max, new_cal_y_min, new_cal_y_max])
+
+    def _effective_roi_dimension(self):
+        """Dimension to key ROI lookups on when there's no data image loaded.
+
+        Priority:
+          1. data_img_file dim — normal path.
+          2. DS calibration image shape (transposed to xdim, ydim) — allows a
+             .trs loaded before its data file to still show ROIs on the DS/US
+             Cal 2D tabs.
+          3. US calibration image shape — same, if DS cal isn't present.
+          4. None — no dimension known; callers return a zero ROI.
+        """
+        if self.data_img_file is not None:
+            try:
+                return self.data_img_file.get_dimension()
+            except Exception:
+                pass
+        for cal in (self.ds_calibration_img_file, self.us_calibration_img_file):
+            if cal is not None and getattr(cal, 'img', None) is not None:
+                shape = cal.img.shape
+                if len(shape) == 2:
+                    return (shape[1], shape[0])
+                if len(shape) == 3:
+                    return (shape[2], shape[1])
+        return None
+
     # updating roi values
     @property
     def ds_roi(self):
-        try:
-            dim = self.data_img_file.get_dimension()
-            roi = self.roi_data_manager.get_roi(0, self.data_img_file.get_dimension())
-            return roi
-        except:
+        dim = self._effective_roi_dimension()
+        if dim is None:
             return Roi([0, 0, 0, 0])
-        
+        try:
+            return self.roi_data_manager.get_roi(0, dim)
+        except Exception:
+            return Roi([0, 0, 0, 0])
 
     @ds_roi.setter
     def ds_roi(self, ds_limits):
-        self.roi_data_manager.set_roi(0, self.data_img_file.get_dimension(), ds_limits)
+        dim = self._effective_roi_dimension()
+        if dim is None:
+            return
+        self.roi_data_manager.set_roi(0, dim, ds_limits)
+        self._mirror_roi_to_cal_dim(0, dim, ds_limits)
         pipeline.run_ds(self, Stage.DATA_SPEC)
         self.ds_calculations_changed_emit()
 
     @property
     def us_roi(self):
+        dim = self._effective_roi_dimension()
+        if dim is None:
+            return Roi([0, 0, 0, 0])
         try:
-            dim = self.data_img_file.get_dimension()
-            roi = self.roi_data_manager.get_roi(1, self.data_img_file.get_dimension())
-            return roi
-        except:
+            return self.roi_data_manager.get_roi(1, dim)
+        except Exception:
             return Roi([0, 0, 0, 0])
 
     @us_roi.setter
     def us_roi(self, us_limits):
-        self.roi_data_manager.set_roi(1, self.data_img_file.get_dimension(), us_limits)
+        dim = self._effective_roi_dimension()
+        if dim is None:
+            return
+        self.roi_data_manager.set_roi(1, dim, us_limits)
+        self._mirror_roi_to_cal_dim(1, dim, us_limits)
         pipeline.run_us(self, Stage.DATA_SPEC)
         self.us_calculations_changed_emit()
 
     @property
     def ds_roi_bg(self):
+        dim = self._effective_roi_dimension()
+        if dim is None:
+            return Roi([0, 0, 0, 0])
         try:
-            return self.roi_data_manager.get_roi(2, self.data_img_file.get_dimension())
-        except AttributeError:
+            return self.roi_data_manager.get_roi(2, dim)
+        except Exception:
             return Roi([0, 0, 0, 0])
 
     @ds_roi_bg.setter
     def ds_roi_bg(self, ds_bg_limits):
-        self.roi_data_manager.set_roi(2, self.data_img_file.get_dimension(), ds_bg_limits)
+        dim = self._effective_roi_dimension()
+        if dim is None:
+            return
+        self.roi_data_manager.set_roi(2, dim, ds_bg_limits)
+        self._mirror_roi_to_cal_dim(2, dim, ds_bg_limits)
         pipeline.run_ds(self, Stage.DATA_SPEC)
         self.ds_calculations_changed_emit()
 
     @property
     def us_roi_bg(self):
+        dim = self._effective_roi_dimension()
+        if dim is None:
+            return Roi([0, 0, 0, 0])
         try:
-            return self.roi_data_manager.get_roi(3, self.data_img_file.get_dimension())
-        except:
+            return self.roi_data_manager.get_roi(3, dim)
+        except Exception:
             return Roi([0, 0, 0, 0])
 
     @us_roi_bg.setter
     def us_roi_bg(self, us_bg_limits):
-        self.roi_data_manager.set_roi(3, self.data_img_file.get_dimension(), us_bg_limits)
+        dim = self._effective_roi_dimension()
+        if dim is None:
+            return
+        self.roi_data_manager.set_roi(3, dim, us_bg_limits)
+        self._mirror_roi_to_cal_dim(3, dim, us_bg_limits)
         pipeline.run_us(self, Stage.DATA_SPEC)
         self.us_calculations_changed_emit()
 

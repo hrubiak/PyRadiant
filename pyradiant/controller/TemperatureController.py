@@ -955,6 +955,13 @@ class TemperatureController(QtCore.QObject):
 
         self._update_wavelength_calibration_label()
         self._refresh_configuration_buttons()
+        # Kinetics badge + strip-counter relabel, driven by the config's
+        # auto-detected kinetics state (set in _sync_kinetics_from_file on
+        # load, or restored from .trs attrs on workspace open).
+        self.widget.set_kinetics_badge(
+            getattr(self.model.current_configuration, 'kinetics_mode', 'off'),
+            getattr(self.model.current_configuration, 'kinetics_info', {}),
+        )
         # Apply the (possibly config-switched) measurement mode so the UI matches.
         mode = getattr(self.model.current_configuration, 'mode', 'dual')
         self.widget.apply_measurement_mode(mode)
@@ -994,10 +1001,19 @@ class TemperatureController(QtCore.QObject):
             img = img_file.img
             if isinstance(img, list):
                 img = img[0]
-            return np.asarray(img)
+            img = np.asarray(img)
+            # Kinetics cal images are stored as a 3D strip stack in the .trs
+            # (n_strips, window_h, width). Pick the first strip for display —
+            # the 2D preview is a representative frame, not a montage.
+            if img.ndim == 3:
+                img = img[0]
+            return img
         cached = getattr(model, 'calibration_img', None)
         if cached is not None:
-            return np.asarray(cached)
+            cached = np.asarray(cached)
+            if cached.ndim == 3:
+                cached = cached[0]
+            return cached
         return None
 
     def _push_ds_calibration_view(self):
@@ -1035,6 +1051,29 @@ class TemperatureController(QtCore.QObject):
         self.widget.frame_num_txt.clearFocus()
         self.widget.frame_num_txt.blockSignals(False)
 
+    def _is_cal_kinetics_adapted(self, cfg, side):
+        """True when the cal image is a full-chip 2D frame and data is a
+        kinetics readout window — i.e. cross-mode ROI mirroring is in play."""
+        if getattr(cfg, 'kinetics_mode', 'off') != 'interleaved':
+            return False
+        cal_file = cfg.ds_calibration_img_file if side == 'ds' else cfg.us_calibration_img_file
+        if cal_file is None or getattr(cal_file, 'img', None) is None:
+            return False
+        try:
+            shape = cal_file.img.shape
+        except Exception:
+            return False
+        if len(shape) != 2:
+            return False
+        if cfg.data_img_file is None:
+            return False
+        try:
+            data_dim = cfg.data_img_file.get_dimension()
+        except Exception:
+            return False
+        cal_dim = (shape[1], shape[0])
+        return cal_dim != data_dim
+
     def ds_calculations_changed(self):
         self._refresh_configuration_buttons()
         self._push_ds_calibration_view()
@@ -1047,12 +1086,19 @@ class TemperatureController(QtCore.QObject):
       
 
         if self.model.current_configuration.ds_calibration_filename is not None:
-            self.widget.ds_calibration_filename_lbl.setText(str(os.path.basename(self.model.current_configuration.ds_calibration_filename)))
+            label = str(os.path.basename(self.model.current_configuration.ds_calibration_filename))
+            if self._is_cal_kinetics_adapted(self.model.current_configuration, 'ds'):
+                label = f"{label} (auto-adapted)"
+            self.widget.ds_calibration_filename_lbl.setText(label)
         else:
             self.widget.ds_calibration_filename_lbl.setText('Select File...')
 
         self.widget.ds_standard_filename_lbl.setText(str(os.path.basename(self.model.current_configuration.ds_standard_filename)))
+        # Programmatic sync: block signals so the toggled→set_ds_calibration_modus
+        # side-effect doesn't mark the config dirty just from refreshing the UI.
+        self.widget.ds_standard_rb.blockSignals(True)
         self.widget.ds_standard_rb.setChecked(self.model.current_configuration.ds_temperature_model.calibration_parameter.modus)
+        self.widget.ds_standard_rb.blockSignals(False)
         self.widget.ds_temperature_txt.setText(str(self.model.current_configuration.ds_temperature_model.calibration_parameter.temperature))
 
         if len(self.model.current_configuration.ds_corrected_spectrum):
@@ -1110,12 +1156,17 @@ class TemperatureController(QtCore.QObject):
                 us_fit_ok = us_temperatures[curr_frame] > 0
  
         if self.model.current_configuration.us_calibration_filename is not None:
-            self.widget.us_calibration_filename_lbl.setText(str(os.path.basename(self.model.current_configuration.us_calibration_filename)))
+            label = str(os.path.basename(self.model.current_configuration.us_calibration_filename))
+            if self._is_cal_kinetics_adapted(self.model.current_configuration, 'us'):
+                label = f"{label} (auto-adapted)"
+            self.widget.us_calibration_filename_lbl.setText(label)
         else:
             self.widget.us_calibration_filename_lbl.setText('Select File...')
 
         self.widget.us_standard_filename_lbl.setText(str(os.path.basename(self.model.current_configuration.us_standard_filename)))
+        self.widget.us_standard_rb.blockSignals(True)
         self.widget.us_standard_rb.setChecked(self.model.current_configuration.us_temperature_model.calibration_parameter.modus)
+        self.widget.us_standard_rb.blockSignals(False)
         self.widget.us_temperature_txt.setText(str(self.model.current_configuration.us_temperature_model.calibration_parameter.temperature))
 
         if len(self.model.current_configuration.us_corrected_spectrum):

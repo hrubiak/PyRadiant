@@ -256,6 +256,17 @@ class SpeFile(DataModel):
         else:
             self.kinetics_window_height = None
 
+        # Kinetics window y-position on the sensor (from the Result element).
+        # This is the actual readout window origin; needed to map cal ROIs
+        # captured at full-chip geometry into the kinetics window frame.
+        try:
+            result_roi = readout_control.getElementsByTagName("RegionsOfInterest")[0] \
+                                        .getElementsByTagName("Result")[0] \
+                                        .getElementsByTagName("RegionOfInterest")[0]
+            self.kinetics_window_y = int(result_roi.attributes['y'].value)
+        except (IndexError, KeyError):
+            self.kinetics_window_y = 0
+
     def _read_sensor_information_from_dom(self):
         """Reads the x calibration of the image from the xml footer and saves 
         it in the x_calibration field"""

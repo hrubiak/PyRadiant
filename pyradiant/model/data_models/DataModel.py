@@ -35,7 +35,10 @@ class DataModel():
         self._xdim = 0
         self._ydim = 0
         self.gain = 1
-        
+        self.readout_mode = None
+        self.kinetics_window_height = None
+        self.kinetics_window_y = 0
+
 
     def get_dimension(self):
         """Returns (xdim, ydim)"""

@@ -50,6 +50,17 @@ class FileGroupBox(QtWidgets.QGroupBox):
         )
         self.source_mode_badge.setFixedHeight(18)
         self._second_row_widget_layout.addWidget(self.source_mode_badge)
+
+        self.kinetics_badge = QtWidgets.QLabel("")
+        self.kinetics_badge.setStyleSheet(
+            "background-color: #4a2a6a; color: #d0b0ff; border-radius: 3px;"
+            " padding: 1px 5px; font-weight: bold;"
+        )
+        self.kinetics_badge.setFixedHeight(18)
+        self.kinetics_badge.hide()
+        self._second_row_widget_layout.addSpacing(4)
+        self._second_row_widget_layout.addWidget(self.kinetics_badge)
+
         self._second_row_widget_layout.addSpacing(6)
         self._second_row_widget_layout.addWidget(self.filename_lbl)
         self._second_row_widget_layout.addSpacerItem(HorizontalSpacerItem())
@@ -135,9 +146,11 @@ class FileGroupBox(QtWidgets.QGroupBox):
     
         self.load_previous_frame_btn = QtWidgets.QPushButton('<')
         self.load_next_frame_btn = QtWidgets.QPushButton('>')
+        self.frame_lbl = QtWidgets.QLabel('Frame:')
         self.frame_txt = QtWidgets.QLineEdit('100')
         self.frame_txt.setMaximumWidth(50)
 
+        self._frame_control_layout.addWidget(self.frame_lbl)
         self._frame_control_layout.addWidget(self.load_previous_frame_btn)
         self._frame_control_layout.addWidget(self.frame_txt)
         self._frame_control_layout.addWidget(self.load_next_frame_btn)
@@ -152,6 +165,26 @@ class FileGroupBox(QtWidgets.QGroupBox):
         self.load_next_frame_btn.setMaximumWidth(25)
         
         self.file_control_widget.setLayout(self._file_control_layout)
+
+    def set_kinetics_badge(self, mode, info):
+        """Show/hide the kinetics badge and toggle the frame counter label.
+
+        mode: 'off' | 'interleaved' | 'true_single'
+        info: dict with 'n_strips', 'window_height' (used for interleaved text)
+        """
+        if mode == 'interleaved':
+            n = info.get('n_strips', '?') if info else '?'
+            h = info.get('window_height', '?') if info else '?'
+            self.kinetics_badge.setText(f"KINETICS {n}x{h}")
+            self.kinetics_badge.show()
+            self.frame_lbl.setText('Strip:')
+        elif mode == 'true_single':
+            self.kinetics_badge.setText("KINETICS (single)")
+            self.kinetics_badge.show()
+            self.frame_lbl.setText('Strip:')
+        else:
+            self.kinetics_badge.hide()
+            self.frame_lbl.setText('Frame:')
 
 
 
