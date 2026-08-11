@@ -444,7 +444,10 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.data_changed_emit(self.current_frame)
 
     # -------- Background subtraction (mode + prerecorded dark) ----------------
-    _VALID_BACKGROUND_MODES = ('insitu', 'prerecorded', 'off')
+    # 'hybrid' behaves like 'prerecorded' but auto-scales the dark subtraction by
+    # mean(bg-ROI on current image) / mean(same bg-ROI on dark image) — combining
+    # the stability of a prerecorded master dark with in-situ exposure-tracking.
+    _VALID_BACKGROUND_MODES = ('insitu', 'prerecorded', 'hybrid', 'off')
 
     def _propagate_dark_to_models(self):
         """Push the current mode + per-side dark image + scale to both single models."""
@@ -1677,6 +1680,16 @@ class SingleTemperatureModel(QtCore.QObject):
                 if dark.shape == _data_img_as_array.shape:
                     data_y = data_y - get_roi_sum(dark, roi) * float(self.dark_frame_scale)
                 # dimension-mismatch: silently skip (see mode 'prerecorded' docs)
+            elif mode == 'hybrid' and self.dark_frame_img is not None:
+                dark = np.asarray(self.dark_frame_img)
+                if dark.shape == _data_img_as_array.shape:
+                    roi_bg = self.roi_data_manager.get_roi(self.ind+2, self._data_img_dimension)
+                    roi_bg.x_max = roi.x_max
+                    roi_bg.x_min = roi.x_min
+                    data_bg_mean = float(np.mean(get_roi_img(_data_img_as_array, roi_bg)))
+                    dark_bg_mean = float(np.mean(get_roi_img(dark, roi_bg)))
+                    scale = data_bg_mean / dark_bg_mean if dark_bg_mean != 0 else 0.0
+                    data_y = data_y - get_roi_sum(dark, roi) * scale
 
             self.total_counts = np.sum(data_y)
             self.data_spectrum.data = data_x, data_y
@@ -1708,6 +1721,17 @@ class SingleTemperatureModel(QtCore.QObject):
                 cal_arr = np.asarray(self._calibration_img)
                 if dark.shape == cal_arr.shape:
                     calibration_y = calibration_y - get_roi_sum(dark, roi) * float(self.dark_frame_scale)
+            elif mode == 'hybrid' and self.dark_frame_img is not None:
+                dark = np.asarray(self.dark_frame_img)
+                cal_arr = np.asarray(self._calibration_img)
+                if dark.shape == cal_arr.shape:
+                    roi_bg = self.roi_data_manager.get_roi(self.ind+2, self._calibration_img_dimension)
+                    roi_bg.x_max = roi.x_max
+                    roi_bg.x_min = roi.x_min
+                    cal_bg_mean = float(np.mean(get_roi_img(cal_arr, roi_bg)))
+                    dark_bg_mean = float(np.mean(get_roi_img(dark, roi_bg)))
+                    scale = cal_bg_mean / dark_bg_mean if dark_bg_mean != 0 else 0.0
+                    calibration_y = calibration_y - get_roi_sum(dark, roi) * scale
             self.calibration_spectrum.data = calibration_x, calibration_y
 
     def _update_corrected_spectrum(self):

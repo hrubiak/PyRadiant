@@ -694,12 +694,16 @@ class BackgroundSubtractionGB(QtWidgets.QGroupBox):
 
     Modes:
       * In-situ ROI  — sum a per-side ROI on the same frame (indices 2/3).
-      * Prerecorded dark — subtract a stored dark image per side, scaled.
+      * Prerecorded dark — subtract a stored dark image per side, scaled by the
+        manual × spinbox.
+      * Hybrid (auto-scaled dark) — subtract a stored dark image per side,
+        auto-scaled by mean(bg-ROI on current image) / mean(same bg-ROI on
+        dark image). Manual × spinbox is inactive.
       * Off — no subtraction.
 
-    In 'Prerecorded' mode two rows appear (DS + US) with Load, Clear, filename
-    label, and a scale spinbox. In single-sided measurement mode the US row is
-    hidden (see TemperatureWidget.apply_measurement_mode).
+    Dark-file rows (DS + US) are shown in Prerecorded and Hybrid modes. In
+    single-sided measurement mode the US row is hidden (see
+    TemperatureWidget.apply_measurement_mode).
     """
     def __init__(self, *args, **kwargs):
         super().__init__('Background subtraction')
@@ -711,7 +715,7 @@ class BackgroundSubtractionGB(QtWidgets.QGroupBox):
         # Row 0: mode selector
         self._layout.addWidget(QtWidgets.QLabel('Mode:'), 0, 0)
         self.mode_combo = QtWidgets.QComboBox()
-        self.mode_combo.addItems(['In-situ ROI', 'Prerecorded dark', 'Off'])
+        self.mode_combo.addItems(['In-situ ROI', 'Prerecorded dark', 'Hybrid (auto-scaled dark)', 'Off'])
         self._layout.addWidget(self.mode_combo, 0, 1, 1, 4)
 
         # Row 1: DS dark controls (visible only in prerecorded mode)
@@ -754,15 +758,22 @@ class BackgroundSubtractionGB(QtWidgets.QGroupBox):
 
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
-        self._set_dark_rows_visible(False)  # only shown in prerecorded
+        self._set_dark_rows_visible(False)  # shown in prerecorded/hybrid only
 
-    def _set_dark_rows_visible(self, prerecorded):
-        """Show DS+US dark rows when in prerecorded mode; hide otherwise."""
+    def _set_dark_rows_visible(self, visible):
+        """Show DS+US dark rows when a dark file is used (prerecorded or hybrid)."""
         for w in (self._ds_label, self.load_ds_dark_btn, self.clear_ds_dark_btn,
                   self.ds_dark_filename_lbl, self.ds_dark_scale_sb,
                   self._us_label, self.load_us_dark_btn, self.clear_us_dark_btn,
                   self.us_dark_filename_lbl, self.us_dark_scale_sb):
-            w.setVisible(prerecorded)
+            w.setVisible(visible)
+
+    def set_scale_spinboxes_enabled(self, enabled):
+        """Disable the manual × scale spinboxes when the auto-scale (hybrid) is active."""
+        tip = '' if enabled else 'Auto-scaled from bg-ROI in hybrid mode'
+        for sb in (self.ds_dark_scale_sb, self.us_dark_scale_sb):
+            sb.setEnabled(enabled)
+            sb.setToolTip(tip)
 
     def set_us_row_visible(self, visible):
         """Hide the US dark row entirely (used when measurement mode is single)."""

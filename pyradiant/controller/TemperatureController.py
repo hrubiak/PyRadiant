@@ -317,7 +317,7 @@ class TemperatureController(QtCore.QObject):
             conf.close_log()
 
     # ---- Background subtraction handlers -------------------------------------
-    _BG_MODES_BY_INDEX = ('insitu', 'prerecorded', 'off')
+    _BG_MODES_BY_INDEX = ('insitu', 'prerecorded', 'hybrid', 'off')
 
     def _background_mode_changed(self, index):
         if not (0 <= index < len(self._BG_MODES_BY_INDEX)):
@@ -325,10 +325,13 @@ class TemperatureController(QtCore.QObject):
         mode = self._BG_MODES_BY_INDEX[index]
         cfg = self.model.current_configuration
         cfg.set_background_mode(mode)
-        self.widget.background_subtraction_gb._set_dark_rows_visible(mode == 'prerecorded')
+        gb = self.widget.background_subtraction_gb
+        uses_dark = mode in ('prerecorded', 'hybrid')
+        gb._set_dark_rows_visible(uses_dark)
+        gb.set_scale_spinboxes_enabled(mode == 'prerecorded')
         # Re-hide US row if we're in single-sided measurement mode.
         if getattr(cfg, 'mode', 'dual') == 'single':
-            self.widget.background_subtraction_gb.set_us_row_visible(False)
+            gb.set_us_row_visible(False)
 
     def _bg_scale_changed(self, side, value):
         cfg = self.model.current_configuration
@@ -395,7 +398,8 @@ class TemperatureController(QtCore.QObject):
         gb.mode_combo.blockSignals(True)
         gb.mode_combo.setCurrentIndex(idx)
         gb.mode_combo.blockSignals(False)
-        gb._set_dark_rows_visible(mode == 'prerecorded')
+        gb._set_dark_rows_visible(mode in ('prerecorded', 'hybrid'))
+        gb.set_scale_spinboxes_enabled(mode == 'prerecorded')
         if getattr(cfg, 'mode', 'dual') == 'single':
             gb.set_us_row_visible(False)
         # DS row content
