@@ -101,6 +101,8 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._side_bar_close_btn_widget_layout.addWidget(self.side_bar_close_btn)
         self._side_bar_close_btn_widget_layout.addSpacerItem(HorizontalSpacerItem())
         
+        self.measurement_mode_gb = MeasurementModeGB()
+
         self.wavelength_calibration_gb = WavelengthCalibrationGB()
 
         self.calibration_section = TemperatureCalibrationSection()
@@ -120,6 +122,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         
         self._other_settings_widget_layout.addWidget(self.side_bar_close_btn_widget)
         self._other_settings_widget_layout.addWidget(self.config_widget)
+        self._other_settings_widget_layout.addWidget(self.measurement_mode_gb)
         self._other_settings_widget_layout.addWidget(self.settings_gb)
         self._other_settings_widget_layout.addWidget(self.wl_range_widget)
         self._other_settings_widget_layout.addWidget(self.roi_gb)
@@ -163,9 +166,40 @@ class TemperatureWidget(QtWidgets.QWidget):
 
     def hide_right_panel(self):
         self.splitter_horizontal.setSizes([self.splitter_horizontal.width(), 0])
-        
-    def show_right_panel(self):    
+
+    def show_right_panel(self):
         self.splitter_horizontal.setSizes([self.splitter_horizontal.width() - self.scroll_area.width(), self.scroll_area.width()])
+
+    def apply_measurement_mode(self, mode):
+        """Show/hide every us-side sub-widget for single-sided mode.
+
+        Central place for the visibility rules so the controller only has to
+        call this one method whenever the mode changes or the config switches.
+        """
+        dual = mode == 'dual'
+        # Keep the mode-selector radios in sync (may have been driven by config load)
+        if dual and not self.dual_mode_rb.isChecked():
+            self.dual_mode_rb.setChecked(True)
+        elif not dual and not self.single_mode_rb.isChecked():
+            self.single_mode_rb.setChecked(True)
+        # Sub-widget visibility
+        self.temperature_spectrum_widget.set_mode(mode)
+        self.roi_widget.set_mode(mode)
+        # Intensity-calibration section: hide us group, retitle ds group
+        self.calibration_section.upstream_gb.setVisible(dual)
+        self.calibration_section.downstream_gb.setTitle(
+            'Downstream' if dual else 'Temperature'
+        )
+        # Interference filter: hide us row
+        self.filter_section.set_mode(mode)
+        # 2-color pyrometry: requires both sides
+        self.two_color_btn.setEnabled(dual)
+        if not dual:
+            if self.two_color_btn.isChecked():
+                self.two_color_btn.setChecked(False)
+            self.two_color_btn.setToolTip('Requires dual-sided mode')
+        else:
+            self.two_color_btn.setToolTip('')
 
     def style_widgets(self):
         pass
@@ -187,12 +221,17 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.dirname_lbl = self.control_widget.file_gb.dirname_lbl
         self.mtime = self.control_widget.file_gb.mtime
 
+        self.dual_mode_rb = self.measurement_mode_gb.dual_mode_rb
+        self.single_mode_rb = self.measurement_mode_gb.single_mode_rb
+
         self.load_wavelength_calibration_btn = self.wavelength_calibration_gb.load_btn
         self.clear_wavelength_calibration_btn = self.wavelength_calibration_gb.clear_btn
         self.wavelength_calibration_filename_lbl = self.wavelength_calibration_gb.file_lbl
 
         self.load_ds_calibration_file_btn = self.calibration_section.downstream_gb.load_file_btn
         self.load_us_calibration_file_btn = self.calibration_section.upstream_gb.load_file_btn
+        self.clear_ds_calibration_file_btn = self.calibration_section.downstream_gb.clear_file_btn
+        self.clear_us_calibration_file_btn = self.calibration_section.upstream_gb.clear_file_btn
         self.ds_calibration_filename_lbl = self.calibration_section.downstream_gb.file_lbl
         self.us_calibration_filename_lbl = self.calibration_section.upstream_gb.file_lbl
         self.ds_calibration_start_frame = self.calibration_section.downstream_gb.start_frame
@@ -581,6 +620,35 @@ class SettingsGroupBox(QtWidgets.QGroupBox):
         self.setMaximumWidth(300)
 
 
+class MeasurementModeGB(QtWidgets.QGroupBox):
+    """Per-configuration measurement mode: dual-sided (DS+US) or single-sided.
+
+    Dual is the classical two-beam DAC geometry (downstream + upstream).
+    Single hides the us-side UI, disables 2-color pyrometry, and blanks
+    us-side fields in log/EPICS/ZMQ output.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__('Measurement mode')
+        self._layout = QtWidgets.QHBoxLayout()
+        self._layout.setContentsMargins(6, 4, 6, 4)
+        self._layout.setSpacing(8)
+
+        self.dual_mode_rb = QtWidgets.QRadioButton('Dual (DS + US)')
+        self.dual_mode_rb.setToolTip('Two spectra — downstream and upstream (classical DAC setup)')
+        self.single_mode_rb = QtWidgets.QRadioButton('Single sided')
+        self.single_mode_rb.setToolTip('One spectrum — hides upstream widgets and disables 2-color pyrometry')
+        self.dual_mode_rb.setChecked(True)
+
+        self._btn_group = QtWidgets.QButtonGroup(self)
+        self._btn_group.addButton(self.dual_mode_rb)
+        self._btn_group.addButton(self.single_mode_rb)
+
+        self._layout.addWidget(self.dual_mode_rb)
+        self._layout.addWidget(self.single_mode_rb)
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+
+
 class WavelengthCalibrationGB(QtWidgets.QGroupBox):
     """Explicit-load wavelength calibration for TIFF files.
 
@@ -699,6 +767,13 @@ class FilterSettings(QtWidgets.QGroupBox):
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
 
+    def set_mode(self, mode):
+        """Hide the US filter row in single-sided mode."""
+        dual = mode == 'dual'
+        for col in range(4):
+            item = self._layout.itemAtPosition(2, col)
+            if item is not None and item.widget() is not None:
+                item.widget().setVisible(dual)
 
 
 class CalibrationGB(QtWidgets.QGroupBox):
@@ -711,6 +786,10 @@ class CalibrationGB(QtWidgets.QGroupBox):
         self._layout.setHorizontalSpacing(8)
 
         self.load_file_btn = QtWidgets.QPushButton('Load File')
+        self.clear_file_btn = QtWidgets.QPushButton('Clear')
+        self.clear_file_btn.setToolTip(
+            'Drop the intensity calibration for this side; corrected spectrum '
+            'falls back to raw ROI counts (transfer function = 1).')
         self.file_lbl = QtWidgets.QLabel('Select File...')
 
         self.temperature_txt = QtWidgets.QLineEdit('2000')
@@ -728,7 +807,8 @@ class CalibrationGB(QtWidgets.QGroupBox):
         self.start_frame = IntegerTextField('1')
         self.end_frame = IntegerTextField('1')
 
-        self._layout.addWidget(self.load_file_btn, 0, 0, 1, 3)
+        self._layout.addWidget(self.load_file_btn, 0, 0, 1, 2)
+        self._layout.addWidget(self.clear_file_btn, 0, 2)
         self._layout.addWidget(self.file_lbl, 0, 3)
         self._layout.addWidget(self.temperature_txt, 1, 0, 1, 2)
         self._layout.addWidget(self.temperature_unit_lbl, 1, 2)

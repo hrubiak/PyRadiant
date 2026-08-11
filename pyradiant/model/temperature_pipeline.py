@@ -71,28 +71,39 @@ class TemperaturePipeline:
     # ------------------------------------------------------------------
 
     def run(self, conf, from_stage: Stage = Stage.LOAD, filepath: str = None):
-        """Run both DS and US from *from_stage* through FIT."""
+        """Run both DS and US from *from_stage* through FIT.
+
+        In single-sided mode (conf.mode == 'single') the US-side stages are
+        skipped so we don't waste work on a spectrum the user has hidden.
+        """
+        dual = getattr(conf, 'mode', 'dual') == 'dual'
         if from_stage <= Stage.LOAD:
             self._stage_load(conf, filepath)
         if from_stage <= Stage.DATA_SPEC:
             conf.ds_temperature_model._update_data_spectrum()
-            conf.us_temperature_model._update_data_spectrum()
+            if dual:
+                conf.us_temperature_model._update_data_spectrum()
         if from_stage <= Stage.CALIB_SPEC:
             conf.ds_temperature_model._update_calibration_spectrum()
-            conf.us_temperature_model._update_calibration_spectrum()
+            if dual:
+                conf.us_temperature_model._update_calibration_spectrum()
         if from_stage <= Stage.CORRECT:
             conf.ds_temperature_model._update_corrected_spectrum()
-            conf.us_temperature_model._update_corrected_spectrum()
+            if dual:
+                conf.us_temperature_model._update_corrected_spectrum()
         if from_stage <= Stage.FIT:
             conf.ds_temperature_model.fit_data()
-            conf.us_temperature_model.fit_data()
+            if dual:
+                conf.us_temperature_model.fit_data()
 
     def run_ds(self, conf, from_stage: Stage = Stage.DATA_SPEC):
         """Run DS only from *from_stage* through FIT."""
         self._run_one(conf.ds_temperature_model, from_stage)
 
     def run_us(self, conf, from_stage: Stage = Stage.DATA_SPEC):
-        """Run US only from *from_stage* through FIT."""
+        """Run US only from *from_stage* through FIT. No-op in single-sided mode."""
+        if getattr(conf, 'mode', 'dual') == 'single':
+            return
         self._run_one(conf.us_temperature_model, from_stage)
 
     # ------------------------------------------------------------------

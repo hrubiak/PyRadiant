@@ -99,30 +99,43 @@ class ConfigurationWidget(QtWidgets.QWidget):
 
 
     def update_configuration_btns(self, configurations, cur_ind):
-        btn:QtWidgets.QPushButton
+        """Sync the config-selector buttons to the model.
 
-        for btn in self.configuration_btns:
-            self.configuration_btn_group.removeButton(btn)
-            self.configurations_btn_layout.removeWidget(btn)
-            btn.deleteLater()  # somehow needs tobe deleted, otherwise remains in the button group
+        Updates existing buttons in place (label / tooltip / checked state) so
+        routine refreshes (dirty-flag toggle, config switch) don't flicker.
+        Only rebuilds when the configuration count changes.
+        """
+        n = len(configurations)
+        if len(self.configuration_btns) != n:
+            # Count changed → rebuild from scratch.
+            for btn in self.configuration_btns:
+                self.configuration_btn_group.removeButton(btn)
+                self.configurations_btn_layout.removeWidget(btn)
+                btn.deleteLater()
+            self.configuration_btns = []
+            for ind in range(n):
+                new_button = CheckableButton('')
+                new_button.setFixedSize(32, 25)
+                self.configuration_btn_group.addButton(new_button)
+                self.configuration_btns.append(new_button)
+                self.configurations_btn_layout.addWidget(new_button)
+                new_button.clicked.connect(partial(self.configuration_selected.emit, ind))
 
-        self.configuration_btns = []
-
+        # In-place update: label, tooltip, checked state.
         for ind, configuration in enumerate(configurations):
+            btn = self.configuration_btns[ind]
             dirty = bool(getattr(configuration, 'dirty', False))
             label = f"{ind + 1}*" if dirty else str(ind + 1)
-            new_button = CheckableButton(label)
-            new_button.setFixedSize(32, 25)
+            if btn.text() != label:
+                btn.setText(label)
             tooltip = "Switch to configuration {}".format(ind + 1)
             if dirty:
                 tooltip += " (unsaved changes)"
-            new_button.setToolTip(tooltip)
-            self.configuration_btn_group.addButton(new_button)
-            self.configuration_btns.append(new_button)
-            self.configurations_btn_layout.addWidget(new_button)
-            if ind == cur_ind:
-                new_button.setChecked(True)
-            new_button.clicked.connect(partial(self.configuration_selected.emit, ind))
+            if btn.toolTip() != tooltip:
+                btn.setToolTip(tooltip)
+            should_check = (ind == cur_ind)
+            if btn.isChecked() != should_check:
+                btn.setChecked(should_check)
 
     def add_tooltips(self):
         self.add_configuration_btn.setToolTip("Add configuration")

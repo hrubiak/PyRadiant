@@ -134,7 +134,13 @@ class historyPlotWidget(pg.GraphicsLayoutWidget):
                                                     size='16pt',
                                                     color=colors['upstream'],
                                                     justify='right')
-        
+
+    def set_mode(self, mode):
+        """Clear the us time-lapse curve/label in single-sided mode."""
+        if mode == 'single':
+            self._time_lapse_us_data_item.setData([], [])
+            self._time_lapse_us_temperature_txt.setText('', size='16pt')
+
 
 class dataHistoryWidget(QtWidgets.QWidget):
     file_dragged_in = QtCore.pyqtSignal(list)

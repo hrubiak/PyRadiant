@@ -403,6 +403,25 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
                                                           size='30pt',
                                                           color=colors['combined'])
 
+    def set_mode(self, mode):
+        """Show/hide the us-side subplot and retitle the ds subplot for single-sided mode."""
+        dual = mode == 'dual'
+        self._pg_us_layout_widget.setVisible(dual)
+        # Equal-width columns in dual; collapse the empty column in single.
+        # Both stretches must be set explicitly — leaving col 0 at default (0)
+        # while col 1 is 1 makes col 1 hog all extra space.
+        self._plots_widget_layout.setColumnStretch(0, 1)
+        self._plots_widget_layout.setColumnStretch(1, 1 if dual else 0)
+        if dual:
+            self._ds_plot.setTitle("Downstream", color=QColor(colors['downstream']), size='20pt')
+        else:
+            self._ds_plot.setTitle("Temperature", color=QColor(colors['downstream']), size='20pt')
+        # Time-lapse labels: hide the us column in single mode.
+        if dual:
+            self._time_lapse_us_temperature_txt.setText('', size='16pt')
+        else:
+            self._time_lapse_us_temperature_txt.setText('', size='16pt')
+
     def save_graph(self, ds_filename, us_filename):
         QtWidgets.QApplication.processEvents()
         if ds_filename.endswith('.png'):

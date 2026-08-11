@@ -91,6 +91,12 @@ class TemperatureModelConfiguration(QtCore.QObject):
 
         self.temperature_fit_function_str = 'plank'
 
+        # Measurement mode: 'dual' (downstream + upstream, classical DAC geometry)
+        # or 'single' (one spectrum only, e.g. Photron on Acton). In 'single' the
+        # us-side compute/UI/output is gated off; the us model stays instantiated
+        # so the existing property surface and .trs schema remain intact.
+        self.mode = 'dual'
+
         # True when this configuration has unsaved changes (data/calibration/ROI/etc.
         # loaded or modified since the last save_setting or load_setting call).
         # Consumed at app-close to prompt for saving.
@@ -353,13 +359,21 @@ class TemperatureModelConfiguration(QtCore.QObject):
         if not math.isnan(self.us_scaling):
             us_scaling = format(self.us_scaling, ".3e")
         else:
-            us_scaling = '0'    
+            us_scaling = '0'
+        us_counts_str = format(self.us_data_spectrum.counts, ".3e")
+        # In single-sided mode the us column set is meaningless; blank it out so
+        # downstream log consumers see the fixed schema but with 0s for us.
+        if self.mode == 'single':
+            us_temp = '0'
+            us_temperature_error = '0'
+            us_scaling = '0'
+            us_counts_str = '0'
         frame_s = str(frame + 1)
         log_data = (os.path.basename(self.filename), frame_s, os.path.dirname(self.filename), ds_temp, us_temp,
                     ds_temperature_error, us_temperature_error,
-                    self.data_img_file.detector, str(self.data_img_file.exposure_time),str(self.data_img_file.gain), 
-                    ds_scaling, us_scaling, 
-                    format(self.ds_data_spectrum.counts, ".3e"), format(self.us_data_spectrum.counts, ".3e"))
+                    self.data_img_file.detector, str(self.data_img_file.exposure_time),str(self.data_img_file.gain),
+                    ds_scaling, us_scaling,
+                    format(self.ds_data_spectrum.counts, ".3e"), us_counts_str)
         
         self.log_file.write('\t'.join(log_data) + '\n')
         self.log_file.flush()
@@ -377,8 +391,22 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.ds_temperature_model.set_temperature_fit_function(function_type)
             self.us_temperature_model.set_temperature_fit_function(function_type)
             pipeline.run(self, Stage.FIT)
-            self.data_changed_emit(self.current_frame)
+            # Set dirty BEFORE the emit so the button-refresh sees the new state.
             self.dirty = True
+            self.data_changed_emit(self.current_frame)
+
+    def set_mode(self, mode):
+        if mode not in ('dual', 'single'):
+            raise ValueError(f"mode must be 'dual' or 'single', got {mode!r}")
+        if mode == self.mode:
+            return
+        self.mode = mode
+        self.dirty = True
+        # Re-run the pipeline so the plots reflect the new mode (us-side
+        # results become stale/hidden in single; recomputed in dual).
+        if self._data_img is not None:
+            pipeline.run(self, Stage.DATA_SPEC)
+        self.data_changed_emit(self.current_frame)
 
 
 
@@ -392,8 +420,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.us_temperature_model.subtract_inistu_calibration_background = use_calibration_background
             # Background flag affects both data and calibration extraction.
             pipeline.run(self, Stage.DATA_SPEC)
-            self.data_changed_emit(self.current_frame)
             self.dirty = True
+            self.data_changed_emit(self.current_frame)
 
     def _update_temperature_models_data(self):
 
@@ -403,8 +431,9 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.x_calibration = self.data_img_file.x_calibration
         self.ds_temperature_model.set_data(self._data_img,
                                            self.data_img_file.x_calibration)
-        self.us_temperature_model.set_data(self._data_img,
-                                           self.data_img_file.x_calibration)
+        if self.mode == 'dual':
+            self.us_temperature_model.set_data(self._data_img,
+                                               self.data_img_file.x_calibration)
 
     @property
     def data_img(self):
@@ -445,8 +474,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
         
         self.ds_calibration_filename = filename
         self.ds_set_calibration_data()
-        self.ds_calculations_changed_emit()
         self.dirty = True
+        self.ds_calculations_changed_emit()
 
     def ds_set_calibration_data(self):
         self.ds_temperature_model.set_calibration_data(self.ds_calibration_img_file,
@@ -468,13 +497,36 @@ class TemperatureModelConfiguration(QtCore.QObject):
 
 
         self.us_set_calibration_data()
-        self.us_calculations_changed_emit()
         self.dirty = True
+        self.us_calculations_changed_emit()
 
     def us_set_calibration_data(self):
         self.us_temperature_model.set_calibration_data(self.us_calibration_img_file,
                                                        self.us_calibration_img_file.x_calibration)
         pipeline.run_us(self, Stage.CALIB_SPEC)
+
+    def clear_ds_calibration_image(self):
+        """Drop the DS intensity calibration and switch to an identity transfer
+        function (response = 1). Corrected spectrum falls back to raw data."""
+        self.ds_calibration_img_file = None
+        self.ds_calibration_filename = None
+        self.ds_temperature_model.reset_calibration_data()
+        self.ds_temperature_model._identity_calibration = True
+        pipeline.run_ds(self, Stage.CORRECT)
+        # Set dirty BEFORE emitting so the downstream button-refresh sees the new state.
+        self.dirty = True
+        self.ds_calculations_changed_emit()
+
+    def clear_us_calibration_image(self):
+        """Drop the US intensity calibration and switch to an identity transfer
+        function (response = 1). Corrected spectrum falls back to raw data."""
+        self.us_calibration_img_file = None
+        self.us_calibration_filename = None
+        self.us_temperature_model.reset_calibration_data()
+        self.us_temperature_model._identity_calibration = True
+        pipeline.run_us(self, Stage.CORRECT)
+        self.dirty = True
+        self.us_calculations_changed_emit()
 
 
     # setting standard interface
@@ -485,14 +537,14 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def load_ds_standard_spectrum(self, filename):
         self.ds_temperature_model.load_standard_spectrum(filename)
         pipeline.run_ds(self, Stage.CORRECT)
-        self.ds_calculations_changed_emit()
         self.dirty = True
+        self.ds_calculations_changed_emit()
 
     def load_us_standard_spectrum(self, filename):
         self.us_temperature_model.load_standard_spectrum(filename)
         pipeline.run_us(self, Stage.CORRECT)
-        self.us_calculations_changed_emit()
         self.dirty = True
+        self.us_calculations_changed_emit()
 
     def save_ds_standard_spectrum(self, filename):
         self.ds_temperature_model.save_standard_spectrum(filename)
@@ -503,29 +555,39 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def set_ds_calibration_modus(self, modus):
         self.ds_temperature_model.set_calibration_modus(modus)
         pipeline.run_ds(self, Stage.CORRECT)
-        self.ds_calculations_changed_emit()
         self.dirty = True
+        self.ds_calculations_changed_emit()
 
     def set_us_calibration_modus(self, modus):
         self.us_temperature_model.set_calibration_modus(modus)
         pipeline.run_us(self, Stage.CORRECT)
-        self.us_calculations_changed_emit()
         self.dirty = True
+        self.us_calculations_changed_emit()
 
     def set_ds_calibration_temperature(self, temperature):
         self.ds_temperature_model.set_calibration_temperature(temperature)
         pipeline.run_ds(self, Stage.CORRECT)
-        self.ds_calculations_changed_emit()
         self.dirty = True
+        self.ds_calculations_changed_emit()
 
     def set_us_calibration_temperature(self, temperature):
         self.us_temperature_model.set_calibration_temperature(temperature)
         pipeline.run_us(self, Stage.CORRECT)
-        self.us_calculations_changed_emit()
         self.dirty = True
+        self.us_calculations_changed_emit()
 
     def save_setting(self, filename):
         f = h5py.File(filename, 'w')
+
+        f.attrs['mode'] = self.mode
+        # Save the data image dimension so ROIs can be restored even for configs
+        # that carry no intensity calibration image (e.g. single-sided TIFF setups).
+        # The subsequent workspace data-file load uses the same dimension key,
+        # so the stored ROIs get picked up automatically.
+        if self.data_img_file is not None:
+            xdim, ydim = self.data_img_file.get_dimension()
+            f.attrs['data_img_xdim'] = int(xdim)
+            f.attrs['data_img_ydim'] = int(ydim)
 
         f.create_group('downstream_calibration')
         ds_group = f['downstream_calibration']
@@ -541,6 +603,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
                 ds_group['image'].attrs['x_calibration'] = self.ds_temperature_model._data_img_x_calibration
                 ds_group['image'].attrs['subtract_bg'] = self.use_insitu_data_background
 
+        ds_group.attrs['identity_calibration'] = bool(
+            self.ds_temperature_model._identity_calibration)
         ds_roi_list =  self.ds_roi.as_list()
         ds_group['roi'] = ds_roi_list
         ds_roi_bg_list = self.ds_roi_bg.as_list()
@@ -565,6 +629,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
                 us_group['image'].attrs['filename'] = self.us_calibration_filename
                 us_group['image'].attrs['x_calibration'] = self.us_temperature_model._data_img_x_calibration
                 us_group['image'].attrs['subtract_bg'] = self.use_insitu_data_background
+        us_group.attrs['identity_calibration'] = bool(
+            self.us_temperature_model._identity_calibration)
         us_group['roi'] = self.us_roi.as_list()
         us_group['roi_bg'] = self.us_roi_bg.as_list()
         us_group['modus'] = self.us_temperature_model.calibration_parameter.modus
@@ -591,27 +657,42 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.dirty = False
 
     
+    def _roi_dimension_key(self, f, side_group):
+        """Pick the (xdim, ydim) dimension under which to key the restored ROIs.
+
+        Priority:
+          1. This side's calibration image shape (existing behavior when a cal
+             image is saved — the ROI belongs to the calibration image).
+          2. The data image dimension saved in root attrs — matches the
+             dimension the workspace-restore data-file load will use, so the
+             ROIs get picked up automatically once data lands.
+          3. The already-loaded data_img_file's dimension (if any).
+          4. None — skip ROI restore.
+        """
+        if 'image' in side_group:
+            img = side_group['image']
+            shape = img.shape
+            if len(shape) == 2:
+                return (shape[1], shape[0])
+            elif len(shape) == 3:
+                return (shape[2], shape[1])
+        if 'data_img_xdim' in f.attrs and 'data_img_ydim' in f.attrs:
+            return (int(f.attrs['data_img_xdim']), int(f.attrs['data_img_ydim']))
+        if self.data_img_file is not None:
+            return self.data_img_file.get_dimension()
+        return None
+
     def load_setting(self, filename):
         f = h5py.File(filename, 'r')
+        self.mode = str(f.attrs.get('mode', 'dual'))
         ds_group = f['downstream_calibration']
+        # DS intensity calibration image (optional — single-sided/no-cal configs skip)
         if 'image' in ds_group:
             ds_img = ds_group['image'][...]
-            
+
             self.ds_calibration_filename = ds_group['image'].attrs['filename']
-            if len(ds_img.shape) == 2:
-                img_dimension = (ds_img.shape[1],
-                                ds_img.shape[0])
-            elif len(ds_img.shape) == 3:
-                img_dimension = (ds_img.shape[2],
-                                ds_img.shape[1])
-            ds_group_roi = ds_group['roi'][...]
-            ds_group_roi_bg = ds_group['roi_bg'][...]
-            self.roi_data_manager.set_roi(0, img_dimension, ds_group_roi)
-            self.roi_data_manager.set_roi(2, img_dimension, ds_group_roi_bg)
-            x_calibration = ds_group['image'].attrs['x_calibration'][...] # this is a hack to be able to 
-                                                                          # load h5 files later that don't 
-                                                                          # have x_calibration
-            if 'subtract_bg'in ds_group['image'].attrs:
+            x_calibration = ds_group['image'].attrs['x_calibration'][...]
+            if 'subtract_bg' in ds_group['image'].attrs:
                 use_data_bg = bool(ds_group['image'].attrs['subtract_bg'])
                 self.use_insitu_data_background = use_data_bg
                 self.ds_temperature_model.subtract_inistu_data_background = use_data_bg
@@ -624,14 +705,24 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.ds_calibration_img_file.x_calibration = self.x_calibration
             self.ds_calibration_img_file.filename = self.ds_calibration_filename
 
-
             self.ds_temperature_model.set_calibration_data(ds_img, x_calibration)
-
-
         else:
             self.ds_temperature_model.reset_calibration_data()
             self.ds_calibration_filename = None
-            self.ds_roi = [0, 0, 0, 0]
+            self.ds_calibration_img_file = None
+
+        # DS ROIs — saved independently of whether an intensity calibration image
+        # is present. Key them on the calibration-image dimension when we have
+        # one, otherwise on the data-image dimension saved in root attrs (which
+        # matches the dimension the data file will load with).
+        ds_dim = self._roi_dimension_key(f, ds_group)
+        if ds_dim is not None and 'roi' in ds_group and 'roi_bg' in ds_group:
+            self.roi_data_manager.set_roi(0, ds_dim, ds_group['roi'][...])
+            self.roi_data_manager.set_roi(2, ds_dim, ds_group['roi_bg'][...])
+
+        # Restore the identity-calibration flag (True = user cleared).
+        self.ds_temperature_model._identity_calibration = bool(
+            ds_group.attrs.get('identity_calibration', False))
 
         standard_data = ds_group['standard_spectrum'][...]
         self.ds_temperature_model.calibration_parameter.set_standard_spectrum(Spectrum(standard_data[0, :],
@@ -657,35 +748,35 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.ds_temperature_model.calibration_parameter.set_temperature(temperature)
 
         us_group = f['upstream_calibration']
+        us_img = None
         if 'image' in us_group:
             us_img = us_group['image'][...]
-            
-            self.us_calibration_filename = us_group['image'].attrs['filename']
-            if len(us_img.shape) == 2:
-                img_dimension = (us_img.shape[1],
-                                us_img.shape[0])
-            elif len(us_img.shape) == 3:
-                img_dimension = (us_img.shape[2],
-                                us_img.shape[1])
 
-            us_group_roi = us_group['roi'][...]
-            us_group_roi_bg = us_group['roi_bg'][...]
-            self.roi_data_manager.set_roi(1, img_dimension, us_group_roi)
-            self.roi_data_manager.set_roi(3, img_dimension, us_group_roi_bg)
+            self.us_calibration_filename = us_group['image'].attrs['filename']
             self.us_temperature_model.set_calibration_data(us_img,
                                                            us_group['image'].attrs['x_calibration'][...])
         else:
             self.us_temperature_model.reset_calibration_data()
             self.us_calibration_filename = None
-            self.us_roi = [0, 0, 0, 0]
+
+        # US ROIs — saved independently of whether an intensity calibration
+        # image is present (same treatment as DS above).
+        us_dim = self._roi_dimension_key(f, us_group)
+        if us_dim is not None and 'roi' in us_group and 'roi_bg' in us_group:
+            self.roi_data_manager.set_roi(1, us_dim, us_group['roi'][...])
+            self.roi_data_manager.set_roi(3, us_dim, us_group['roi_bg'][...])
+
+        # Restore the identity-calibration flag (True = user cleared).
+        self.us_temperature_model._identity_calibration = bool(
+            us_group.attrs.get('identity_calibration', False))
 
         standard_data = us_group['standard_spectrum'][...]
         self.us_temperature_model.calibration_parameter.set_standard_spectrum(Spectrum(standard_data[0, :],
                                                                                      standard_data[1, :]))
         
-        if 'subtract_bg'in us_group['image'].attrs:
-                use_data_bg = bool(us_group['image'].attrs['subtract_bg'])
-                self.use_insitu_data_background = use_data_bg
+        if 'image' in us_group and 'subtract_bg' in us_group['image'].attrs:
+            use_data_bg = bool(us_group['image'].attrs['subtract_bg'])
+            self.use_insitu_data_background = use_data_bg
 
         try:
             self.us_temperature_model.calibration_parameter.standard_file_name = \
@@ -693,11 +784,16 @@ class TemperatureModelConfiguration(QtCore.QObject):
         except AttributeError:
             self.us_temperature_model.calibration_parameter.standard_file_name = \
                 us_group['standard_spectrum'].attrs['filename']
-            
-        self.us_calibration_img_file = DataModel()
-        self.us_calibration_img_file.img = us_img
-        self.us_calibration_img_file.x_calibration = self.x_calibration
-        self.us_calibration_img_file.filename = self.us_calibration_filename
+
+        # Only stash a synthetic us_calibration_img_file when we actually loaded
+        # an image; otherwise leave it None (fresh/single-sided/no-cal state).
+        if 'image' in us_group:
+            self.us_calibration_img_file = DataModel()
+            self.us_calibration_img_file.img = us_img
+            self.us_calibration_img_file.x_calibration = self.x_calibration
+            self.us_calibration_img_file.filename = self.us_calibration_filename
+        else:
+            self.us_calibration_img_file = None
 
         modus = int(us_group['modus'][...])
         self.us_temperature_model.calibration_parameter.set_modus(modus)
@@ -1011,11 +1107,13 @@ class TemperatureModelConfiguration(QtCore.QObject):
         return self.us_temperature_model.fringe_nd_um
 
     def set_rois(self, limits):
+        # Mark dirty before the setters — each roi setter emits ds/us_calculations_changed
+        # synchronously, and the controller's refresh reads self.dirty from there.
+        self.dirty = True
         self.us_roi = limits[1]
         self.ds_roi = limits[0]
         self.us_roi_bg = limits[3]
         self.ds_roi_bg = limits[2]
-        self.dirty = True
 
 
     def get_roi_data_list(self):
@@ -1150,22 +1248,24 @@ class TemperatureModelConfiguration(QtCore.QObject):
         us_temperature_error = []
         ds_temperature_error = []
 
+        dual = (self.mode == 'dual')
+
         for frame_ind in range(self.data_img_file.num_frames):
             self.set_img_frame_number_to(frame_ind)
-           
-            us_counts = int(self.us_temperature_model.total_counts)
-            ds_counts = int(self.ds_temperature_model.total_counts)
-            max_counts = int(np.amax(np.asarray([us_counts,ds_counts])))
-            us_sufficient_counts = us_counts > (0.075*max_counts)
-            ds_sufficient_counts = ds_counts > (0.075*max_counts)
 
-            if us_sufficient_counts and self.us_temperature_model.temperature_error<=self.error_limit:
+            ds_counts = int(self.ds_temperature_model.total_counts)
+            us_counts = int(self.us_temperature_model.total_counts) if dual else 0
+            max_counts = int(np.amax(np.asarray([us_counts, ds_counts])))
+            ds_sufficient_counts = ds_counts > (0.075 * max_counts)
+            us_sufficient_counts = dual and us_counts > (0.075 * max_counts)
+
+            if us_sufficient_counts and self.us_temperature_model.temperature_error <= self.error_limit:
                 us_temperature.append(self.us_temperature_model.temperature)
                 us_temperature_error.append(self.us_temperature_model.temperature_error)
             else:
                 us_temperature.append(0)
                 us_temperature_error.append(0)
-            if ds_sufficient_counts and self.ds_temperature_model.temperature_error<=self.error_limit:
+            if ds_sufficient_counts and self.ds_temperature_model.temperature_error <= self.error_limit:
                 ds_temperature.append(self.ds_temperature_model.temperature)
                 ds_temperature_error.append(self.ds_temperature_model.temperature_error)
             else:
@@ -1210,6 +1310,13 @@ class SingleTemperatureModel(QtCore.QObject):
         self._data_img_x_calibration = None
         self._data_img_dimension = None
 
+        # True after user explicitly clears the intensity calibration. Makes the
+        # correction pipeline apply an identity transfer function (response = 1),
+        # so corrected_spectrum == data_spectrum and the blackbody fit runs on
+        # raw counts. Distinct from the fresh-config state (both flag False and
+        # no image loaded) where the corrected spectrum stays empty.
+        self._identity_calibration = False
+
         self.data_roi_max = 0
 
         self.roi_data_manager = roi_data_manager
@@ -1244,14 +1351,16 @@ class SingleTemperatureModel(QtCore.QObject):
 
 
     def set_calibration_data(self, img_data_file, x_calibration):
+        # Loading a real calibration image cancels any prior identity/clear state.
+        self._identity_calibration = False
         calibration_frames=self.calibration_frames
 
         if hasattr(img_data_file,'img'):
             img_data = img_data_file.img
         else:
             img_data =  img_data_file
-       
-        
+
+
         self._calibration_img_x_calibration = x_calibration
         if type(img_data) == list:
             if calibration_frames[0] is not None and calibration_frames[1] is not None:
@@ -1401,6 +1510,19 @@ class SingleTemperatureModel(QtCore.QObject):
     def _update_corrected_spectrum(self):
         if len(self.data_spectrum) == 0:
             self.corrected_spectrum = Spectrum([], [])
+            return
+
+        if self._identity_calibration:
+            # User has cleared the intensity calibration: response = 1 everywhere,
+            # so corrected_spectrum equals data_spectrum. The fit then runs on
+            # the raw ROI counts.
+            data_x, data_y = self.data_spectrum.data
+            self.response = Spectrum(data_x, np.ones_like(data_y))
+            self.corrected_spectrum = Spectrum(data_x, data_y.copy())
+            self.corrected_spectrum.mask = self.data_spectrum.mask
+            self.unfiltered_corrected_spectrum = Spectrum(data_x, data_y.copy())
+            self.fringe_frequency = None
+            self.fringe_nd_um = None
             return
 
         if len(self.calibration_spectrum._x) == len(self.data_spectrum._x):

@@ -450,19 +450,23 @@ class ZmqWorkerController(QtCore.QObject):
 
         This is the canonical way to extract fit results from the model for any
         outgoing ZMQ message (worker results and epicsLogger triggers alike).
+
+        Schema is fixed (ds+us always present) so downstream consumers see a
+        stable set of keys. In single-sided mode the us fields are None.
         """
         sf = ZmqWorkerController._safe_float
         data_file = conf.data_img_file
         gain = getattr(data_file, 'EMIccd_gain', None) or getattr(data_file, 'gain', None)
+        dual = getattr(conf, 'mode', 'dual') == 'dual'
         return {
             "ds_temperature":       sf(conf.ds_temperature),
             "ds_temperature_error": sf(conf.ds_temperature_error),
-            "us_temperature":       sf(conf.us_temperature),
-            "us_temperature_error": sf(conf.us_temperature_error),
+            "us_temperature":       sf(conf.us_temperature)       if dual else None,
+            "us_temperature_error": sf(conf.us_temperature_error) if dual else None,
             "ds_fringe_frequency":  sf(conf.ds_fringe_frequency),
             "ds_fringe_nd_um":      sf(conf.ds_fringe_nd_um),
-            "us_fringe_frequency":  sf(conf.us_fringe_frequency),
-            "us_fringe_nd_um":      sf(conf.us_fringe_nd_um),
+            "us_fringe_frequency":  sf(conf.us_fringe_frequency)  if dual else None,
+            "us_fringe_nd_um":      sf(conf.us_fringe_nd_um)      if dual else None,
             "exposure_time":        sf(getattr(data_file, 'exposure_time', None)),
             "gain":                 gain,
         }

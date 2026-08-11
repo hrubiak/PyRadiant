@@ -68,12 +68,28 @@ class RoiWidget(QtWidgets.QWidget):
         self.ccd_widget = RoiImageWidget(roi_num=0, roi_colors=[])
         self.specra_widget = RoiSpectraWidget()
 
+        # Intensity-calibration viewers (2D image + 1D extracted spectrum, per side).
+        # 2D viewers carry the same 4 ROIs as the data image so users can drag
+        # ROIs while inspecting the calibration; positions sync bidirectionally
+        # with the data image ROIs (see _wire_roi_sync).
+        # DS Cal image hides indices 1 (us) & 3 (us_bg); US Cal hides 0 (ds) & 2 (ds_bg).
+        self.ds_cal_img_widget = RoiImageWidget(roi_num=roi_num, roi_colors=roi_colors)
+        self.us_cal_img_widget = RoiImageWidget(roi_num=roi_num, roi_colors=roi_colors)
+        self.ds_cal_spec_widget = CalibrationSpecWidget(colors['downstream'])
+        self.us_cal_spec_widget = CalibrationSpecWidget(colors['upstream'])
+
         self.left_tab_widget = QtWidgets.QTabWidget()
         self.left_tab_widget.setTabPosition(QtWidgets.QTabWidget.TabPosition.West)
         self.left_tab_widget.setCurrentIndex(0)
         self.left_tab_widget.addTab(self.specra_widget, '1D')
         self.left_tab_widget.addTab(self.img_widget, '2D')
         self.left_tab_widget.addTab(self.ccd_widget, 'RAW')
+        # Cal tabs — grouped per side, 1D then 2D to match the existing data
+        # tab order above (1D, 2D, RAW).
+        self._ds_cal_spec_tab_ind = self.left_tab_widget.addTab(self.ds_cal_spec_widget, 'DS Cal 1D')
+        self._ds_cal_img_tab_ind = self.left_tab_widget.addTab(self.ds_cal_img_widget, 'DS Cal 2D')
+        self._us_cal_spec_tab_ind = self.left_tab_widget.addTab(self.us_cal_spec_widget, 'US Cal 1D')
+        self._us_cal_img_tab_ind = self.left_tab_widget.addTab(self.us_cal_img_widget, 'US Cal 2D')
 
 
         self.wl_range_widget = wavelengthRangeGB()
@@ -126,6 +142,51 @@ class RoiWidget(QtWidgets.QWidget):
         self.wl_range_widget.wl_start.editingFinished.connect(self.wl_range_widget_editingFinished_callback)
         self.wl_range_widget.wl_end.editingFinished.connect(self.wl_range_widget_editingFinished_callback)
 
+        # Cal-image ROIs: hide the ones not relevant to each side, and mirror
+        # positions bidirectionally with the data image ROIs so a drag on any
+        # of the three viewers updates the other two.
+        # DS cal: hide us(1) and us_bg(3). US cal: hide ds(0) and ds_bg(2).
+        if len(self.ds_cal_img_widget.rois) >= 4:
+            self.ds_cal_img_widget.rois[1].setVisible(False)
+            self.ds_cal_img_widget.rois[3].setVisible(False)
+        if len(self.us_cal_img_widget.rois) >= 4:
+            self.us_cal_img_widget.rois[0].setVisible(False)
+            self.us_cal_img_widget.rois[2].setVisible(False)
+        self._wire_roi_sync()
+
+    def _wire_roi_sync(self):
+        """Mirror ROI positions across data + ds_cal + us_cal 2D viewers.
+
+        When a ROI at index i moves on any viewer, copy its (pos, size) to the
+        same-index ROI on the other viewers. A re-entry flag prevents the
+        obvious infinite ping-pong; we don't block signals on the receivers so
+        that each viewer's own roi_changed handler still runs (which does the
+        within-image x-coord synchronization the app relies on).
+        """
+        self._roi_sync_in_progress = False
+        viewers = [self.img_widget, self.ds_cal_img_widget, self.us_cal_img_widget]
+        n = min(len(v.rois) for v in viewers)
+        for i in range(n):
+            for src in viewers:
+                src.rois[i].sigRegionChanged.connect(
+                    partial(self._mirror_roi, viewers, i))
+
+    def _mirror_roi(self, viewers, index, source_roi):
+        if self._roi_sync_in_progress:
+            return
+        self._roi_sync_in_progress = True
+        try:
+            pos = source_roi.pos()
+            size = source_roi.size()
+            for v in viewers:
+                target = v.rois[index]
+                if target is source_roi:
+                    continue
+                target.setPos(pos)
+                target.setSize(size)
+        finally:
+            self._roi_sync_in_progress = False
+
     def wl_range_widget_editingFinished_callback(self):
         wl_range = [int(round(float(str(self.wl_range_widget.wl_start.text())))),int(round(float(str(self.wl_range_widget.wl_end.text()))))]
         self.wl_range_changed.emit(wl_range)
@@ -163,10 +224,15 @@ class RoiWidget(QtWidgets.QWidget):
             gb.x_max_txt.setValue(int(x_end))
             gb.blockSignals(False)
 
-        self.img_widget.blockSignals(True)
-        
-        self.img_widget.update_roi(ind, roi_list)
-        self.img_widget.blockSignals(False)
+        # Update the data image and both cal images in lockstep. Each viewer's
+        # update_roi blocks its own sigRegionChanged, so the sigRegionChanged-
+        # driven mirror in _wire_roi_sync is bypassed here — we mirror
+        # explicitly instead so the cal-image ROIs stay in sync after .trs
+        # restore / set_rois calls (which never fire sigRegionChanged).
+        for w in (self.img_widget, self.ds_cal_img_widget, self.us_cal_img_widget):
+            w.blockSignals(True)
+            w.update_roi(ind, roi_list)
+            w.blockSignals(False)
         roi_limits = self.img_widget.get_roi_limits()
         self.rois_changed.emit(roi_limits)
 
@@ -191,8 +257,38 @@ class RoiWidget(QtWidgets.QWidget):
         if ccd_data is not None:
             self.ccd_widget.plot_image(ccd_data.T)
 
+    def plot_ds_calibration_image(self, img_data):
+        if img_data is not None:
+            self.ds_cal_img_widget.plot_image(img_data.T)
+
+    def plot_us_calibration_image(self, img_data):
+        if img_data is not None:
+            self.us_cal_img_widget.plot_image(img_data.T)
+
+    def plot_ds_calibration_spectrum(self, x, y):
+        self.ds_cal_spec_widget.plot_data(x, y)
+
+    def plot_us_calibration_spectrum(self, x, y):
+        self.us_cal_spec_widget.plot_data(x, y)
+
     def add_item(self, pg_item):
         self.img_widget.pg_viewbox.addItem(pg_item)
+
+    def set_mode(self, mode):
+        """Hide the us ROI (index 1) and us_bg ROI (index 3) in single-sided mode:
+        the ROI overlays on the 2D image, the us spectrum panel, the us/us_bg
+        parameter group boxes in the 'ROI' section, and the US Cal tabs."""
+        self.img_widget.set_mode(mode)
+        self.specra_widget.set_mode(mode)
+        # ROI parameter group boxes: laid out (0,0)=ds, (1,0)=us, (0,1)=ds_bg, (1,1)=us_bg.
+        # Hide the us row (indices 1 and 3).
+        dual = mode == 'dual'
+        if len(self.roi_gbs) >= 4:
+            self.roi_gbs[1].setVisible(dual)
+            self.roi_gbs[3].setVisible(dual)
+        # Hide US Cal tabs when only one side is meaningful.
+        self.left_tab_widget.setTabVisible(self._us_cal_img_tab_ind, dual)
+        self.left_tab_widget.setTabVisible(self._us_cal_spec_tab_ind, dual)
 
 
 class wavelengthRangeGB(QtWidgets.QGroupBox):
@@ -314,9 +410,50 @@ class IntegerSpinBox(DoubleSpinBoxAlignRight):
         self.setMaximum(10000)
         self.setSingleStep(1)
         
+class CalibrationSpecWidget(QtWidgets.QWidget):
+    """Single-side 1D calibration spectrum viewer, used for the DS Cal / US Cal
+    1D tabs. Read-only — just renders whatever the controller pushes in via
+    plot_data(x, y). Empty x/y clears the plot (fresh/no-cal state)."""
+    def __init__(self, color, *args, **kwargs):
+        super().__init__()
+        self._layout = QtWidgets.QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+
+        self._pg_layout_widget = pg.GraphicsLayoutWidget()
+        self._pg_layout = pg.GraphicsLayout()
+        self._pg_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._plot = pg.PlotItem()
+        self._view_box = self._plot.getViewBox()
+        self._plot.showAxis('top', show=True)
+        self._plot.showAxis('right', show=True)
+        self._plot.getAxis('top').setStyle(showValues=False)
+        self._plot.getAxis('right').setStyle(showValues=False)
+        self._plot.getAxis('left').setStyle(showValues=True)
+        self._plot.setLabel('bottom', '&lambda; (nm)')
+
+        self._data_item = pg.PlotDataItem(pen=pg.mkPen(color, width=1.0))
+        self._data_item.setDownsampling(True)
+        self._plot.addItem(self._data_item)
+
+        self._pg_layout.addItem(self._plot)
+        self._pg_layout_widget.addItem(self._pg_layout)
+        self._layout.addWidget(self._pg_layout_widget)
+
+    def plot_data(self, x, y):
+        if x is not None and y is not None and len(x):
+            mx = np.amax(y) * 1.1
+            if mx < 2:
+                mx = 2
+            self._view_box.setYRange(-1, mx)
+            self._data_item.setData(x, y)
+        else:
+            self._data_item.setData([], [])
+
+
 class RoiSpectraWidget(QtWidgets.QWidget):
     mouse_moved = QtCore.pyqtSignal(float, float)
-    
+
 
     def __init__(self, *args, **kwargs):
         super().__init__()
@@ -399,6 +536,14 @@ class RoiSpectraWidget(QtWidgets.QWidget):
             self._us_view_box.setYRange(-1,mx)
         self._us_data_item.setData(x, y)
 
+    def set_mode(self, mode):
+        dual = mode == 'dual'
+        self._pg_us_layout_widget.setVisible(dual)
+        if dual:
+            self._ds_plot.setTitle("Downstream", color=QColor(colors['downstream']), size='20pt')
+        else:
+            self._ds_plot.setTitle("Temperature", color=QColor(colors['downstream']), size='20pt')
+
 
 class RoiImageWidget(QtWidgets.QWidget):
     mouse_moved = QtCore.pyqtSignal(float, float)
@@ -457,10 +602,13 @@ class RoiImageWidget(QtWidgets.QWidget):
         self.modify_mouse_behavior()
 
     def set_wavelength_calibration(self, rectangle):
-        
         if self.rectangle != rectangle:
             self.rectangle = rectangle
-            self.pg_img_item.setRect(*rectangle)
+            # setRect requires the image item to have a shape; when no image is
+            # loaded yet (fresh cal-image viewer waiting for data), just store
+            # the rectangle. plot_image will re-apply it once an image lands.
+            if self.pg_img_item.image is not None:
+                self.pg_img_item.setRect(*rectangle)
             x_min = self.rectangle[0]
             x_max = self.rectangle[0]+ self.rectangle[2]
             y_min = self.rectangle[1]
@@ -478,12 +626,20 @@ class RoiImageWidget(QtWidgets.QWidget):
             self.pg_viewbox.addItem(self.rois[-1])
             self.rois[-1].sigRegionChanged.connect(self.roi_changed)
 
+    def set_mode(self, mode):
+        """Hide the us data ROI (index 1) and us background ROI (index 3) in single-sided mode."""
+        if not hasattr(self, 'rois') or len(self.rois) < 4:
+            return
+        dual = mode == 'dual'
+        self.rois[1].setVisible(dual)
+        self.rois[3].setVisible(dual)
+
     def get_roi_limits(self):
         roi_limits = []
         for roi in self.rois:
             roi_pos_x = roi.pos()[0]
             roi_size_x = roi.size()[0]
-            if self.rectangle != None:
+            if self.rectangle is not None and self.pg_img_item.image is not None:
                 roi_pos_x =   (roi_pos_x-self.rectangle[0]) *self.pg_img_item.image.shape[0] /self.rectangle[2]
                 roi_size_x = roi_size_x / self.rectangle[2]*self.pg_img_item.image.shape[0]
             limit = [int(round(roi_pos_x)), int(round(roi_pos_x + roi_size_x)),
@@ -519,7 +675,11 @@ class RoiImageWidget(QtWidgets.QWidget):
         pos = [roi_limits[0], roi_limits[2]]
         size = [roi_limits[1] - roi_limits[0],
                                 roi_limits[3] - roi_limits[2]]
-        if self.rectangle != None:
+        # Convert pixel-space limits to viewbox (wavelength) coords only when
+        # both the wavelength rectangle AND the underlying image are available.
+        # After a config switch that cleared a cal-image viewer, `rectangle`
+        # can still carry the previous config's calibration but `image` is None.
+        if self.rectangle is not None and self.pg_img_item.image is not None:
             pos[0] = int(round(self.rectangle[0] + pos[0] /self.pg_img_item.image.shape[0] *self.rectangle[2]))
             size[0] = int(round(size[0] * (self.rectangle[2]/self.pg_img_item.image.shape[0])))
         
@@ -540,8 +700,10 @@ class RoiImageWidget(QtWidgets.QWidget):
                 roi .blockSignals(False)
 
     def plot_image(self, data):
-        
         self.pg_img_item.setImage(data)
+        # If a wavelength rectangle was set before the image arrived, apply it now.
+        if self.rectangle is not None:
+            self.pg_img_item.setRect(*self.rectangle)
         '''if self.rectangle != None:
             x_min = self.rectangle[0]
             x_max = self.rectangle[0]+ self.rectangle[2]

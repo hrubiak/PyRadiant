@@ -212,6 +212,8 @@ class TemperatureController(QtCore.QObject):
         # Calibration signals
         self.connect_click_function(self.widget.load_ds_calibration_file_btn, self.load_ds_calibration_file)
         self.connect_click_function(self.widget.load_us_calibration_file_btn, self.load_us_calibration_file)
+        self.connect_click_function(self.widget.clear_ds_calibration_file_btn, self.clear_ds_calibration_file)
+        self.connect_click_function(self.widget.clear_us_calibration_file_btn, self.clear_us_calibration_file)
 
         self.connect_click_function(self.widget.load_wavelength_calibration_btn, self.load_wavelength_calibration_file)
         self.connect_click_function(self.widget.clear_wavelength_calibration_btn, self.clear_wavelength_calibration)
@@ -235,6 +237,9 @@ class TemperatureController(QtCore.QObject):
 
         self.widget.temperature_function_plank_rb.clicked.connect(self.temperature_function_callback)
         self.widget.temperature_function_wien_rb.clicked.connect(self.temperature_function_callback)
+
+        self.widget.dual_mode_rb.toggled.connect(self._measurement_mode_changed)
+        self.widget.single_mode_rb.toggled.connect(self._measurement_mode_changed)
 
         self.widget.ds_interference_filter_cb.clicked.connect(self.filter_setting_callback)
         self.widget.us_interference_filter_cb.clicked.connect(self.filter_setting_callback)
@@ -525,6 +530,12 @@ class TemperatureController(QtCore.QObject):
 
             self.model.current_configuration.load_us_calibration_image(filename)
 
+    def clear_ds_calibration_file(self):
+        self.model.current_configuration.clear_ds_calibration_image()
+
+    def clear_us_calibration_file(self):
+        self.model.current_configuration.clear_us_calibration_image()
+
     def load_wavelength_calibration_file(self, filename=None):
         if filename is None or filename is False:
             filename = open_file_dialog(
@@ -575,6 +586,21 @@ class TemperatureController(QtCore.QObject):
         cfg = self.model.current_configuration
         if cfg.filename and cfg.filename.lower().endswith(('.tif', '.tiff')):
             cfg.load_data_image(cfg.filename)
+
+    def _measurement_mode_changed(self, checked):
+        # Both radios' toggled signals fire per state change; act only on the
+        # one that became checked to avoid double-processing.
+        if not checked:
+            return
+        mode = 'dual' if self.widget.dual_mode_rb.isChecked() else 'single'
+        cfg = self.model.current_configuration
+        if cfg.mode == mode:
+            return
+        cfg.set_mode(mode)
+        self.widget.apply_measurement_mode(mode)
+        # Give the time-lapse tab in DataHistoryWidget a chance to blank the us curve.
+        if hasattr(self.data_history_widget, 'temperatures_plot_widget'):
+            self.data_history_widget.temperatures_plot_widget.set_mode(mode)
 
     def us_calibration_frame_range_callback(self, *args):
         us_start_frame = int(self.widget.us_calibration_start_frame.text())
@@ -784,8 +810,12 @@ class TemperatureController(QtCore.QObject):
             y = 0
             w = round(wl_calibration[-1]-wl_calibration[0],3)
             h = self.model.current_configuration.data_img.shape[0]
-            
+
+            # All three 2D viewers must share the same coordinate system so the
+            # ROI x-positions (already in wavelength space) sync sensibly.
             self.widget.roi_widget.img_widget.set_wavelength_calibration((x,y,w,h))
+            self.widget.roi_widget.ds_cal_img_widget.set_wavelength_calibration((x,y,w,h))
+            self.widget.roi_widget.us_cal_img_widget.set_wavelength_calibration((x,y,w,h))
         rois = self.model.current_configuration.get_roi_data_list()
         self.widget.roi_widget.set_rois(self.model.current_configuration.get_roi_data_list())
         self.widget.roi_widget.set_wl_range(self.model.current_configuration.wl_range)
@@ -827,6 +857,11 @@ class TemperatureController(QtCore.QObject):
 
         self._update_wavelength_calibration_label()
         self._refresh_configuration_buttons()
+        # Apply the (possibly config-switched) measurement mode so the UI matches.
+        mode = getattr(self.model.current_configuration, 'mode', 'dual')
+        self.widget.apply_measurement_mode(mode)
+        if hasattr(self.data_history_widget, 'temperatures_plot_widget'):
+            self.data_history_widget.temperatures_plot_widget.set_mode(mode)
 
         self.ds_calculations_changed()
         self.us_calculations_changed()
@@ -846,7 +881,56 @@ class TemperatureController(QtCore.QObject):
         settings_filename = self.model.current_configuration.setting_filename
         if settings_filename:
             self.update_setting_combobox(settings_filename)
-        
+
+    def _get_calibration_image(self, side):
+        """Return the currently-loaded intensity calibration image for ds/us, or None.
+
+        Prefer the calibration_img_file (fresh from disk) when available; fall
+        back to the SingleTemperatureModel's cached calibration_img (which is
+        what survives a .trs restore even when the source file is gone).
+        """
+        cfg = self.model.current_configuration
+        img_file = cfg.ds_calibration_img_file if side == 'ds' else cfg.us_calibration_img_file
+        model = cfg.ds_temperature_model if side == 'ds' else cfg.us_temperature_model
+        if img_file is not None and getattr(img_file, 'img', None) is not None:
+            img = img_file.img
+            if isinstance(img, list):
+                img = img[0]
+            return np.asarray(img)
+        cached = getattr(model, 'calibration_img', None)
+        if cached is not None:
+            return np.asarray(cached)
+        return None
+
+    def _push_ds_calibration_view(self):
+        """Refresh the DS Cal 2D + 1D tabs from current model state.
+
+        Cheap: image push happens only when the image identity changes; the 1D
+        spectrum is always pushed (small, and it's what the ROI drag affects).
+        """
+        cfg = self.model.current_configuration
+        img = self._get_calibration_image('ds')
+        if img is not None and id(img) != getattr(self, '_last_ds_cal_img_id', None):
+            self.widget.roi_widget.plot_ds_calibration_image(img)
+            self._last_ds_cal_img_id = id(img)
+        elif img is None and getattr(self, '_last_ds_cal_img_id', None) is not None:
+            self.widget.roi_widget.ds_cal_img_widget.pg_img_item.clear()
+            self._last_ds_cal_img_id = None
+        cal_x, cal_y = cfg.ds_temperature_model.calibration_spectrum.data
+        self.widget.roi_widget.plot_ds_calibration_spectrum(cal_x, cal_y)
+
+    def _push_us_calibration_view(self):
+        cfg = self.model.current_configuration
+        img = self._get_calibration_image('us')
+        if img is not None and id(img) != getattr(self, '_last_us_cal_img_id', None):
+            self.widget.roi_widget.plot_us_calibration_image(img)
+            self._last_us_cal_img_id = id(img)
+        elif img is None and getattr(self, '_last_us_cal_img_id', None) is not None:
+            self.widget.roi_widget.us_cal_img_widget.pg_img_item.clear()
+            self._last_us_cal_img_id = None
+        cal_x, cal_y = cfg.us_temperature_model.calibration_spectrum.data
+        self.widget.roi_widget.plot_us_calibration_spectrum(cal_x, cal_y)
+
     def set_frame_text(self, txt):
         self.widget.frame_num_txt.blockSignals(True)
         self.widget.frame_num_txt.setText(txt)
@@ -855,6 +939,7 @@ class TemperatureController(QtCore.QObject):
 
     def ds_calculations_changed(self):
         self._refresh_configuration_buttons()
+        self._push_ds_calibration_view()
         curr_frame = self.model.current_configuration.current_frame
         ds_fit_ok = True
         if hasattr(self.model, 'ds_temperatures'):
@@ -915,6 +1000,10 @@ class TemperatureController(QtCore.QObject):
 
     def us_calculations_changed(self):
         self._refresh_configuration_buttons()
+        # In single-sided mode there is no us data to render or publish.
+        if self.model.current_configuration.mode == 'single':
+            return
+        self._push_us_calibration_view()
         curr_frame = self.model.current_configuration.current_frame
         us_fit_ok = True
         if hasattr(self.model, 'us_temperatures'):
@@ -1058,18 +1147,22 @@ class TemperatureController(QtCore.QObject):
         # Save
         
         configs = []
-        for conf in self.model.configurations:
-            if not conf.setting_filename is None:
-                set_fname =  os.path.split(conf.setting_filename)[-1]
+        for ind, conf in enumerate(self.model.configurations):
+            if conf.setting_filename is None:
+                continue
+            try:
+                set_fname = os.path.split(conf.setting_filename)[-1]
                 name_for_list = os.path.splitext(set_fname)[0]
-                conf_dict = {}
+                conf_dict = {
+                    "temperature settings directory": conf._setting_working_dir,
+                    "temperature settings file": name_for_list,
+                }
                 if conf.data_img_file:
-                    data_file = conf.data_img_file.filename
-                    conf_dict["temperature data file"]=conf.data_img_file.filename
-
-                conf_dict["temperature settings directory"]=conf._setting_working_dir
-                conf_dict["temperature settings file"]=name_for_list
+                    conf_dict["temperature data file"] = conf.data_img_file.filename
                 configs.append(conf_dict)
+            except Exception as exc:
+                print(f"[workspace save] configuration {ind + 1} skipped: "
+                      f"{type(exc).__name__}: {exc}")
 
         config_txt = json.dumps(configs)
         
@@ -1122,17 +1215,22 @@ class TemperatureController(QtCore.QObject):
         conf_list = json.loads(settings.get("temperature configurations", "[]"))
         
         if len(conf_list):
-            conf = conf_list[0]
+            # Per-config error isolation: one bad .trs (or a bug hit during its
+            # restore) shouldn't lose the rest of the workspace. Log and keep going.
+            def _safe_restore(conf, ind):
+                try:
+                    self.load_conf_settings(conf)
+                except Exception as exc:
+                    print(f"[workspace restore] configuration {ind + 1} failed to load: "
+                          f"{type(exc).__name__}: {exc}")
 
-            self.load_conf_settings(conf)
-            
+            _safe_restore(conf_list[0], 0)
 
-            more_configurations = len(conf_list)-1
+            more_configurations = len(conf_list) - 1
             for n in range(more_configurations):
                 self.model.add_configuration()
-                self.model.select_configuration(n+1)
-                conf = conf_list[n+1]
-                self.load_conf_settings(conf)
+                self.model.select_configuration(n + 1)
+                _safe_restore(conf_list[n + 1], n + 1)
 
             configuration_ind = settings.get("temperature configuration_ind", 0)
             self.model.select_configuration(configuration_ind)
