@@ -410,6 +410,23 @@ class IntegerSpinBox(DoubleSpinBoxAlignRight):
         self.setMaximum(10000)
         self.setSingleStep(1)
         
+class SpectrumViewBox(pg.ViewBox):
+    """Viewbox that mirrors the Temperature-tab spectrum interaction:
+    left-drag to rect-zoom, right-click to auto-range (unzoom) rather than
+    opening pyqtgraph's default context menu."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setMouseMode(self.RectMode)
+        self.enableAutoRange(self.XYAxes, True)
+
+    def mouseClickEvent(self, ev):
+        if ev.button() == QtCore.Qt.MouseButton.RightButton:
+            self.enableAutoRange(enable=1)
+            ev.accept()
+        else:
+            super().mouseClickEvent(ev)
+
+
 class CalibrationSpecWidget(QtWidgets.QWidget):
     """Single-side 1D calibration spectrum viewer, used for the DS Cal / US Cal
     1D tabs. Read-only — just renders whatever the controller pushes in via
@@ -423,7 +440,7 @@ class CalibrationSpecWidget(QtWidgets.QWidget):
         self._pg_layout = pg.GraphicsLayout()
         self._pg_layout.setContentsMargins(0, 0, 0, 0)
 
-        self._plot = pg.PlotItem()
+        self._plot = pg.PlotItem(viewBox=SpectrumViewBox())
         self._view_box = self._plot.getViewBox()
         self._plot.showAxis('top', show=True)
         self._plot.showAxis('right', show=True)
@@ -466,7 +483,7 @@ class RoiSpectraWidget(QtWidgets.QWidget):
         self._pg_us_layout.setContentsMargins(0, 0, 0, 0)
         self._pg_us_layout.layout.setVerticalSpacing(0)
         
-        self._us_plot =pg.PlotItem()
+        self._us_plot = pg.PlotItem(viewBox=SpectrumViewBox())
         self._us_view_box = self._us_plot.getViewBox()
         
         self._us_plot.showAxis('top', show=True)
@@ -487,7 +504,7 @@ class RoiSpectraWidget(QtWidgets.QWidget):
         self._pg_ds_layout.setContentsMargins(0, 0, 0, 0)
         self._pg_ds_layout.layout.setVerticalSpacing(0)
 
-        self._ds_plot = pg.PlotItem()
+        self._ds_plot = pg.PlotItem(viewBox=SpectrumViewBox())
         self._ds_view_box = self._ds_plot.getViewBox()
         self._ds_plot.showAxis('top', show=True)
         self._ds_plot.showAxis('right', show=True)
@@ -542,7 +559,9 @@ class RoiSpectraWidget(QtWidgets.QWidget):
         if dual:
             self._ds_plot.setTitle("Downstream", color=QColor(colors['downstream']), size='20pt')
         else:
-            self._ds_plot.setTitle("Temperature", color=QColor(colors['downstream']), size='20pt')
+            # This tab shows the raw 1D ROI-extracted counts vs wavelength — call
+            # it "Spectrum", not "Temperature" (that name belongs on the fit view).
+            self._ds_plot.setTitle("Spectrum", color=QColor(colors['downstream']), size='20pt')
 
 
 class RoiImageWidget(QtWidgets.QWidget):
