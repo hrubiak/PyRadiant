@@ -105,6 +105,8 @@ class TemperatureWidget(QtWidgets.QWidget):
 
         self.wavelength_calibration_gb = WavelengthCalibrationGB()
 
+        self.background_subtraction_gb = BackgroundSubtractionGB()
+
         self.calibration_section = TemperatureCalibrationSection()
         
         self.t_function_type_section = TemperatureFitSettings()
@@ -127,6 +129,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._other_settings_widget_layout.addWidget(self.wl_range_widget)
         self._other_settings_widget_layout.addWidget(self.roi_gb)
         self._other_settings_widget_layout.addWidget(self.wavelength_calibration_gb)
+        self._other_settings_widget_layout.addWidget(self.background_subtraction_gb)
         self._other_settings_widget_layout.addWidget(self.calibration_section)
         self._other_settings_widget_layout.addWidget(self.filter_section)
         self._other_settings_widget_layout.addWidget(self.t_function_type_section)
@@ -200,6 +203,8 @@ class TemperatureWidget(QtWidgets.QWidget):
             self.two_color_btn.setToolTip('Requires dual-sided mode')
         else:
             self.two_color_btn.setToolTip('')
+        # Background subtraction: hide the US dark row in single mode.
+        self.background_subtraction_gb.set_us_row_visible(dual)
 
     def style_widgets(self):
         pass
@@ -298,8 +303,16 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.filter_freq_min_sb = self.filter_section.freq_min_sb
         self.filter_freq_max_sb = self.filter_section.freq_max_sb
 
-        self.use_backbround_data_cb = self.roi_widget.use_backbround_data_cb
-        self.use_backbround_calibration_cb = self.roi_widget.use_backbround_calibration_cb
+        # Background-subtraction widgets
+        self.background_mode_combo = self.background_subtraction_gb.mode_combo
+        self.load_ds_dark_btn = self.background_subtraction_gb.load_ds_dark_btn
+        self.clear_ds_dark_btn = self.background_subtraction_gb.clear_ds_dark_btn
+        self.ds_dark_filename_lbl = self.background_subtraction_gb.ds_dark_filename_lbl
+        self.ds_dark_scale_sb = self.background_subtraction_gb.ds_dark_scale_sb
+        self.load_us_dark_btn = self.background_subtraction_gb.load_us_dark_btn
+        self.clear_us_dark_btn = self.background_subtraction_gb.clear_us_dark_btn
+        self.us_dark_filename_lbl = self.background_subtraction_gb.us_dark_filename_lbl
+        self.us_dark_scale_sb = self.background_subtraction_gb.us_dark_scale_sb
 
 
     def dragEnterEvent(self, e):
@@ -674,6 +687,88 @@ class WavelengthCalibrationGB(QtWidgets.QGroupBox):
         self._layout.addWidget(self.clear_btn)
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
+
+
+class BackgroundSubtractionGB(QtWidgets.QGroupBox):
+    """Per-configuration background subtraction mode with optional prerecorded dark.
+
+    Modes:
+      * In-situ ROI  — sum a per-side ROI on the same frame (indices 2/3).
+      * Prerecorded dark — subtract a stored dark image per side, scaled.
+      * Off — no subtraction.
+
+    In 'Prerecorded' mode two rows appear (DS + US) with Load, Clear, filename
+    label, and a scale spinbox. In single-sided measurement mode the US row is
+    hidden (see TemperatureWidget.apply_measurement_mode).
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__('Background subtraction')
+        self._layout = QtWidgets.QGridLayout()
+        self._layout.setContentsMargins(6, 4, 6, 4)
+        self._layout.setHorizontalSpacing(6)
+        self._layout.setVerticalSpacing(4)
+
+        # Row 0: mode selector
+        self._layout.addWidget(QtWidgets.QLabel('Mode:'), 0, 0)
+        self.mode_combo = QtWidgets.QComboBox()
+        self.mode_combo.addItems(['In-situ ROI', 'Prerecorded dark', 'Off'])
+        self._layout.addWidget(self.mode_combo, 0, 1, 1, 4)
+
+        # Row 1: DS dark controls (visible only in prerecorded mode)
+        self._ds_label = QtWidgets.QLabel('DS:')
+        self.load_ds_dark_btn = QtWidgets.QPushButton('Load…')
+        self.clear_ds_dark_btn = QtWidgets.QPushButton('Clear')
+        self.ds_dark_filename_lbl = QtWidgets.QLabel('None')
+        self.ds_dark_filename_lbl.setStyleSheet('color: gray;')
+        self.ds_dark_scale_sb = QtWidgets.QDoubleSpinBox()
+        self.ds_dark_scale_sb.setDecimals(3)
+        self.ds_dark_scale_sb.setRange(0.0, 1e6)
+        self.ds_dark_scale_sb.setSingleStep(0.1)
+        self.ds_dark_scale_sb.setValue(1.0)
+        self.ds_dark_scale_sb.setPrefix('× ')
+        self.ds_dark_scale_sb.setMaximumWidth(90)
+        self._layout.addWidget(self._ds_label,           1, 0)
+        self._layout.addWidget(self.load_ds_dark_btn,    1, 1)
+        self._layout.addWidget(self.clear_ds_dark_btn,   1, 2)
+        self._layout.addWidget(self.ds_dark_filename_lbl,1, 3)
+        self._layout.addWidget(self.ds_dark_scale_sb,    1, 4)
+
+        # Row 2: US dark controls
+        self._us_label = QtWidgets.QLabel('US:')
+        self.load_us_dark_btn = QtWidgets.QPushButton('Load…')
+        self.clear_us_dark_btn = QtWidgets.QPushButton('Clear')
+        self.us_dark_filename_lbl = QtWidgets.QLabel('None')
+        self.us_dark_filename_lbl.setStyleSheet('color: gray;')
+        self.us_dark_scale_sb = QtWidgets.QDoubleSpinBox()
+        self.us_dark_scale_sb.setDecimals(3)
+        self.us_dark_scale_sb.setRange(0.0, 1e6)
+        self.us_dark_scale_sb.setSingleStep(0.1)
+        self.us_dark_scale_sb.setValue(1.0)
+        self.us_dark_scale_sb.setPrefix('× ')
+        self.us_dark_scale_sb.setMaximumWidth(90)
+        self._layout.addWidget(self._us_label,           2, 0)
+        self._layout.addWidget(self.load_us_dark_btn,    2, 1)
+        self._layout.addWidget(self.clear_us_dark_btn,   2, 2)
+        self._layout.addWidget(self.us_dark_filename_lbl,2, 3)
+        self._layout.addWidget(self.us_dark_scale_sb,    2, 4)
+
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+        self._set_dark_rows_visible(False)  # only shown in prerecorded
+
+    def _set_dark_rows_visible(self, prerecorded):
+        """Show DS+US dark rows when in prerecorded mode; hide otherwise."""
+        for w in (self._ds_label, self.load_ds_dark_btn, self.clear_ds_dark_btn,
+                  self.ds_dark_filename_lbl, self.ds_dark_scale_sb,
+                  self._us_label, self.load_us_dark_btn, self.clear_us_dark_btn,
+                  self.us_dark_filename_lbl, self.us_dark_scale_sb):
+            w.setVisible(prerecorded)
+
+    def set_us_row_visible(self, visible):
+        """Hide the US dark row entirely (used when measurement mode is single)."""
+        for w in (self._us_label, self.load_us_dark_btn, self.clear_us_dark_btn,
+                  self.us_dark_filename_lbl, self.us_dark_scale_sb):
+            w.setVisible(visible)
 
 
 class TemperatureCalibrationSection(QtWidgets.QGroupBox):

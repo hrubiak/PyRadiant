@@ -105,14 +105,8 @@ class RoiWidget(QtWidgets.QWidget):
         self.roi_gbs = []
         self.create_roi_gbs()
         self._roi_v_bs_layout.addLayout(self._roi_gbs_layout)
-        self._roi_v_bs_layout.addWidget(QtWidgets.QLabel('Subtract in-situ background'))
-        self.use_backbround_data_cb = QtWidgets.QCheckBox('- Data background')
-        self._roi_v_bs_layout.addWidget(self.use_backbround_data_cb)
-        self.use_backbround_data_cb.setChecked(True)
-        self.use_backbround_calibration_cb = QtWidgets.QCheckBox('- Calibration background')
-        self._roi_v_bs_layout.addWidget(self.use_backbround_calibration_cb)
-        self.use_backbround_calibration_cb.setChecked(True)
-        #self._roi_gbs_layout.addSpacerItem(HorizontalSpacerItem())
+        # (Old bg-mode checkboxes removed — replaced by BackgroundSubtractionGB
+        # in TemperatureWidget's settings panel.)
 
         self._main_vertical_layout.addWidget(self.left_tab_widget)
         #self._main_vertical_layout.addWidget(self.roi_gb)

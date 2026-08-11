@@ -79,6 +79,26 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.use_insitu_data_background = True
         self.use_insitu_calibration_background = True
 
+        # Background/dark subtraction mode. One setting governs both data and
+        # calibration extraction.
+        #   'insitu'      : sum a per-side ROI on the same frame (indices 2/3).
+        #                    Default; matches historical behaviour.
+        #   'prerecorded' : subtract a stored dark image per side, scaled by
+        #                    ds/us_dark_frame_scale, from the SAME ROI as the
+        #                    data extraction.
+        #   'off'         : no background subtraction.
+        self.background_mode = 'insitu'
+        # Prerecorded dark frames per side. Image bytes are stored on the config
+        # (and embedded in the .trs) so the config is self-contained after the
+        # source file is gone. Scale is a multiplier applied before subtraction
+        # (e.g. exposure-time compensation).
+        self.ds_dark_frame_img = None
+        self.us_dark_frame_img = None
+        self.ds_dark_frame_filename = None
+        self.us_dark_frame_filename = None
+        self.ds_dark_frame_scale = 1.0
+        self.us_dark_frame_scale = 1.0
+
         self.x_calibration = None
 
         # Wavelength calibration for TIFF files (Photron camera etc.).
@@ -423,6 +443,111 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.dirty = True
             self.data_changed_emit(self.current_frame)
 
+    # -------- Background subtraction (mode + prerecorded dark) ----------------
+    _VALID_BACKGROUND_MODES = ('insitu', 'prerecorded', 'off')
+
+    def _propagate_dark_to_models(self):
+        """Push the current mode + per-side dark image + scale to both single models."""
+        for side, img, scale in (('ds', self.ds_dark_frame_img, self.ds_dark_frame_scale),
+                                  ('us', self.us_dark_frame_img, self.us_dark_frame_scale)):
+            model = self.ds_temperature_model if side == 'ds' else self.us_temperature_model
+            model.background_mode = self.background_mode
+            model.dark_frame_img = img
+            model.dark_frame_scale = float(scale)
+
+    def set_background_mode(self, mode):
+        if mode not in self._VALID_BACKGROUND_MODES:
+            raise ValueError(f"background mode must be one of {self._VALID_BACKGROUND_MODES}, got {mode!r}")
+        if mode == self.background_mode:
+            return
+        self.background_mode = mode
+        # Keep the legacy convenience bools in sync for any external readers
+        # (log-file writer path, etc.) that still consult them.
+        insitu = (mode == 'insitu')
+        self.use_insitu_data_background = insitu
+        self.use_insitu_calibration_background = insitu
+        self.ds_temperature_model.subtract_inistu_data_background = insitu
+        self.us_temperature_model.subtract_inistu_data_background = insitu
+        self.ds_temperature_model.subtract_inistu_calibration_background = insitu
+        self.us_temperature_model.subtract_inistu_calibration_background = insitu
+        self._propagate_dark_to_models()
+        pipeline.run(self, Stage.DATA_SPEC)
+        self.dirty = True
+        self.data_changed_emit(self.current_frame)
+
+    def _load_dark_frame_file(self, filename):
+        """Dispatch to SpeFile / H5File / TifFile — mirrors load_ds_calibration_image."""
+        _, ext = os.path.splitext(filename)
+        ext = ext.lower()
+        if ext == '.spe':
+            f = SpeFile(filename)
+        elif ext == '.h5':
+            f = H5File(filename, self.x_calibration)
+        elif ext in ('.tif', '.tiff'):
+            f = TifFile(filename, self._photron_coeffs())
+        else:
+            raise ValueError(f"Unsupported dark-frame extension: {ext}")
+        img = f.img
+        if isinstance(img, list):
+            img = img[0]  # multi-frame → average or first? use first for now
+        return np.asarray(img)
+
+    def load_ds_dark_frame(self, filename):
+        self.ds_dark_frame_img = self._load_dark_frame_file(filename)
+        self.ds_dark_frame_filename = filename
+        self._propagate_dark_to_models()
+        pipeline.run_ds(self, Stage.DATA_SPEC)
+        self.dirty = True
+        self.ds_calculations_changed_emit()
+
+    def load_us_dark_frame(self, filename):
+        self.us_dark_frame_img = self._load_dark_frame_file(filename)
+        self.us_dark_frame_filename = filename
+        self._propagate_dark_to_models()
+        pipeline.run_us(self, Stage.DATA_SPEC)
+        self.dirty = True
+        self.us_calculations_changed_emit()
+
+    def clear_ds_dark_frame(self):
+        if self.ds_dark_frame_img is None and self.ds_dark_frame_filename is None:
+            return
+        self.ds_dark_frame_img = None
+        self.ds_dark_frame_filename = None
+        self._propagate_dark_to_models()
+        pipeline.run_ds(self, Stage.DATA_SPEC)
+        self.dirty = True
+        self.ds_calculations_changed_emit()
+
+    def clear_us_dark_frame(self):
+        if self.us_dark_frame_img is None and self.us_dark_frame_filename is None:
+            return
+        self.us_dark_frame_img = None
+        self.us_dark_frame_filename = None
+        self._propagate_dark_to_models()
+        pipeline.run_us(self, Stage.DATA_SPEC)
+        self.dirty = True
+        self.us_calculations_changed_emit()
+
+    def set_ds_dark_frame_scale(self, scale):
+        scale = float(scale)
+        if scale == self.ds_dark_frame_scale:
+            return
+        self.ds_dark_frame_scale = scale
+        self.ds_temperature_model.dark_frame_scale = scale
+        pipeline.run_ds(self, Stage.DATA_SPEC)
+        self.dirty = True
+        self.ds_calculations_changed_emit()
+
+    def set_us_dark_frame_scale(self, scale):
+        scale = float(scale)
+        if scale == self.us_dark_frame_scale:
+            return
+        self.us_dark_frame_scale = scale
+        self.us_temperature_model.dark_frame_scale = scale
+        pipeline.run_us(self, Stage.DATA_SPEC)
+        self.dirty = True
+        self.us_calculations_changed_emit()
+
     def _update_temperature_models_data(self):
 
         self.ds_temperature_model.set_temperature_fit_function(self.temperature_fit_function_str)
@@ -580,6 +705,10 @@ class TemperatureModelConfiguration(QtCore.QObject):
         f = h5py.File(filename, 'w')
 
         f.attrs['mode'] = self.mode
+        # Background subtraction mode (see set_background_mode). Legacy
+        # subtract_bg attrs on ds/us image groups are also written below for
+        # cross-version reads.
+        f.attrs['background_mode'] = self.background_mode
         # Save the data image dimension so ROIs can be restored even for configs
         # that carry no intensity calibration image (e.g. single-sided TIFF setups).
         # The subsequent workspace data-file load uses the same dimension key,
@@ -588,6 +717,18 @@ class TemperatureModelConfiguration(QtCore.QObject):
             xdim, ydim = self.data_img_file.get_dimension()
             f.attrs['data_img_xdim'] = int(xdim)
             f.attrs['data_img_ydim'] = int(ydim)
+
+        # Prerecorded dark frames per side (only stored when present). The
+        # image is embedded in the .trs so the config is self-contained even
+        # if the original dark file is gone.
+        if self.ds_dark_frame_img is not None:
+            f['ds_dark_frame'] = np.asarray(self.ds_dark_frame_img)
+            f['ds_dark_frame'].attrs['filename'] = str(self.ds_dark_frame_filename or '')
+            f['ds_dark_frame'].attrs['scale'] = float(self.ds_dark_frame_scale)
+        if self.us_dark_frame_img is not None:
+            f['us_dark_frame'] = np.asarray(self.us_dark_frame_img)
+            f['us_dark_frame'].attrs['filename'] = str(self.us_dark_frame_filename or '')
+            f['us_dark_frame'].attrs['scale'] = float(self.us_dark_frame_scale)
 
         f.create_group('downstream_calibration')
         ds_group = f['downstream_calibration']
@@ -654,6 +795,11 @@ class TemperatureModelConfiguration(QtCore.QObject):
 
         f.close()
         self.setting_filename = filename
+        # Keep the working dir in sync with the file we just wrote so
+        # workspace-save (which combines _setting_working_dir + basename(setting_filename))
+        # can't record a mismatched path if a caller invoked save_setting
+        # directly without going through the controller's save_setting_file.
+        self._setting_working_dir = os.path.dirname(filename)
         self.dirty = False
 
     
@@ -685,6 +831,34 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def load_setting(self, filename):
         f = h5py.File(filename, 'r')
         self.mode = str(f.attrs.get('mode', 'dual'))
+        # Background subtraction: prefer the new attr; fall back to the legacy
+        # per-group subtract_bg bool (True → 'insitu', False → 'off').
+        if 'background_mode' in f.attrs:
+            self.background_mode = str(f.attrs['background_mode'])
+        else:
+            legacy_bg = True
+            if 'downstream_calibration' in f and 'image' in f['downstream_calibration']:
+                a = f['downstream_calibration']['image'].attrs
+                if 'subtract_bg' in a:
+                    legacy_bg = bool(a['subtract_bg'])
+            self.background_mode = 'insitu' if legacy_bg else 'off'
+        # Prerecorded dark frames (optional; only present when saved).
+        if 'ds_dark_frame' in f:
+            self.ds_dark_frame_img = f['ds_dark_frame'][...]
+            self.ds_dark_frame_filename = str(f['ds_dark_frame'].attrs.get('filename', ''))
+            self.ds_dark_frame_scale = float(f['ds_dark_frame'].attrs.get('scale', 1.0))
+        else:
+            self.ds_dark_frame_img = None
+            self.ds_dark_frame_filename = None
+            self.ds_dark_frame_scale = 1.0
+        if 'us_dark_frame' in f:
+            self.us_dark_frame_img = f['us_dark_frame'][...]
+            self.us_dark_frame_filename = str(f['us_dark_frame'].attrs.get('filename', ''))
+            self.us_dark_frame_scale = float(f['us_dark_frame'].attrs.get('scale', 1.0))
+        else:
+            self.us_dark_frame_img = None
+            self.us_dark_frame_filename = None
+            self.us_dark_frame_scale = 1.0
         ds_group = f['downstream_calibration']
         # DS intensity calibration image (optional — single-sided/no-cal configs skip)
         if 'image' in ds_group:
@@ -813,11 +987,21 @@ class TemperatureModelConfiguration(QtCore.QObject):
         else:
             self.photron_wavelength_calibration = None
 
+        # Propagate the loaded background mode + dark frames to the two single
+        # temperature models before the pipeline re-runs, so extraction picks
+        # them up on the very first pass after restore.
+        insitu = (self.background_mode == 'insitu')
+        for m in (self.ds_temperature_model, self.us_temperature_model):
+            m.subtract_inistu_data_background = insitu
+            m.subtract_inistu_calibration_background = insitu
+        self._propagate_dark_to_models()
+
         pipeline.run(self, Stage.DATA_SPEC)
 
         self.data_changed_emit(self.current_frame)
 
         self.setting_filename = filename
+        self._setting_working_dir = os.path.dirname(filename)
         self.dirty = False
 
 
@@ -1299,6 +1483,14 @@ class SingleTemperatureModel(QtCore.QObject):
         self.subtract_inistu_data_background = True
         self.subtract_inistu_calibration_background = True
 
+        # New unified background subtraction (see TemperatureModelConfiguration
+        # docstring on set_background_mode). background_mode is authoritative for
+        # the extraction methods below; the subtract_inistu_* bools remain for
+        # legacy external readers only.
+        self.background_mode = 'insitu'
+        self.dark_frame_img = None       # np.ndarray or None
+        self.dark_frame_scale = 1.0
+
         self.filter_oscillation = False
         self.filter_freq_min = 0.0005  # cm — lower bound for fringe peak search
         self.filter_freq_max = 0.05    # cm — upper bound for fringe peak search
@@ -1460,7 +1652,8 @@ class SingleTemperatureModel(QtCore.QObject):
                 roi.x_max = w - 1
             if roi.y_max >= h:
                 roi.y_max = h - 1
-            if self.subtract_inistu_data_background:
+            mode = getattr(self, 'background_mode', 'insitu')
+            if mode == 'insitu':
                 roi_bg = self.roi_data_manager.get_roi(self.ind+2, self._data_img_dimension)
                 roi_bg.x_max = roi.x_max
                 roi_bg.x_min = roi.x_min
@@ -1473,13 +1666,18 @@ class SingleTemperatureModel(QtCore.QObject):
 
             data_x = self._data_img_x_calibration[int(roi.x_min):int(roi.x_max) + 1]
             data_y = get_roi_sum(_data_img_as_array, roi)
-            
-            
+
+
             self.data_roi_max = get_roi_max(_data_img_as_array, roi)
-            if self.subtract_inistu_data_background:
+            if mode == 'insitu':
                 data_y_bg = get_roi_sum(_data_img_as_array, roi_bg)
                 data_y = data_y - data_y_bg
-            
+            elif mode == 'prerecorded' and self.dark_frame_img is not None:
+                dark = np.asarray(self.dark_frame_img)
+                if dark.shape == _data_img_as_array.shape:
+                    data_y = data_y - get_roi_sum(dark, roi) * float(self.dark_frame_scale)
+                # dimension-mismatch: silently skip (see mode 'prerecorded' docs)
+
             self.total_counts = np.sum(data_y)
             self.data_spectrum.data = data_x, data_y
             self.data_spectrum.mask = within_limit
@@ -1493,19 +1691,24 @@ class SingleTemperatureModel(QtCore.QObject):
                 roi.x_max = w - 1
             if roi.y_max >= h:
                 roi.y_max = h - 1
-            if self.subtract_inistu_calibration_background:
+            mode = getattr(self, 'background_mode', 'insitu')
+            if mode == 'insitu':
                 roi_bg = self.roi_data_manager.get_roi(self.ind+2, self._calibration_img_dimension)
                 roi_bg.x_max = roi.x_max
                 roi_bg.x_min = roi.x_min
 
             calibration_x = self._calibration_img_x_calibration[int(roi.x_min):int(roi.x_max) + 1]
             calibration_y = get_roi_sum(self._calibration_img, roi)
-            
 
-            if self.subtract_inistu_calibration_background:
+            if mode == 'insitu':
                 calibration_bg = get_roi_sum(self._calibration_img, roi_bg)
                 calibration_y = calibration_y - calibration_bg
-            self.calibration_spectrum.data = calibration_x, calibration_y 
+            elif mode == 'prerecorded' and self.dark_frame_img is not None:
+                dark = np.asarray(self.dark_frame_img)
+                cal_arr = np.asarray(self._calibration_img)
+                if dark.shape == cal_arr.shape:
+                    calibration_y = calibration_y - get_roi_sum(dark, roi) * float(self.dark_frame_scale)
+            self.calibration_spectrum.data = calibration_x, calibration_y
 
     def _update_corrected_spectrum(self):
         if len(self.data_spectrum) == 0:

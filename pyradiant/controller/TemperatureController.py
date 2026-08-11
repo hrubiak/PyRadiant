@@ -277,8 +277,14 @@ class TemperatureController(QtCore.QObject):
         self.widget.connect_to_epics_cb.clicked.connect(self.connect_to_epics_cb_callback)
         self.widget.monitor_folder_cb.clicked.connect(self.connect_to_monitor_folder_cb_callback)
 
-        self.widget.use_backbround_data_cb.toggled.connect(self.use_backbround_cb_callback)
-        self.widget.use_backbround_calibration_cb.toggled.connect(self.use_backbround_cb_callback)
+        # Background subtraction (mode + prerecorded dark)
+        self.widget.background_mode_combo.currentIndexChanged.connect(self._background_mode_changed)
+        self.connect_click_function(self.widget.load_ds_dark_btn, self.load_ds_dark_file)
+        self.connect_click_function(self.widget.load_us_dark_btn, self.load_us_dark_file)
+        self.connect_click_function(self.widget.clear_ds_dark_btn, self.clear_ds_dark_file)
+        self.connect_click_function(self.widget.clear_us_dark_btn, self.clear_us_dark_file)
+        self.widget.ds_dark_scale_sb.valueChanged.connect(self._ds_dark_scale_changed)
+        self.widget.us_dark_scale_sb.valueChanged.connect(self._us_dark_scale_changed)
 
         self.widget.two_color_btn.clicked.connect(self.two_color_display_toggle_callback)
 
@@ -310,10 +316,102 @@ class TemperatureController(QtCore.QObject):
         for conf in self.model.configurations:
             conf.close_log()
 
-    def use_backbround_cb_callback(self):
-        use_data_background = self.widget.use_backbround_data_cb.isChecked()
-        use_calibration_background = self.widget.use_backbround_calibration_cb.isChecked()
-        self.model.current_configuration.set_use_insitu_background(use_data_background,use_calibration_background)
+    # ---- Background subtraction handlers -------------------------------------
+    _BG_MODES_BY_INDEX = ('insitu', 'prerecorded', 'off')
+
+    def _background_mode_changed(self, index):
+        if not (0 <= index < len(self._BG_MODES_BY_INDEX)):
+            return
+        mode = self._BG_MODES_BY_INDEX[index]
+        cfg = self.model.current_configuration
+        cfg.set_background_mode(mode)
+        self.widget.background_subtraction_gb._set_dark_rows_visible(mode == 'prerecorded')
+        # Re-hide US row if we're in single-sided measurement mode.
+        if getattr(cfg, 'mode', 'dual') == 'single':
+            self.widget.background_subtraction_gb.set_us_row_visible(False)
+
+    def _bg_scale_changed(self, side, value):
+        cfg = self.model.current_configuration
+        if side == 'ds':
+            cfg.set_ds_dark_frame_scale(value)
+        else:
+            cfg.set_us_dark_frame_scale(value)
+
+    def _ds_dark_scale_changed(self, v): self._bg_scale_changed('ds', v)
+    def _us_dark_scale_changed(self, v): self._bg_scale_changed('us', v)
+
+    def load_ds_dark_file(self, filename=None):
+        self._load_dark_file('ds', filename)
+
+    def load_us_dark_file(self, filename=None):
+        self._load_dark_file('us', filename)
+
+    def _load_dark_file(self, side, filename):
+        if filename is None or filename is False:
+            filename = open_file_dialog(
+                self.widget,
+                caption=f"Load {side.upper()} dark frame",
+                directory=self._exp_working_dir,
+                filter="Frames (*.spe *.SPE *.h5 *.tif *.tiff);;All files (*)",
+            )
+        if not filename:
+            return
+        cfg = self.model.current_configuration
+        try:
+            if side == 'ds':
+                cfg.load_ds_dark_frame(filename)
+            else:
+                cfg.load_us_dark_frame(filename)
+        except (OSError, ValueError, KeyError) as exc:
+            QtWidgets.QMessageBox.warning(
+                self.widget,
+                "Dark frame",
+                f"Failed to load dark frame:\n{filename}\n\n{exc}",
+            )
+            return
+        self._sync_background_widgets()
+
+    def clear_ds_dark_file(self):
+        self.model.current_configuration.clear_ds_dark_frame()
+        self._sync_background_widgets()
+
+    def clear_us_dark_file(self):
+        self.model.current_configuration.clear_us_dark_frame()
+        self._sync_background_widgets()
+
+    def _sync_background_widgets(self):
+        """Sync mode combo, dark filename labels, and scale spinboxes to model state.
+
+        Called whenever the current config changes or after a load/clear.
+        """
+        cfg = self.model.current_configuration
+        mode = getattr(cfg, 'background_mode', 'insitu')
+        try:
+            idx = self._BG_MODES_BY_INDEX.index(mode)
+        except ValueError:
+            idx = 0
+        gb = self.widget.background_subtraction_gb
+        # Update combo without re-emitting -> avoid recursion into set_background_mode
+        gb.mode_combo.blockSignals(True)
+        gb.mode_combo.setCurrentIndex(idx)
+        gb.mode_combo.blockSignals(False)
+        gb._set_dark_rows_visible(mode == 'prerecorded')
+        if getattr(cfg, 'mode', 'dual') == 'single':
+            gb.set_us_row_visible(False)
+        # DS row content
+        ds_name = os.path.basename(cfg.ds_dark_frame_filename) if cfg.ds_dark_frame_filename else 'None'
+        gb.ds_dark_filename_lbl.setText(ds_name)
+        gb.ds_dark_filename_lbl.setStyleSheet('' if cfg.ds_dark_frame_img is not None else 'color: gray;')
+        gb.ds_dark_scale_sb.blockSignals(True)
+        gb.ds_dark_scale_sb.setValue(cfg.ds_dark_frame_scale)
+        gb.ds_dark_scale_sb.blockSignals(False)
+        # US row content
+        us_name = os.path.basename(cfg.us_dark_frame_filename) if cfg.us_dark_frame_filename else 'None'
+        gb.us_dark_filename_lbl.setText(us_name)
+        gb.us_dark_filename_lbl.setStyleSheet('' if cfg.us_dark_frame_img is not None else 'color: gray;')
+        gb.us_dark_scale_sb.blockSignals(True)
+        gb.us_dark_scale_sb.setValue(cfg.us_dark_frame_scale)
+        gb.us_dark_scale_sb.blockSignals(False)
 
 
     def connect_to_ad_cb_callback(self):
@@ -790,12 +888,8 @@ class TemperatureController(QtCore.QObject):
         self.use_background_update()
 
     def use_background_update(self):
-        self.widget.use_backbround_calibration_cb.blockSignals(True)
-        self.widget.use_backbround_data_cb.blockSignals(True)
-        self.widget.use_backbround_calibration_cb.setChecked (bool(self.model.current_configuration.use_insitu_calibration_background))
-        self.widget.use_backbround_data_cb.setChecked (bool(self.model.current_configuration.use_insitu_data_background))
-        self.widget.use_backbround_calibration_cb.blockSignals(False)
-        self.widget.use_backbround_data_cb.blockSignals(False)
+        """Sync all background-subtraction widgets to the current config's state."""
+        self._sync_background_widgets()
 
 
     def data_changed_signal_callback(self):
