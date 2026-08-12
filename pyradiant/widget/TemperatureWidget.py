@@ -219,6 +219,8 @@ class TemperatureWidget(QtWidgets.QWidget):
         
         self.frame_num_txt = self.control_widget.file_gb.frame_txt
         self.frame_widget = self.control_widget.file_gb.frame_control_widget
+        self.lab_time_btn = self.control_widget.file_gb.lab_time_btn
+        self.sync_frame_btn = self.control_widget.file_gb.sync_frame_btn
 
         self.autoprocess_cb = self.control_widget.file_gb.autoprocess_cb
         self.autoprocess_lbl = self.control_widget.file_gb.autoprocess_lbl

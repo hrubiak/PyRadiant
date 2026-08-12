@@ -149,11 +149,27 @@ class FileGroupBox(QtWidgets.QGroupBox):
         self.frame_lbl = QtWidgets.QLabel('Frame:')
         self.frame_txt = QtWidgets.QLineEdit('100')
         self.frame_txt.setMaximumWidth(50)
+        self.lab_time_btn = QtWidgets.QPushButton('Lab time')
+        self.lab_time_btn.setCheckable(True)
+        self.lab_time_btn.setToolTip(
+            'Show the history plot x-axis as time (s) with DS/US aligned by '
+            'physical exposure via the per-side mask offset.'
+        )
+        self.sync_frame_btn = QtWidgets.QPushButton('Sync frame')
+        self.sync_frame_btn.setCheckable(True)
+        self.sync_frame_btn.setToolTip(
+            'Show the history plot x-axis as coincident-exposure frame index '
+            '(DS and US frames from the same physical exposure share the same '
+            'x). Mutually exclusive with Lab time.'
+        )
 
         self._frame_control_layout.addWidget(self.frame_lbl)
         self._frame_control_layout.addWidget(self.load_previous_frame_btn)
         self._frame_control_layout.addWidget(self.frame_txt)
         self._frame_control_layout.addWidget(self.load_next_frame_btn)
+        self._frame_control_layout.addSpacing(8)
+        self._frame_control_layout.addWidget(self.lab_time_btn)
+        self._frame_control_layout.addWidget(self.sync_frame_btn)
        
         self.frame_control_widget.setLayout(self._frame_control_layout)
         

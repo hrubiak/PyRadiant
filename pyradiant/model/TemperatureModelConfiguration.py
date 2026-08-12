@@ -141,6 +141,13 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.roi_data_manager = RoiDataManager(4)
 
         self.current_frame = 0
+        # Per-side readout indices (used by sync-frame / lab-time modes so
+        # DS and US spectra can come from different readout frames of the
+        # same physical exposure). None means that side has no valid readout
+        # for the current coincident k. In legacy frame mode both equal
+        # current_frame.
+        self.current_frame_ds = 0
+        self.current_frame_us = 0
         self.ds_temperature_model = SingleTemperatureModel(0, self.roi_data_manager)
         self.us_temperature_model = SingleTemperatureModel(1, self.roi_data_manager)
 
@@ -351,6 +358,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
         if current_frame < 0:
             current_frame = 0
         self.current_frame = current_frame
+        self.current_frame_ds = current_frame
+        self.current_frame_us = current_frame
         self._data_img = self.data_img_file.img[frame_number]
         self._update_temperature_models_data()   # store new frame image on each model
         pipeline.run(self, Stage.DATA_SPEC)      # re-extract spectra, correct, fit
@@ -1681,6 +1690,174 @@ class TemperatureModelConfiguration(QtCore.QObject):
 
     def get_x_limits(self):
         return np.array([self.data_img_file.x_calibration[0], self.data_img_file.x_calibration[-1]])
+
+    def get_frame_time_axis(self):
+        """Return an array of times in seconds, one per frame, with t=0 at
+        the first kinetics frame. Uses num_frames · exposure_time; no
+        physical-mask unscrambling. Returns None if there's no multi-frame
+        data or exposure_time is unknown/zero."""
+        reader = self.data_img_file
+        if reader is None:
+            return None
+        n = int(getattr(reader, 'num_frames', 0) or 0)
+        if n <= 1:
+            return None
+        t_exp = float(getattr(reader, 'exposure_time', 0) or 0.0)
+        if t_exp <= 0.0:
+            return None
+        return np.arange(n) * t_exp
+
+    def get_side_frame_time_axis(self, side):
+        """Per-side lab-time axis for the temperature-history plot.
+
+        In interleaved kinetics, DS and US charge at the same readout frame
+        f can come from different physical exposures k because the two mask
+        holes sit at different frame slots q_side = (Y_side - win_y) // h
+        on the sensor. Empirically (Aug 2026, PI-MAX4 at HPCAT), readout
+        runs in forward exposure order and the per-side offset acts with
+        opposite sign relative to a naive assumption: the exposure that
+        populated `side` in readout frame f is k_side(f) = f - q_side + 1
+        (1-indexed). Anchoring t = 0 at exposure #1 gives
+        t_side(f) = (k_side(f) - 1) · t_exp = (f - q_side) · t_exp — so DS
+        and US points from the same physical exposure land at the same x.
+
+        Returns (times, valid) where times is length-N in seconds and
+        valid[f] is True iff k_side(f) is in [1, N]. Frames with invalid
+        k have no real exposure (mask charge would come from outside the
+        acquisition window) and should be dropped by the caller.
+
+        q_side comes from the cal-dim signal ROI when cross-mode is active
+        (a full-chip cal is loaded); otherwise q=0 and both sides share the
+        same axis (no per-side shift). Returns None if not multi-frame
+        kinetics or exposure_time is unknown.
+        """
+        reader = self.data_img_file
+        if reader is None:
+            return None
+        n = int(getattr(reader, 'num_frames', 0) or 0)
+        if n <= 1:
+            return None
+        t_exp = float(getattr(reader, 'exposure_time', 0) or 0.0)
+        if t_exp <= 0.0:
+            return None
+        def _q_for(s):
+            info = self.cross_mode_cal_info(s)
+            if info is None:
+                return 0
+            h = int(info.get('window_height', 0) or 0)
+            if h <= 0:
+                return 0
+            y_min = int(info['signal_roi_limits'][2])
+            win_y = int(info.get('win_y', 0) or 0)
+            return (y_min - win_y) // h
+        q = _q_for(side)
+        # Global offset = max q across both sides so the earliest displayed
+        # frame across DS+US lands at t=0 while preserving per-side sync
+        # (both sides get the same shift, so relative offsets don't change).
+        q_max = max(_q_for('ds'), _q_for('us'))
+        f = np.arange(n)
+        k = f - q + 1
+        valid = (k >= 1) & (k <= n)
+        times = (k - 1 + q_max).astype(float) * t_exp
+        return times, valid
+
+    def _q_side(self, side):
+        """Cross-mode mask-slot offset for a side (0 when no cross-mode)."""
+        info = self.cross_mode_cal_info(side)
+        if info is None:
+            return 0
+        h = int(info.get('window_height', 0) or 0)
+        if h <= 0:
+            return 0
+        y_min = int(info['signal_roi_limits'][2])
+        win_y = int(info.get('win_y', 0) or 0)
+        return (y_min - win_y) // h
+
+    def get_coincident_frame_range(self):
+        """Range of 1-indexed coincident-exposure frame values k covering
+        every readout frame on either side. Aligned with the 'sync_frame'
+        x-axis so that k_side = f - q_side + q_max + 1.
+
+        Returns (k_min, k_max) or None if no multi-frame data."""
+        if self.data_img_file is None:
+            return None
+        n = int(getattr(self.data_img_file, 'num_frames', 0) or 0)
+        if n <= 1:
+            return None
+        q_ds = self._q_side('ds')
+        q_us = self._q_side('us')
+        q_max = max(q_ds, q_us)
+        q_min = min(q_ds, q_us)
+        # k_side(f) = f - q_side + q_max + 1; union of both sides:
+        # min k = 0 - q_max + q_max + 1 = 1
+        # max k = (n-1) - q_min + q_max + 1 = n + (q_max - q_min)
+        return 1, n + (q_max - q_min)
+
+    def coincident_to_readout(self, k):
+        """Map coincident-exposure frame k (1-indexed, sync-frame units) to
+        (f_ds, f_us) readout-frame indices (0-indexed). Each side's f is
+        None if k falls outside that side's [0, N-1] readout range."""
+        if self.data_img_file is None:
+            return None, None
+        n = int(getattr(self.data_img_file, 'num_frames', 0) or 0)
+        if n <= 0:
+            return None, None
+        q_ds = self._q_side('ds')
+        q_us = self._q_side('us')
+        q_max = max(q_ds, q_us)
+        # k = f - q_side + q_max + 1  →  f = k - 1 + q_side - q_max
+        f_ds = int(k) - 1 + q_ds - q_max
+        f_us = int(k) - 1 + q_us - q_max
+        if not (0 <= f_ds < n):
+            f_ds = None
+        if not (0 <= f_us < n):
+            f_us = None
+        return f_ds, f_us
+
+    def set_img_frame_numbers(self, f_ds, f_us):
+        """Load per-side readout frames — DS from img[f_ds], US from img[f_us]
+        — so both sides display the same physical exposure. Pass None for a
+        side that has no valid readout frame at the requested coincident k;
+        that side is cleared. Runs the pipeline for both sides."""
+        if self.data_img_file is None:
+            return False
+        n = int(self.data_img_file.num_frames)
+        if f_ds is not None and not (0 <= int(f_ds) < n):
+            f_ds = None
+        if f_us is not None and not (0 <= int(f_us) < n):
+            f_us = None
+        if f_ds is None and f_us is None:
+            return False
+        ds_img = self.data_img_file.img[int(f_ds)] if f_ds is not None else None
+        us_img = self.data_img_file.img[int(f_us)] if f_us is not None else None
+        # _data_img feeds the 2D viewer; prefer DS's frame, fall back to US.
+        self._data_img = ds_img if ds_img is not None else us_img
+        # Per-side readout indices (None when that side is blank).
+        self.current_frame_ds = f_ds if f_ds is not None else None
+        self.current_frame_us = f_us if f_us is not None else None
+        # current_frame is a scalar used by legacy call sites (labels, logs).
+        # Keep it pointing at DS's readout frame when available, else US's.
+        self.current_frame = int(f_ds if f_ds is not None else f_us)
+        self.ds_temperature_model.set_temperature_fit_function(self.temperature_fit_function_str)
+        self.us_temperature_model.set_temperature_fit_function(self.temperature_fit_function_str)
+        self.x_calibration = self.data_img_file.x_calibration
+        # Feed per-side data. When a side has no valid readout for this
+        # coincident k, feed a NaN-filled array of the same shape so the
+        # pipeline propagates NaN through the ROI/spectrum/fit and the
+        # plots go blank rather than showing bogus data from the other side.
+        blank = np.full_like(self._data_img, np.nan, dtype=float)
+        self.ds_temperature_model.set_data(
+            ds_img if ds_img is not None else blank,
+            self.data_img_file.x_calibration)
+        if self.mode == 'dual':
+            self.us_temperature_model.set_data(
+                us_img if us_img is not None else blank,
+                self.data_img_file.x_calibration)
+        pipeline.run_ds(self, Stage.DATA_SPEC)
+        if self.mode == 'dual':
+            pipeline.run_us(self, Stage.DATA_SPEC)
+        self.data_changed_emit(self.current_frame)
+        return True
 
     def fit_all_frames(self):
         if self.data_img_file is None:

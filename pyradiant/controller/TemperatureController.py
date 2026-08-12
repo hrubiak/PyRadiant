@@ -74,6 +74,16 @@ class TemperatureController(QtCore.QObject):
         self.max_allowed_T = 20000
         self.min_allowed_T = 500
 
+        # History-plot x-axis mode: False = frame index (1..N), True = seconds
+        # relative to the first kinetics frame (i·exposure_time). Toggled by
+        # the "Lab time" button; not persisted.
+        # 'frame' (raw 1..N), 'time' (seconds, DS/US synced by exposure), or
+        # 'sync_frame' (coincident-exposure frame index, DS/US synced).
+        self._history_x_mode = 'frame'
+        # Coincident-exposure index currently displayed in synced modes.
+        # Kept in sync with the model's per-side readout frames.
+        self._current_coincident_k = 1
+
         #self.data_history_widget: dataHistoryWidget
         self.data_history_widget = data_history_widget
         self.data_history_widget.setWindowTitle('Temperature Log')
@@ -198,6 +208,8 @@ class TemperatureController(QtCore.QObject):
         self.widget.load_next_frame_btn.clicked.connect(self.load_next_img_frame_callback)
         self.widget.load_previous_frame_btn.clicked.connect(self.load_previous_img_frame_callback)
         self.widget.frame_num_txt.editingFinished.connect( self.frame_num_txt_callback)
+        self.widget.lab_time_btn.toggled.connect(self.lab_time_btn_toggled)
+        self.widget.sync_frame_btn.toggled.connect(self.sync_frame_btn_toggled)
         self.widget.autoprocess_cb.toggled.connect(self.auto_process_cb_toggled)
 
         self.connect_click_function(self.widget.save_data_btn, self.save_data_btn_clicked)
@@ -292,12 +304,40 @@ class TemperatureController(QtCore.QObject):
 
 
     def load_next_img_frame_callback(self):
-        self.model.current_configuration.load_next_img_frame()
-        self.set_frame_text(str(self.model.current_configuration.current_frame + 1))
+        self._navigate_relative(+1)
 
     def load_previous_img_frame_callback(self):
-        self.model.current_configuration.load_previous_img_frame()
-        self.set_frame_text(str(self.model.current_configuration.current_frame + 1))
+        self._navigate_relative(-1)
+
+    def _navigate_relative(self, delta):
+        """Move by ±1 in the current axis mode's unit (readout f in 'frame'
+        mode, coincident k in 'time' / 'sync_frame' modes)."""
+        cfg = self.model.current_configuration
+        if self._history_x_mode in ('time', 'sync_frame'):
+            rng = cfg.get_coincident_frame_range()
+            if rng is None:
+                cfg.set_img_frame_number_to(cfg.current_frame + delta)
+                self.set_frame_text(str(cfg.current_frame + 1))
+                return
+            k_min, k_max = rng
+            k = self._current_coincident_k + delta
+            if k < k_min:
+                k = k_min
+            elif k > k_max:
+                k = k_max
+            self._load_coincident_k(k)
+        else:
+            cfg.set_img_frame_number_to(cfg.current_frame + delta)
+            self.set_frame_text(str(cfg.current_frame + 1))
+
+    def _load_coincident_k(self, k):
+        """Ask the model to load the readout frames whose union is
+        coincident exposure k, then update the frame text."""
+        cfg = self.model.current_configuration
+        f_ds, f_us = cfg.coincident_to_readout(k)
+        cfg.set_img_frame_numbers(f_ds, f_us)
+        self._current_coincident_k = int(k)
+        self.set_frame_text(str(int(k)))
 
     def two_color_display_toggle_callback(self):
         self.us_calculations_changed()
@@ -305,11 +345,22 @@ class TemperatureController(QtCore.QObject):
 
     def frame_num_txt_callback(self):
         self.widget.frame_num_txt.clearFocus()
-        num =  int(self.widget.frame_num_txt.text()) -1
-        
-
-        if num >= 0 and num <= self.model.current_configuration.data_img_file.num_frames:
-            self.model.current_configuration.load_any_img_frame(num)
+        try:
+            val = int(self.widget.frame_num_txt.text())
+        except ValueError:
+            return
+        cfg = self.model.current_configuration
+        if self._history_x_mode in ('time', 'sync_frame'):
+            rng = cfg.get_coincident_frame_range()
+            if rng is not None:
+                k_min, k_max = rng
+                k = max(k_min, min(k_max, val))
+                self._load_coincident_k(k)
+                return
+        num = val - 1
+        if 0 <= num < cfg.data_img_file.num_frames:
+            cfg.load_any_img_frame(num)
+            self.set_frame_text(str(cfg.current_frame + 1))
 
     def connect_click_function(self, emitter, function):
         emitter.clicked.connect(function)
@@ -1070,6 +1121,7 @@ class TemperatureController(QtCore.QObject):
         self.widget.frame_num_txt.setText(txt)
         self.widget.frame_num_txt.clearFocus()
         self.widget.frame_num_txt.blockSignals(False)
+        self._update_time_lapse_frame_marker()
 
     def _is_cal_kinetics_adapted(self, cfg, side):
         """True when the cal image is a full-chip 2D frame and data is a
@@ -1231,6 +1283,117 @@ class TemperatureController(QtCore.QObject):
                     caput(us_temp_pv, self.model.current_configuration.us_temperature)
                 
 
+    def lab_time_btn_toggled(self, checked):
+        prev = self._history_x_mode
+        if checked:
+            self._history_x_mode = 'time'
+            if self.widget.sync_frame_btn.isChecked():
+                self.widget.sync_frame_btn.blockSignals(True)
+                self.widget.sync_frame_btn.setChecked(False)
+                self.widget.sync_frame_btn.blockSignals(False)
+        elif self._history_x_mode == 'time':
+            self._history_x_mode = 'frame'
+        self._on_history_mode_changed(prev)
+        self.update_time_lapse()
+
+    def sync_frame_btn_toggled(self, checked):
+        prev = self._history_x_mode
+        if checked:
+            self._history_x_mode = 'sync_frame'
+            if self.widget.lab_time_btn.isChecked():
+                self.widget.lab_time_btn.blockSignals(True)
+                self.widget.lab_time_btn.setChecked(False)
+                self.widget.lab_time_btn.blockSignals(False)
+        elif self._history_x_mode == 'sync_frame':
+            self._history_x_mode = 'frame'
+        self._on_history_mode_changed(prev)
+        self.update_time_lapse()
+
+    def _on_history_mode_changed(self, prev_mode):
+        """When entering a synced mode, load the coincident k that keeps DS's
+        current readout frame in place. When returning to frame mode, load
+        the DS readout frame as the single displayed frame."""
+        cfg = self.model.current_configuration
+        if cfg.data_img_file is None:
+            return
+        n = int(getattr(cfg.data_img_file, 'num_frames', 0) or 0)
+        if n <= 1:
+            return
+        prev_synced = prev_mode in ('time', 'sync_frame')
+        now_synced = self._history_x_mode in ('time', 'sync_frame')
+        if now_synced and not prev_synced:
+            q_ds = cfg._q_side('ds')
+            q_max = max(q_ds, cfg._q_side('us'))
+            f = int(cfg.current_frame)
+            k = f - q_ds + q_max + 1
+            rng = cfg.get_coincident_frame_range()
+            if rng is not None:
+                k = max(rng[0], min(rng[1], k))
+            self._load_coincident_k(k)
+        elif prev_synced and not now_synced:
+            f = int(cfg.current_frame_ds if cfg.current_frame_ds is not None
+                    else cfg.current_frame)
+            cfg.load_any_img_frame(max(0, min(n - 1, f)))
+            self.set_frame_text(str(cfg.current_frame + 1))
+
+    def _update_time_lapse_frame_marker(self):
+        """Position the DS/US vertical markers on the history plot for the
+        currently displayed frame. In synced modes DS and US come from the
+        same coincident k so the markers collapse to a single x per side
+        (and the two coincide); markers for a side with no valid readout at
+        this k are hidden. Hides both when no multi-frame data is loaded."""
+        cfg = self.model.current_configuration
+        img = cfg.data_img_file
+        if img is None or int(getattr(img, 'num_frames', 0) or 0) <= 1:
+            self.widget.temperature_spectrum_widget.set_time_lapse_frame_marker(None, None)
+            return
+        if self._history_x_mode in ('time', 'sync_frame'):
+            f_ds = cfg.current_frame_ds
+            f_us = cfg.current_frame_us
+            def _x_for(side, f):
+                if f is None:
+                    return None
+                result = cfg.get_side_frame_time_axis(side)
+                if result is None or f >= len(result[0]):
+                    return None
+                t = float(result[0][int(f)])
+                if self._history_x_mode == 'sync_frame':
+                    t_exp = float(getattr(img, 'exposure_time', 0) or 0.0)
+                    return t / t_exp + 1.0 if t_exp > 0 else None
+                return t
+            ds_x = _x_for('ds', f_ds)
+            us_x = _x_for('us', f_us)
+        else:
+            f = int(cfg.current_frame)
+            ds_x = us_x = float(f + 1)
+        self.widget.temperature_spectrum_widget.set_time_lapse_frame_marker(ds_x, us_x)
+
+    def _time_lapse_x_axis_side(self, side, y):
+        """Return (x, y, label) for one side's history-plot data.
+
+        Modes:
+          'frame'      : raw readout frame index, x = 1..N (no per-side sync)
+          'time'       : lab time in seconds, x = (f - q_side) · t_exp
+          'sync_frame' : coincident-exposure frame index, x = f - q_side + 1
+
+        In 'time' and 'sync_frame' modes DS and US share the same x when they
+        come from the same physical exposure (q_side = mask offset in slots).
+        All N frames are kept; the per-side valid mask is advisory only."""
+        n = len(y)
+        if self._history_x_mode in ('time', 'sync_frame'):
+            result = self.model.current_configuration.get_side_frame_time_axis(side)
+            if result is not None:
+                times, _valid = result
+                if len(times) >= n:
+                    t_exp = float(getattr(
+                        self.model.current_configuration.data_img_file,
+                        'exposure_time', 0) or 0.0)
+                    if self._history_x_mode == 'sync_frame' and t_exp > 0:
+                        # times = (k-1)·t_exp → k = times/t_exp + 1
+                        return times[:n] / t_exp + 1.0, y, 'Frame (synced)'
+                    return times[:n], y, 'Time (s)'
+        return np.arange(1, n + 1), y, 'Frame'
+
     def update_time_lapse(self):
         # this actually fits all the frames so be careful calling this willy nilly
         us_temperature, us_temperature_error, ds_temperature, ds_temperature_error = self.model.current_configuration.fit_all_frames()
@@ -1247,9 +1410,11 @@ class TemperatureController(QtCore.QObject):
                 out = np.mean(ds_t), np.std(ds_t)
             ds_temperature_plot_data = ds_temperature_arr[:]
             ds_temperature_plot_data[~select_ds] = 0
-        self.widget.temperature_spectrum_widget.plot_ds_time_lapse(range(1, len(ds_temperature_plot_data)+1), ds_temperature_plot_data)
+        ds_x, ds_y, x_label = self._time_lapse_x_axis_side('ds', ds_temperature_plot_data)
+        self.widget.temperature_spectrum_widget.plot_ds_time_lapse(ds_x, ds_y)
+        self.widget.temperature_spectrum_widget.set_time_lapse_x_axis_label(x_label)
         self.widget.temperature_spectrum_widget.update_time_lapse_ds_temperature_txt(*out)
-            
+
         out = np.nan, np.nan
         if len(us_temperature):
             us_temperature_arr = np.array(us_temperature)
@@ -1260,7 +1425,8 @@ class TemperatureController(QtCore.QObject):
                 out = np.mean(us_t), np.std(us_t)
             us_temperature_plot_data = us_temperature_arr[:]
             us_temperature_plot_data[~select_us] = 0
-        self.widget.temperature_spectrum_widget.plot_us_time_lapse(range(1, len(us_temperature_plot_data)+1), us_temperature_plot_data)
+        us_x, us_y, _ = self._time_lapse_x_axis_side('us', us_temperature_plot_data)
+        self.widget.temperature_spectrum_widget.plot_us_time_lapse(us_x, us_y)
         self.widget.temperature_spectrum_widget.update_time_lapse_us_temperature_txt(*out)
 
         if len(ds_t) or len(us_t):
@@ -1270,6 +1436,7 @@ class TemperatureController(QtCore.QObject):
         else:
             out = np.nan, np.nan
         self.widget.temperature_spectrum_widget.update_time_lapse_combined_temperature_txt(*out )
+        self._update_time_lapse_frame_marker()
 
     def data_history_btn_callback(self):
         self.data_history_widget.raise_widget()

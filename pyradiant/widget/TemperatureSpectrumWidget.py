@@ -240,6 +240,37 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._time_lapse_plot.addItem(self._time_lapse_ds_data_item)
         self._time_lapse_plot.addItem(self._time_lapse_us_data_item)
 
+        # Vertical markers indicating which frame is currently displayed in
+        # the fit plots above. In frame mode DS and US markers coincide; in
+        # lab-time / sync-frame modes they separate by the per-side offset.
+        self._time_lapse_ds_marker = pg.InfiniteLine(
+            angle=90, movable=False,
+            pen=pg.mkPen(QColor(colors['downstream']), width=1,
+                         style=QtCore.Qt.PenStyle.DashLine))
+        self._time_lapse_us_marker = pg.InfiniteLine(
+            angle=90, movable=False,
+            pen=pg.mkPen(QColor(colors['upstream']), width=1,
+                         style=QtCore.Qt.PenStyle.DashLine))
+        self._time_lapse_ds_marker.hide()
+        self._time_lapse_us_marker.hide()
+        self._time_lapse_plot.addItem(self._time_lapse_ds_marker,
+                                      ignoreBounds=True)
+        self._time_lapse_plot.addItem(self._time_lapse_us_marker,
+                                      ignoreBounds=True)
+
+        # Right-click resets the view (auto-range) instead of showing the
+        # default ViewBox context menu.
+        _tl_vb = self._time_lapse_plot.getViewBox()
+        _tl_vb.setMenuEnabled(False)
+        _orig_click = _tl_vb.mouseClickEvent
+        def _tl_mouse_click(ev, _vb=_tl_vb, _orig=_orig_click):
+            if ev.button() == QtCore.Qt.MouseButton.RightButton:
+                _vb.autoRange()
+                ev.accept()
+            else:
+                _orig(ev)
+        _tl_vb.mouseClickEvent = _tl_mouse_click
+
     def connect_mouse_signals(self):
         pass
         #self._ds_plot.connect_mouse_move_event()
@@ -339,6 +370,23 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
             self._time_lapse_us_data_item.setData(x, y)
         else:
             self._time_lapse_us_data_item.setData([], [])
+
+    def set_time_lapse_x_axis_label(self, text):
+        self._time_lapse_plot.setLabel('bottom', text)
+
+    def set_time_lapse_frame_marker(self, ds_x, us_x):
+        """Position the DS/US vertical markers on the history plot. Pass
+        None for either arg to hide that side's marker."""
+        if ds_x is None:
+            self._time_lapse_ds_marker.hide()
+        else:
+            self._time_lapse_ds_marker.setPos(float(ds_x))
+            self._time_lapse_ds_marker.show()
+        if us_x is None:
+            self._time_lapse_us_marker.hide()
+        else:
+            self._time_lapse_us_marker.setPos(float(us_x))
+            self._time_lapse_us_marker.show()
 
     def update_us_temperature_txt(self, temperature, temperature_error):
         self._us_temperature_txt_item.setText('{0:.0f} K &plusmn; {1:.0f}'.format(temperature,
