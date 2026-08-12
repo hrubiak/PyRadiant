@@ -262,6 +262,8 @@ class TemperatureController(QtCore.QObject):
 
         self.widget.roi_widget.rois_changed.connect(self.widget_rois_changed)
         self.widget.roi_widget.wl_range_changed.connect(self.widget_wl_range_changed_callback)
+        self.widget.roi_widget.cal_signal_roi_changed.connect(
+            self.cal_signal_roi_dragged)
 
         # mouse moved signals
         self.widget.temperature_spectrum_widget.mouse_moved.connect(self.graph_mouse_moved)
@@ -917,6 +919,12 @@ class TemperatureController(QtCore.QObject):
         rois = self.model.current_configuration.get_roi_data_list()
         self.widget.roi_widget.set_rois(self.model.current_configuration.get_roi_data_list())
         self.widget.roi_widget.set_wl_range(self.model.current_configuration.wl_range)
+
+        # Cross-mode cal viewer setup: when data is kinetics but a side's
+        # calibration is a full-chip 2D image, give that cal viewer its own
+        # cal-native y-axis and show its signal ROI at cal-dim coordinates
+        # (backgrounds hidden). Otherwise restore the shared behavior.
+        self._refresh_cross_mode_cal_viewers()
         
         # update exp data widget
         #####################################
@@ -1024,26 +1032,38 @@ class TemperatureController(QtCore.QObject):
         """
         cfg = self.model.current_configuration
         img = self._get_calibration_image('ds')
+        img_changed = False
         if img is not None and id(img) != getattr(self, '_last_ds_cal_img_id', None):
             self.widget.roi_widget.plot_ds_calibration_image(img)
             self._last_ds_cal_img_id = id(img)
+            img_changed = True
         elif img is None and getattr(self, '_last_ds_cal_img_id', None) is not None:
             self.widget.roi_widget.ds_cal_img_widget.pg_img_item.clear()
             self._last_ds_cal_img_id = None
+            img_changed = True
         cal_x, cal_y = cfg.ds_temperature_model.calibration_spectrum.data
         self.widget.roi_widget.plot_ds_calibration_spectrum(cal_x, cal_y)
+        # Cal image identity changed → cross-mode status for this side may
+        # have flipped; re-sync cal viewer geometry + ROI overlay.
+        if img_changed:
+            self._refresh_cross_mode_cal_viewers()
 
     def _push_us_calibration_view(self):
         cfg = self.model.current_configuration
         img = self._get_calibration_image('us')
+        img_changed = False
         if img is not None and id(img) != getattr(self, '_last_us_cal_img_id', None):
             self.widget.roi_widget.plot_us_calibration_image(img)
             self._last_us_cal_img_id = id(img)
+            img_changed = True
         elif img is None and getattr(self, '_last_us_cal_img_id', None) is not None:
             self.widget.roi_widget.us_cal_img_widget.pg_img_item.clear()
             self._last_us_cal_img_id = None
+            img_changed = True
         cal_x, cal_y = cfg.us_temperature_model.calibration_spectrum.data
         self.widget.roi_widget.plot_us_calibration_spectrum(cal_x, cal_y)
+        if img_changed:
+            self._refresh_cross_mode_cal_viewers()
 
     def set_frame_text(self, txt):
         self.widget.frame_num_txt.blockSignals(True)
@@ -1258,11 +1278,61 @@ class TemperatureController(QtCore.QObject):
 
     def widget_rois_changed(self, roi_list):
         if self.model.current_configuration.has_data():
-            
-            
+
+
             self.model.current_configuration.set_rois(roi_list)
             wl_range = self.model.current_configuration.wl_range
             self.widget.roi_widget.set_wl_range(wl_range)
+            # Data-viewer drag updates the cal-dim ROI in the model via the
+            # quotient-preserving mirror; refresh cross-mode cal viewers so
+            # the cal 2D overlay follows.
+            self._refresh_cross_mode_cal_viewers()
+
+    def _refresh_cross_mode_cal_viewers(self):
+        """Re-apply per-side cross-mode setup on the cal 2D viewers so a
+        drag on either the data viewer or the cal viewer keeps both
+        displays in sync with the current cal-dim / kinetics-dim ROI
+        pair stored in RoiDataManager. Also handles the transition back
+        from cross-mode → same-dim (e.g. after switching to a kinetics
+        cal) by restoring the shared wavelength rect + shared signal ROI
+        on the cal viewer."""
+        cfg = self.model.current_configuration
+        if cfg is None or cfg.x_calibration is None or cfg.data_img is None:
+            return
+        wl = cfg.x_calibration
+        x = round(wl[0], 3)
+        w = round(wl[-1] - wl[0], 3)
+        data_h = cfg.data_img.shape[0]
+        shared_rect = (x, 0, w, data_h)
+        rois = cfg.get_roi_data_list()
+        for side in ('ds', 'us'):
+            info = cfg.cross_mode_cal_info(side)
+            if info is not None:
+                cal_h = info['cal_shape'][0]
+                self.widget.roi_widget.set_cross_mode_cal(
+                    side, info['cal_shape'],
+                    info['signal_roi_limits'],
+                    (x, 0, w, cal_h))
+            else:
+                signal_idx = 0 if side == 'ds' else 1
+                self.widget.roi_widget.clear_cross_mode_cal(
+                    side, shared_rect, rois[signal_idx])
+
+    def cal_signal_roi_dragged(self, side, cal_dim_limits):
+        """User dragged the signal ROI on a cal 2D viewer while that side
+        is in cross-mode. Update the cal-dim ROI in the model, which
+        re-derives the kinetics-dim ROI via _sync_cross_mode_rois, then
+        re-run the pipeline and refresh the kinetics-side view."""
+        cfg = self.model.current_configuration
+        if cfg is None:
+            return
+        cfg.set_cal_dim_signal_roi(side, cal_dim_limits)
+        # Push the (now updated) kinetics-dim ROI back into the data viewer
+        # by re-running through set_rois — that fires the normal pipeline
+        # and keeps the ROI text boxes / data-viewer overlay consistent.
+        rois = cfg.get_roi_data_list()
+        cfg.set_rois(rois)
+        self.widget.roi_widget.set_rois(rois)
 
 
     def widget_wl_range_changed_callback(self, wl_range):

@@ -53,9 +53,18 @@ colors = {
 class RoiWidget(QtWidgets.QWidget):
     rois_changed = QtCore.pyqtSignal(list)
     wl_range_changed = QtCore.pyqtSignal(list)
+    # Emitted when the user drags a signal ROI on a cal viewer while that
+    # side is in cross-mode. Payload: (side, cal-dim signal-ROI limits).
+    cal_signal_roi_changed = QtCore.pyqtSignal(str, list)
 
     def __init__(self, roi_num=1, roi_titles=('',), roi_colors=((255, 255, 0)), *args, **kwargs):
         super(RoiWidget, self).__init__(*args, **kwargs)
+        # Per-side cross-mode flags. When True for a side, that side's cal
+        # 2D viewer uses cal-native axis and shows only its signal ROI at
+        # cal-dim coordinates (backgrounds hidden). The signal ROI on that
+        # viewer is decoupled from the shared kinetics-dim ROI sync.
+        self._ds_cross_mode = False
+        self._us_cross_mode = False
         self.roi_num = roi_num
         self.roi_titles = roi_titles
         self.roi_colors = roi_colors
@@ -170,16 +179,124 @@ class RoiWidget(QtWidgets.QWidget):
             return
         self._roi_sync_in_progress = True
         try:
+            # In cross-mode, the affected cal viewer's signal ROI lives in
+            # cal-dim coords while the data viewer's ROI is in kinetics-dim
+            # coords — a raw copy would smear one coordinate system onto the
+            # other. Skip signal-ROI mirroring for the affected side; the
+            # model layer's sync helpers keep the underlying ROIs consistent
+            # and the controller re-plots after any resulting change.
+            def is_signal_index_for_side(idx, side):
+                return (side == 'ds' and idx == 0) or (side == 'us' and idx == 1)
+
+            def skip_target(target_viewer, idx):
+                if (self._ds_cross_mode and target_viewer is self.ds_cal_img_widget
+                        and is_signal_index_for_side(idx, 'ds')):
+                    return True
+                if (self._us_cross_mode and target_viewer is self.us_cal_img_widget
+                        and is_signal_index_for_side(idx, 'us')):
+                    return True
+                return False
+
+            def skip_source(src_viewer, idx):
+                if (self._ds_cross_mode and src_viewer is self.ds_cal_img_widget
+                        and is_signal_index_for_side(idx, 'ds')):
+                    return True
+                if (self._us_cross_mode and src_viewer is self.us_cal_img_widget
+                        and is_signal_index_for_side(idx, 'us')):
+                    return True
+                return False
+
+            source_viewer = None
+            for v in viewers:
+                if v.rois[index] is source_roi:
+                    source_viewer = v
+                    break
+
+            if source_viewer is not None and skip_source(source_viewer, index):
+                # Cal-viewer drag in cross-mode: don't mirror, let the
+                # dedicated cal_signal_roi_changed signal drive the update.
+                side = 'ds' if source_viewer is self.ds_cal_img_widget else 'us'
+                limits = source_viewer.get_roi_limits()[index]
+                self.cal_signal_roi_changed.emit(side, limits)
+                return
+
             pos = source_roi.pos()
             size = source_roi.size()
             for v in viewers:
                 target = v.rois[index]
                 if target is source_roi:
                     continue
+                if skip_target(v, index):
+                    continue
                 target.setPos(pos)
                 target.setSize(size)
         finally:
             self._roi_sync_in_progress = False
+
+    def set_cross_mode_cal(self, side, cal_shape, signal_roi_limits,
+                           wavelength_rect):
+        """Enable cross-mode display for a cal viewer.
+
+        `wavelength_rect` is (x, 0, w, cal_h) so the cal image occupies its
+        native pixel-row range on the y axis. `signal_roi_limits` is the
+        cal-dim [x_min, x_max, y_min, y_max] for the side's signal ROI.
+        The other side's ROIs remain hidden as usual; background ROIs
+        (idx 2 and 3) are hidden too since they don't map meaningfully
+        onto a full-chip cal in kinetics mode.
+        """
+        assert side in ('ds', 'us')
+        cal_widget = self.ds_cal_img_widget if side == 'ds' else self.us_cal_img_widget
+        signal_idx = 0 if side == 'ds' else 1
+        if side == 'ds':
+            self._ds_cross_mode = True
+        else:
+            self._us_cross_mode = True
+        # Cal-native geometry
+        cal_widget.set_wavelength_calibration(wavelength_rect)
+        # Backgrounds hidden on the cal viewer
+        if len(cal_widget.rois) >= 4:
+            cal_widget.rois[2].setVisible(False)
+            cal_widget.rois[3].setVisible(False)
+        # Position the signal ROI at cal-dim coords, bypassing shared sync
+        self._roi_sync_in_progress = True
+        try:
+            cal_widget.blockSignals(True)
+            cal_widget.update_roi(signal_idx, signal_roi_limits)
+            cal_widget.blockSignals(False)
+        finally:
+            self._roi_sync_in_progress = False
+
+    def clear_cross_mode_cal(self, side, shared_rect=None,
+                             shared_signal_roi=None):
+        """Disable cross-mode for a cal viewer; restore shared visibility
+        (DS Cal shows idx 0, 2; US Cal shows idx 1, 3). Optionally apply
+        the shared wavelength rect and the shared (data-dim) signal ROI
+        position so the cal viewer matches the data viewer immediately —
+        needed when transitioning back from cross-mode without going
+        through the full data_changed_signal_callback pipeline."""
+        if side == 'ds':
+            self._ds_cross_mode = False
+            cal_widget = self.ds_cal_img_widget
+            signal_idx = 0
+            visibility = (True, False, True, False)
+        else:
+            self._us_cross_mode = False
+            cal_widget = self.us_cal_img_widget
+            signal_idx = 1
+            visibility = (False, True, False, True)
+        if len(cal_widget.rois) >= 4:
+            for i, vis in enumerate(visibility):
+                cal_widget.rois[i].setVisible(vis)
+        if shared_rect is not None:
+            cal_widget.set_wavelength_calibration(shared_rect)
+        if shared_signal_roi is not None:
+            self._roi_sync_in_progress = True
+            try:
+                cal_widget.blockSignals(True)
+                cal_widget.update_roi(signal_idx, shared_signal_roi)
+                cal_widget.blockSignals(False)
+            finally:
+                self._roi_sync_in_progress = False
 
     def wl_range_widget_editingFinished_callback(self):
         wl_range = [int(round(float(str(self.wl_range_widget.wl_start.text())))),int(round(float(str(self.wl_range_widget.wl_end.text()))))]
@@ -223,7 +340,14 @@ class RoiWidget(QtWidgets.QWidget):
         # driven mirror in _wire_roi_sync is bypassed here — we mirror
         # explicitly instead so the cal-image ROIs stay in sync after .trs
         # restore / set_rois calls (which never fire sigRegionChanged).
+        # In cross-mode, a cal viewer's signal ROI lives in cal-dim coords
+        # and is set separately via set_cross_mode_cal — skip it here so
+        # kinetics-dim coords don't clobber the cal-dim display.
         for w in (self.img_widget, self.ds_cal_img_widget, self.us_cal_img_widget):
+            if w is self.ds_cal_img_widget and self._ds_cross_mode and ind == 0:
+                continue
+            if w is self.us_cal_img_widget and self._us_cross_mode and ind == 1:
+                continue
             w.blockSignals(True)
             w.update_roi(ind, roi_list)
             w.blockSignals(False)

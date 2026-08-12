@@ -1240,6 +1240,59 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.ds_temperature_model.fit_data()
         self.ds_calculations_changed_emit()'''
 
+    def cross_mode_cal_info(self, side):
+        """If `side` ('ds' or 'us') is in cross-mode (full-chip 2D cal +
+        kinetics data of different dim), return dict with cal image shape,
+        cal-dim signal ROI limits, and kinetics window params. Else None."""
+        if self.kinetics_mode != 'interleaved':
+            return None
+        if self.data_img_file is None:
+            return None
+        cal_file = (self.ds_calibration_img_file if side == 'ds'
+                    else self.us_calibration_img_file)
+        if cal_file is None or getattr(cal_file, 'img', None) is None:
+            return None
+        cal_shape = np.asarray(cal_file.img).shape
+        if len(cal_shape) != 2:
+            return None
+        cal_dim = (cal_shape[1], cal_shape[0])
+        try:
+            data_dim = self.data_img_file.get_dimension()
+        except Exception:
+            return None
+        if cal_dim == data_dim:
+            return None
+        idx = 0 if side == 'ds' else 1
+        cal_roi = self.roi_data_manager.get_roi(idx, cal_dim)
+        return {
+            'cal_shape': cal_shape,
+            'cal_dim': cal_dim,
+            'signal_idx': idx,
+            'signal_roi_limits': [int(cal_roi.x_min), int(cal_roi.x_max),
+                                  int(cal_roi.y_min), int(cal_roi.y_max)],
+            'win_y': int(self.kinetics_info.get('window_y', 0) or 0),
+            'window_height': int(self.kinetics_info.get('window_height', 0) or 0),
+        }
+
+    def set_cal_dim_signal_roi(self, side, limits):
+        """Set the cal-dim signal ROI (idx 0 for DS, 1 for US) from a
+        cal-viewer drag. Used only in cross-mode. After updating cal-dim,
+        _sync_cross_mode_rois re-derives the kinetics-dim ROI."""
+        info = self.cross_mode_cal_info(side)
+        if info is None:
+            return
+        cal_dim = info['cal_dim']
+        idx = info['signal_idx']
+        x_min, x_max, y_min, y_max = (int(v) for v in limits)
+        cal_h = info['cal_shape'][0]
+        y_min = max(0, min(cal_h - 1, y_min))
+        y_max = max(0, min(cal_h - 1, y_max))
+        if y_min > y_max:
+            return
+        self.roi_data_manager.set_roi(idx, cal_dim,
+                                      [x_min, x_max, y_min, y_max])
+        self._sync_cross_mode_rois()
+
     def _sync_cross_mode_rois(self):
         """Derive kinetics-dim ROIs from full-chip cal-dim ROIs using the
         modular geometry of PI-MAX4 kinetics readout: charge shifts up by
