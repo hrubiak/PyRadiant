@@ -309,7 +309,6 @@ class TemperatureModelConfiguration(QtCore.QObject):
                 self.data_img_file = TifFile(filename, self._photron_coeffs())
             self._filename_iterator.update_filename(filename)
             self.mtime = self.get_last_modified_time(filename)
-            self.dirty = True
         else:
             area_detector.update_data()
             self.data_img_file = area_detector
