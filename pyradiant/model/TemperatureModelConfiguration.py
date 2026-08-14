@@ -18,6 +18,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
+from dataclasses import dataclass, field
 from PyQt6 import QtCore
 import numpy as np
 np.seterr(all = 'ignore')
@@ -49,6 +50,25 @@ from .temperature_pipeline import pipeline, Stage
 
 T_LOG_FILE = 'T_log'
 LOG_HEADER = '# File\tFrame\tPath\tT_DS\tT_US\tT_DS_error\tT_US_error\tDetector\tExposure Time [sec]\tGain\tscaling_DS\tscaling_US\tcounts_DS\tcounts_US\n'
+
+
+@dataclass
+class FrameRecord:
+    """Per-frame, per-side snapshot of everything the display code needs.
+
+    Populated by TemperatureModelConfiguration._rebuild_records_cache with the
+    RAW output of the extract/correct/fit pipeline — no display filters, no
+    zero-sentinels. T / T_err are NaN when the fit could not run or produced
+    no result; display gates (counts filter, error_limit, T-range) are applied
+    at read time by frame_is_displayable.
+    """
+    data_spectrum: object = field(default_factory=lambda: Spectrum([], []))
+    corrected_spectrum: object = field(default_factory=lambda: Spectrum([], []))
+    fit_spectrum: object = field(default_factory=lambda: Spectrum([], []))
+    T: float = float('nan')
+    T_err: float = float('nan')
+    counts: float = 0.0
+    roi_max: float = 0.0
 
 
 class TemperatureModelConfiguration(QtCore.QObject):
@@ -131,6 +151,14 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.kinetics_mode = 'off'
         self.kinetics_info = {}
 
+        # Per-side mask-slot offsets (frame-slot units). When set, these take
+        # precedence over the value derived from cross_mode_cal_info in
+        # _q_side. Populated by import_slots_from_trs or by load_setting
+        # when the source .trs has q_ds_slot / q_us_slot attrs. Kept separate
+        # from cal-derived values so a subsequent full-chip cal load can win.
+        self.q_ds_override = None
+        self.q_us_override = None
+
         # True when this configuration has unsaved changes (data/calibration/ROI/etc.
         # loaded or modified since the last save_setting or load_setting call).
         # Consumed at app-close to prompt for saving.
@@ -151,12 +179,34 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.ds_temperature_model = SingleTemperatureModel(0, self.roi_data_manager)
         self.us_temperature_model = SingleTemperatureModel(1, self.roi_data_manager)
 
+        # Per-frame, per-side cache of raw pipeline output. Length matches
+        # data_img_file.num_frames after the first ensure_records_cache().
+        # A None slot means "not yet computed for this frame"; a FrameRecord
+        # with NaN T means "computed, but fit failed / had no signal".
+        self._ds_records = []
+        self._us_records = []
+        # True when mutation of pipeline-relevant state has invalidated the
+        # cache and a rebuild is required before any display reads it.
+        self._records_dirty = True
+        # Re-entry guard for _rebuild_records_cache. The rebuild loop drives
+        # set_img_frame_number_to, which emits data_changed_signal, which
+        # calls back into the controller, which reads the cache — the read
+        # path must NOT trigger another rebuild while we're mid-rebuild.
+        self._rebuilding_records = False
+
+        # Display-time gates. Kept on the configuration so both the spectrum
+        # window and the history plot apply the same filter policy.
+        self.error_limit = 200
+        self.min_allowed_T = 0.0
+        self.max_allowed_T = 1.0e6
+        self.apply_counts_filter = True  # 7.5%-of-max rule, applied uniformly
+
+        # Backwards-compat scalar caches — populated as shims from the record
+        # store. Kept so pre-refactor readers keep working during migration.
         self.us_temperatures = []
         self.us_temperatures_errors = []
         self.ds_temperatures = []
         self.ds_temperatures_errors = []
-
-        self.error_limit = 200
 
         self.log_callback = None
 
@@ -780,6 +830,15 @@ class TemperatureModelConfiguration(QtCore.QObject):
             for k, v in self.kinetics_info.items():
                 kg.attrs[k] = v
 
+        # Persist DS/US mask-slot offsets so a later kinetics-only session
+        # can import them for sync-frame / lab-time alignment when its own
+        # cal can't supply them (see import_slots_from_trs).
+        q_ds = self._q_side('ds')
+        q_us = self._q_side('us')
+        if q_ds or q_us or self.q_ds_override is not None or self.q_us_override is not None:
+            f.attrs['q_ds_slot'] = int(q_ds)
+            f.attrs['q_us_slot'] = int(q_us)
+
         # Prerecorded dark frames per side (only stored when present). The
         # image is embedded in the .trs so the config is self-contained even
         # if the original dark file is gone.
@@ -808,10 +867,21 @@ class TemperatureModelConfiguration(QtCore.QObject):
 
         ds_group.attrs['identity_calibration'] = bool(
             self.ds_temperature_model._identity_calibration)
-        ds_roi_list =  self.ds_roi.as_list()
-        ds_group['roi'] = ds_roi_list
-        ds_roi_bg_list = self.ds_roi_bg.as_list()
-        ds_group['roi_bg'] = ds_roi_bg_list
+        # Save ROIs keyed to the *cal image* dimension when a cal image is
+        # present — that's the dim the loader uses (_roi_dimension_key) to
+        # restore them. Otherwise cross-mode kinetics sessions would write
+        # small kinetics-dim limits under the full-chip cal-image key, and
+        # on reload the loader would apply those tiny limits to the full-chip
+        # cal → near-zero cal spectrum → NaN corrected fit.
+        ds_cal_dim = self._cal_image_dim('ds')
+        if ds_cal_dim is not None:
+            ds_roi_out = self.roi_data_manager.get_roi(0, ds_cal_dim)
+            ds_bg_out = self.roi_data_manager.get_roi(2, ds_cal_dim)
+        else:
+            ds_roi_out = self.ds_roi
+            ds_bg_out = self.ds_roi_bg
+        ds_group['roi'] = ds_roi_out.as_list()
+        ds_group['roi_bg'] = ds_bg_out.as_list()
         ds_group['modus'] = self.ds_temperature_model.calibration_parameter.modus
         ds_group['temperature'] = self.ds_temperature_model.calibration_parameter.temperature
         ds_group['standard_spectrum'] = self.ds_temperature_model.calibration_parameter.get_standard_spectrum().data
@@ -834,8 +904,15 @@ class TemperatureModelConfiguration(QtCore.QObject):
                 us_group['image'].attrs['subtract_bg'] = self.use_insitu_data_background
         us_group.attrs['identity_calibration'] = bool(
             self.us_temperature_model._identity_calibration)
-        us_group['roi'] = self.us_roi.as_list()
-        us_group['roi_bg'] = self.us_roi_bg.as_list()
+        us_cal_dim = self._cal_image_dim('us')
+        if us_cal_dim is not None:
+            us_roi_out = self.roi_data_manager.get_roi(1, us_cal_dim)
+            us_bg_out = self.roi_data_manager.get_roi(3, us_cal_dim)
+        else:
+            us_roi_out = self.us_roi
+            us_bg_out = self.us_roi_bg
+        us_group['roi'] = us_roi_out.as_list()
+        us_group['roi_bg'] = us_bg_out.as_list()
         us_group['modus'] = self.us_temperature_model.calibration_parameter.modus
         us_group['temperature'] = self.us_temperature_model.calibration_parameter.temperature
         us_group['standard_spectrum'] = self.us_temperature_model.calibration_parameter.get_standard_spectrum().data
@@ -865,6 +942,66 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.dirty = False
 
     
+    def _recover_stripsaved_rois(self, side, key_dim, roi_saved, bg_saved):
+        """Repair ROIs from .trs files saved by the old buggy save_setting
+        that wrote kinetics-strip ROI limits under the full-chip cal image
+        key (see save_setting fix). If the loaded ROI y-extent looks like a
+        kinetics strip (small) while the key dim is full-chip and kinetics
+        window params + slot are known from the same .trs, reconstruct the
+        physical full-chip y position:
+
+            Y_cal = win_y + q_slot * h + y_strip
+
+        Returns the possibly-repaired (roi, bg) lists. If any input is
+        missing (no kinetics_info, no q override), returns the originals.
+        """
+        h = int((self.kinetics_info or {}).get('window_height', 0) or 0)
+        win_y = int((self.kinetics_info or {}).get('window_y', 0) or 0)
+        if h <= 0:
+            return roi_saved, bg_saved
+        q = self.q_ds_override if side == 'ds' else self.q_us_override
+        if q is None:
+            return roi_saved, bg_saved
+        key_h = int(key_dim[1])
+        y_min = int(roi_saved[2]); y_max = int(roi_saved[3])
+        by_min = int(bg_saved[2]); by_max = int(bg_saved[3])
+        # Heuristic: cal image is much taller than the loaded ROI (typical
+        # cross-mode symptom is ~14 rows tall under a 1024-row cal).
+        if y_max >= h or (y_max - y_min) > (key_h // 4):
+            return roi_saved, bg_saved
+        # Reconstruct physical y for both signal + bg. The old buggy code
+        # saved the same coordinate frame for both, so apply the same
+        # shift to both.
+        shift = win_y + q * h
+        new_y_min = y_min + shift
+        new_y_max = y_max + shift
+        new_by_min = by_min + shift
+        new_by_max = by_max + shift
+        # Clamp to cal image extents.
+        new_y_max = min(new_y_max, key_h - 1)
+        new_by_max = min(new_by_max, key_h - 1)
+        roi_out = [int(roi_saved[0]), int(roi_saved[1]), new_y_min, new_y_max]
+        bg_out = [int(bg_saved[0]), int(bg_saved[1]), new_by_min, new_by_max]
+        return roi_out, bg_out
+
+    def _cal_image_dim(self, side):
+        """Return (xdim, ydim) of the side's cal image, or None if absent.
+
+        Used at save time so ROIs are persisted under the same key the
+        loader will use (_roi_dimension_key priority 1). Handles both 2D
+        full-chip cal and 3D kinetics cal stacks.
+        """
+        cal_file = (self.ds_calibration_img_file if side == 'ds'
+                    else self.us_calibration_img_file)
+        if cal_file is None or getattr(cal_file, 'img', None) is None:
+            return None
+        shape = np.asarray(cal_file.img).shape
+        if len(shape) == 2:
+            return (shape[1], shape[0])
+        if len(shape) == 3:
+            return (shape[2], shape[1])
+        return None
+
     def _roi_dimension_key(self, f, side_group):
         """Pick the (xdim, ydim) dimension under which to key the restored ROIs.
 
@@ -896,7 +1033,14 @@ class TemperatureModelConfiguration(QtCore.QObject):
         # Background subtraction: prefer the new attr; fall back to the legacy
         # per-group subtract_bg bool (True → 'insitu', False → 'off').
         if 'background_mode' in f.attrs:
-            self.background_mode = str(f.attrs['background_mode'])
+            loaded_bg = str(f.attrs['background_mode'])
+            if loaded_bg in self._VALID_BACKGROUND_MODES:
+                self.background_mode = loaded_bg
+            else:
+                # Older .trs files may carry now-removed mode names (e.g.
+                # 'kinetics_trend'). Fall back to 'insitu' so bg subtraction
+                # still runs instead of silently no-op'ing downstream.
+                self.background_mode = 'insitu'
         else:
             legacy_bg = True
             if 'downstream_calibration' in f and 'image' in f['downstream_calibration']:
@@ -928,6 +1072,10 @@ class TemperatureModelConfiguration(QtCore.QObject):
                                   for k, v in f['kinetics_info'].attrs.items()}
         else:
             self.kinetics_info = {}
+        # Restore any DS/US mask-slot overrides captured on save. Absent attrs
+        # → clear so we don't inherit stale values from a prior session.
+        self.q_ds_override = int(f.attrs['q_ds_slot']) if 'q_ds_slot' in f.attrs else None
+        self.q_us_override = int(f.attrs['q_us_slot']) if 'q_us_slot' in f.attrs else None
         ds_group = f['downstream_calibration']
         # DS intensity calibration image (optional — single-sided/no-cal configs skip)
         if 'image' in ds_group:
@@ -960,8 +1108,12 @@ class TemperatureModelConfiguration(QtCore.QObject):
         # matches the dimension the data file will load with).
         ds_dim = self._roi_dimension_key(f, ds_group)
         if ds_dim is not None and 'roi' in ds_group and 'roi_bg' in ds_group:
-            self.roi_data_manager.set_roi(0, ds_dim, ds_group['roi'][...])
-            self.roi_data_manager.set_roi(2, ds_dim, ds_group['roi_bg'][...])
+            _ds_roi_saved = ds_group['roi'][...]
+            _ds_bg_saved = ds_group['roi_bg'][...]
+            _ds_roi_saved, _ds_bg_saved = self._recover_stripsaved_rois(
+                'ds', ds_dim, _ds_roi_saved, _ds_bg_saved)
+            self.roi_data_manager.set_roi(0, ds_dim, _ds_roi_saved)
+            self.roi_data_manager.set_roi(2, ds_dim, _ds_bg_saved)
 
         # Restore the identity-calibration flag (True = user cleared).
         self.ds_temperature_model._identity_calibration = bool(
@@ -1006,8 +1158,12 @@ class TemperatureModelConfiguration(QtCore.QObject):
         # image is present (same treatment as DS above).
         us_dim = self._roi_dimension_key(f, us_group)
         if us_dim is not None and 'roi' in us_group and 'roi_bg' in us_group:
-            self.roi_data_manager.set_roi(1, us_dim, us_group['roi'][...])
-            self.roi_data_manager.set_roi(3, us_dim, us_group['roi_bg'][...])
+            _us_roi_saved = us_group['roi'][...]
+            _us_bg_saved = us_group['roi_bg'][...]
+            _us_roi_saved, _us_bg_saved = self._recover_stripsaved_rois(
+                'us', us_dim, _us_roi_saved, _us_bg_saved)
+            self.roi_data_manager.set_roi(1, us_dim, _us_roi_saved)
+            self.roi_data_manager.set_roi(3, us_dim, _us_bg_saved)
 
         # Restore the identity-calibration flag (True = user cleared).
         self.us_temperature_model._identity_calibration = bool(
@@ -1740,21 +1896,11 @@ class TemperatureModelConfiguration(QtCore.QObject):
         t_exp = float(getattr(reader, 'exposure_time', 0) or 0.0)
         if t_exp <= 0.0:
             return None
-        def _q_for(s):
-            info = self.cross_mode_cal_info(s)
-            if info is None:
-                return 0
-            h = int(info.get('window_height', 0) or 0)
-            if h <= 0:
-                return 0
-            y_min = int(info['signal_roi_limits'][2])
-            win_y = int(info.get('win_y', 0) or 0)
-            return (y_min - win_y) // h
-        q = _q_for(side)
+        q = self._q_side(side)
         # Global offset = max q across both sides so the earliest displayed
         # frame across DS+US lands at t=0 while preserving per-side sync
         # (both sides get the same shift, so relative offsets don't change).
-        q_max = max(_q_for('ds'), _q_for('us'))
+        q_max = max(self._q_side('ds'), self._q_side('us'))
         f = np.arange(n)
         k = f - q + 1
         valid = (k >= 1) & (k <= n)
@@ -1762,16 +1908,89 @@ class TemperatureModelConfiguration(QtCore.QObject):
         return times, valid
 
     def _q_side(self, side):
-        """Cross-mode mask-slot offset for a side (0 when no cross-mode)."""
+        """Mask-slot offset for a side (frame-slot units). Prefers the derived
+        value from a full-chip cross-mode calibration when available; falls
+        back to a manually imported override (set via import_slots_from_trs
+        or restored from .trs). Returns 0 when neither source is available."""
         info = self.cross_mode_cal_info(side)
-        if info is None:
-            return 0
-        h = int(info.get('window_height', 0) or 0)
-        if h <= 0:
-            return 0
-        y_min = int(info['signal_roi_limits'][2])
-        win_y = int(info.get('win_y', 0) or 0)
-        return (y_min - win_y) // h
+        if info is not None:
+            h = int(info.get('window_height', 0) or 0)
+            if h > 0:
+                y_min = int(info['signal_roi_limits'][2])
+                win_y = int(info.get('win_y', 0) or 0)
+                return (y_min - win_y) // h
+        override = self.q_ds_override if side == 'ds' else self.q_us_override
+        if override is not None:
+            return int(override)
+        return 0
+
+    def import_slots_from_trs(self, filename):
+        """Read DS/US mask-slot offsets from another .trs and set them as
+        overrides on this config. First tries the explicit q_ds_slot /
+        q_us_slot attrs written by newer saves; falls back to deriving
+        them from the embedded full-chip cal image + cal-dim ROI +
+        kinetics_info for older .trs files. Returns (q_ds, q_us, source)
+        where source is 'attrs', 'derived', or 'none'."""
+        with h5py.File(filename, 'r') as f:
+            q_ds = int(f.attrs['q_ds_slot']) if 'q_ds_slot' in f.attrs else None
+            q_us = int(f.attrs['q_us_slot']) if 'q_us_slot' in f.attrs else None
+            source = 'attrs' if (q_ds is not None or q_us is not None) else 'none'
+            if q_ds is None and q_us is None:
+                q_ds, q_us = self._derive_slots_from_trs(f)
+                if q_ds is not None or q_us is not None:
+                    source = 'derived'
+        if q_ds is not None:
+            self.q_ds_override = q_ds
+        if q_us is not None:
+            self.q_us_override = q_us
+        return q_ds, q_us, source
+
+    def _derive_slots_from_trs(self, f):
+        """Compute (q_ds, q_us) from an open .trs h5 handle using the
+        embedded full-chip cal image, the cal-dim signal ROI (index 2
+        y_min in the stored ROI list), and kinetics_info (prefer the
+        file's own; fall back to the current session's if the file
+        predates kinetics_info persistence). If a side's cal has the
+        same dimensions as the current data image it's a kinetics-cal
+        entry — skip that side (returns None for it)."""
+        # Geometry: window_y and window_height.
+        if 'kinetics_info' in f:
+            ki = {k: (v.item() if hasattr(v, 'item') else v)
+                  for k, v in f['kinetics_info'].attrs.items()}
+        else:
+            ki = self.kinetics_info or {}
+        win_y = int(ki.get('window_y', 0) or 0)
+        h_win = int(ki.get('window_height', 0) or 0)
+        if h_win <= 0:
+            return None, None
+        # Current data dim (used to skip kinetics-cal entries in the .trs).
+        try:
+            data_dim = self.data_img_file.get_dimension()
+        except Exception:
+            data_dim = None
+
+        def _q(side):
+            grp = 'downstream_calibration' if side == 'ds' else 'upstream_calibration'
+            if grp not in f:
+                return None
+            g = f[grp]
+            if 'image' not in g or 'roi' not in g:
+                return None
+            cal_shape = g['image'].shape
+            if len(cal_shape) != 2:
+                return None
+            cal_dim_local = (cal_shape[1], cal_shape[0])
+            if data_dim is not None and cal_dim_local == data_dim:
+                # Not cross-mode relative to current data — no q to derive.
+                return None
+            roi_arr = np.asarray(g['roi'])
+            try:
+                y_min = int(roi_arr[2])
+            except (IndexError, TypeError, ValueError):
+                return None
+            return (y_min - win_y) // h_win
+
+        return _q('ds'), _q('us')
 
     def get_coincident_frame_range(self):
         """Range of 1-indexed coincident-exposure frame values k covering
@@ -1859,54 +2078,229 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.data_changed_emit(self.current_frame)
         return True
 
-    def fit_all_frames(self):
+    # ------------------------------------------------------------------
+    # Per-frame record cache — single source of truth for the spectrum
+    # window and the history plot.
+    # ------------------------------------------------------------------
+    def mark_records_dirty(self):
+        """Mark the per-frame record cache stale.
+
+        Called from every mutator that changes pipeline output (ROI, dark,
+        calibration, filter, fit function, mode, data image). Display code
+        that reads records first calls ensure_records_cache(), which no-ops
+        while _records_dirty is False and rebuilds otherwise.
+        """
+        self._records_dirty = True
+
+    def ensure_records_cache(self):
+        """Rebuild the per-frame record cache iff it is dirty.
+
+        Idempotent and cheap when clean. Multi-frame datasets get a full
+        pipeline pass over all frames per side. Single-frame datasets are
+        always re-snapshotted from the live model — cheap, and side-steps
+        the need to invalidate on every mutation until the full Step 2
+        dirty-flag wiring lands.
+
+        Re-entry guard: if a callback fired during rebuild lands us back
+        here, we return immediately. The rebuild loop's own signal traffic
+        (from set_img_frame_number_to) must not trigger nested rebuilds.
+        """
+        if self._rebuilding_records:
+            return
         if self.data_img_file is None:
-            return [], [], [], []
+            self._ds_records = []
+            self._us_records = []
+            self._records_dirty = False
+            return
+        n = int(self.data_img_file.num_frames)
+        if n == 1:
+            self._ds_records = [self._record_from_live('ds')]
+            self._us_records = [self._record_from_live('us')]
+            self._records_dirty = False
+            return
+        if not self._records_dirty:
+            return
+        self._rebuild_records_cache()
 
-        if self.data_img_file.num_frames == 1:
-            return [], [], [], []
+    def _record_from_live(self, side):
+        """Snapshot the live SingleTemperatureModel into a FrameRecord.
 
-        cur_frame = self.current_frame
-        self.blockSignals(True)
-        
+        RAW output — no filter, no zeroing. Fit failures land as NaN so the
+        display gate (frame_is_displayable) can distinguish them from cold
+        real fits.
+        """
+        m = self.ds_temperature_model if side == 'ds' else self.us_temperature_model
+        T = float(m.temperature) if m.temperature is not None else float('nan')
+        T_err = float(m.temperature_error) if m.temperature_error is not None else float('nan')
+        # Legacy code sets temperature = 0 on fit-failure; convert to NaN so
+        # the display-time gate can tell "failed fit" from "cold physical T".
+        if T == 0.0 and (T_err == 0.0 or not np.isfinite(T_err)):
+            T = float('nan'); T_err = float('nan')
+        try:
+            counts = float(m.total_counts)
+        except (AttributeError, TypeError):
+            counts = 0.0
+        try:
+            roi_max = float(m.data_roi_max)
+        except (AttributeError, TypeError):
+            roi_max = 0.0
+        return FrameRecord(
+            data_spectrum=m.data_spectrum,
+            corrected_spectrum=m.corrected_spectrum,
+            fit_spectrum=m.fit_spectrum,
+            T=T, T_err=T_err, counts=counts, roi_max=roi_max,
+        )
 
-        us_temperature = []
-        ds_temperature = []
+    def _rebuild_records_cache(self):
+        """Full pipeline pass; populate _ds_records / _us_records.
 
-        us_temperature_error = []
-        ds_temperature_error = []
-
+        Preserves the user's current frame so navigation-state is unchanged
+        after this call. Sets the re-entry guard so callbacks fired by the
+        pipeline runs inside the loop don't recursively re-enter here.
+        Dirty flag is cleared FIRST so nested display reads see a fresh
+        (albeit still-empty until populated) cache and don't retrigger.
+        """
+        assert self.data_img_file is not None
+        n = int(self.data_img_file.num_frames)
         dual = (self.mode == 'dual')
+        cur_frame = self.current_frame
+        cur_frame_ds = self.current_frame_ds
+        cur_frame_us = self.current_frame_us
 
-        for frame_ind in range(self.data_img_file.num_frames):
-            self.set_img_frame_number_to(frame_ind)
+        ds_records = [FrameRecord() for _ in range(n)]
+        us_records = [FrameRecord() for _ in range(n)]
 
-            ds_counts = int(self.ds_temperature_model.total_counts)
-            us_counts = int(self.us_temperature_model.total_counts) if dual else 0
-            max_counts = int(np.amax(np.asarray([us_counts, ds_counts])))
-            ds_sufficient_counts = ds_counts > (0.075 * max_counts)
-            us_sufficient_counts = dual and us_counts > (0.075 * max_counts)
-
-            if us_sufficient_counts and self.us_temperature_model.temperature_error <= self.error_limit:
-                us_temperature.append(self.us_temperature_model.temperature)
-                us_temperature_error.append(self.us_temperature_model.temperature_error)
+        # Clear dirty and set the re-entry guard BEFORE the loop so nested
+        # ensure_records_cache calls (via signal callbacks) no-op cleanly.
+        self._records_dirty = False
+        self._rebuilding_records = True
+        self.blockSignals(True)
+        try:
+            for f in range(n):
+                # Navigation runs the pipeline via set_img_frame_number_to.
+                # We force a rerun by clearing current_frame first, since the
+                # setter short-circuits when frame is unchanged.
+                self.current_frame = -1
+                self.set_img_frame_number_to(f)
+                ds_records[f] = self._record_from_live('ds')
+                if dual:
+                    us_records[f] = self._record_from_live('us')
+                # Publish partial results so nested reads during the rebuild
+                # see progressively-populated data rather than stale empties.
+                self._ds_records = ds_records
+                self._us_records = us_records
+        finally:
+            # Restore navigation to where the user was; force pipeline rerun
+            # so live-model state is coherent with the current frame.
+            self.current_frame = -1
+            if cur_frame_ds is not None and cur_frame_us is not None \
+                    and cur_frame_ds != cur_frame_us:
+                self.set_img_frame_numbers(cur_frame_ds, cur_frame_us)
             else:
-                us_temperature.append(0)
-                us_temperature_error.append(0)
-            if ds_sufficient_counts and self.ds_temperature_model.temperature_error <= self.error_limit:
-                ds_temperature.append(self.ds_temperature_model.temperature)
-                ds_temperature_error.append(self.ds_temperature_model.temperature_error)
-            else:
-                ds_temperature.append(0)
-                ds_temperature_error.append(0)
+                self.set_img_frame_number_to(cur_frame)
+            self.blockSignals(False)
+            self._rebuilding_records = False
 
-        self.set_img_frame_number_to(cur_frame)
-        self.blockSignals(False)
-        self.us_temperatures = us_temperature
-        self.us_temperatures_errors = us_temperature_error
-        self.ds_temperatures = ds_temperature
-        self.ds_temperatures_errors = ds_temperature_error
-        return us_temperature, us_temperature_error, ds_temperature, ds_temperature_error
+        self._ds_records = ds_records
+        self._us_records = us_records
+        self._records_dirty = False
+
+        # Populate backwards-compat lists so pre-refactor readers keep
+        # working. These are derived; do not read them for new code.
+        ds_T, ds_Terr = self.frame_display_series('ds')
+        us_T, us_Terr = self.frame_display_series('us')
+        self.ds_temperatures = np.where(np.isfinite(ds_T), ds_T, 0.0).tolist()
+        self.ds_temperatures_errors = np.where(np.isfinite(ds_Terr), ds_Terr, 0.0).tolist()
+        self.us_temperatures = np.where(np.isfinite(us_T), us_T, 0.0).tolist()
+        self.us_temperatures_errors = np.where(np.isfinite(us_Terr), us_Terr, 0.0).tolist()
+
+    def frame_record(self, side, f):
+        """Return the FrameRecord for (side, frame f).
+
+        Triggers a lazy rebuild if the cache is dirty. Returns an empty
+        FrameRecord (NaN T, empty spectra) when f is out of range — callers
+        must handle 'no data at this frame' explicitly.
+        """
+        self.ensure_records_cache()
+        records = self._ds_records if side == 'ds' else self._us_records
+        if f is None or f < 0 or f >= len(records):
+            return FrameRecord()
+        return records[f]
+
+    def displayed_frame(self, side):
+        """Return the frame index currently displayed for side ('ds'|'us').
+
+        None if the side has no readout at the current coincident k. Every
+        display path should route through this rather than reading the
+        ambiguous self.current_frame — in synced modes with q_ds != q_us,
+        the two sides can be showing different physical frames.
+        """
+        return self.current_frame_ds if side == 'ds' else self.current_frame_us
+
+    def frame_is_displayable(self, side, f):
+        """Should the fitted T for (side, f) be shown to the user?
+
+        Applies the unified display gate (T finite, in-range, error within
+        error_limit, and — if apply_counts_filter — the 7.5%-of-max counts
+        rule). Spectrum window and history plot MUST call this so they
+        agree on which frames light up.
+        """
+        rec = self.frame_record(side, f)
+        if not np.isfinite(rec.T) or not np.isfinite(rec.T_err):
+            return False
+        if rec.T <= self.min_allowed_T or rec.T >= self.max_allowed_T:
+            return False
+        if rec.T_err > self.error_limit:
+            return False
+        if self.apply_counts_filter and self.mode == 'dual':
+            other = self.frame_record('us' if side == 'ds' else 'ds', f)
+            max_c = max(rec.counts, other.counts)
+            if max_c > 0 and rec.counts <= 0.075 * max_c:
+                return False
+        return True
+
+    def frame_display_T(self, side, f):
+        """(T, T_err) for the display path — or (NaN, NaN) if gated off.
+
+        Read this from the spectrum widget T-text updater AND the history
+        plot; identical inputs guarantee identical outputs, which
+        guarantees the two views cannot disagree.
+        """
+        if not self.frame_is_displayable(side, f):
+            return float('nan'), float('nan')
+        rec = self.frame_record(side, f)
+        return rec.T, rec.T_err
+
+    def frame_display_series(self, side):
+        """Full (T[N], T_err[N]) arrays for the history plot.
+
+        NaN at frames the display gate excludes; the plot uses
+        connect='finite' so the line breaks at NaN.
+        """
+        self.ensure_records_cache()
+        n = int(self.data_img_file.num_frames) if self.data_img_file else 0
+        T = np.full(n, np.nan)
+        T_err = np.full(n, np.nan)
+        for f in range(n):
+            t, te = self.frame_display_T(side, f)
+            T[f] = t
+            T_err[f] = te
+        return T, T_err
+
+    def fit_all_frames(self):
+        """Legacy entry point — rebuild the cache and return the four
+        display-gated lists that pre-refactor callers expect.
+
+        New code should use frame_display_series / frame_record instead.
+        """
+        if self.data_img_file is None or self.data_img_file.num_frames == 1:
+            return [], [], [], []
+        self._records_dirty = True
+        self.ensure_records_cache()
+        return (list(self.us_temperatures),
+                list(self.us_temperatures_errors),
+                list(self.ds_temperatures),
+                list(self.ds_temperatures_errors))
 
 
 class SingleTemperatureModel(QtCore.QObject):
@@ -2092,6 +2486,7 @@ class SingleTemperatureModel(QtCore.QObject):
             # clamp max to image extents (numpy would otherwise wrap negative starts).
             roi = validate_roi(roi)
             h, w = _data_img_as_array.shape
+            _pre_clamp = (int(roi.x_min), int(roi.x_max), int(roi.y_min), int(roi.y_max))
             if roi.x_max >= w:
                 roi.x_max = w - 1
             if roi.y_max >= h:
@@ -2141,6 +2536,7 @@ class SingleTemperatureModel(QtCore.QObject):
             roi = self.roi_data_manager.get_roi(self.ind, self._calibration_img_dimension)
             roi = validate_roi(roi)
             h, w = np.asarray(self.calibration_img).shape[-2:]
+            _pre_clamp = (int(roi.x_min), int(roi.x_max), int(roi.y_min), int(roi.y_max))
             if roi.x_max >= w:
                 roi.x_max = w - 1
             if roi.y_max >= h:

@@ -1,0 +1,586 @@
+diff --git a/pyradiant/controller/TemperatureController.py b/pyradiant/controller/TemperatureController.py
+index 1c7251c..f485cd5 100644
+--- a/pyradiant/controller/TemperatureController.py
++++ b/pyradiant/controller/TemperatureController.py
+@@ -274,6 +274,8 @@ class TemperatureController(QtCore.QObject):
+ 
+         self.widget.roi_widget.rois_changed.connect(self.widget_rois_changed)
+         self.widget.roi_widget.wl_range_changed.connect(self.widget_wl_range_changed_callback)
++        self.widget.roi_widget.left_tab_widget.currentChanged.connect(self._on_roi_tab_changed)
++        self.widget.roi_widget.bg_widget.mode_changed.connect(self._on_bg_view_mode_changed)
+         self.widget.roi_widget.cal_signal_roi_changed.connect(
+             self.cal_signal_roi_dragged)
+ 
+@@ -370,7 +372,7 @@ class TemperatureController(QtCore.QObject):
+             conf.close_log()
+ 
+     # ---- Background subtraction handlers -------------------------------------
+-    _BG_MODES_BY_INDEX = ('insitu', 'prerecorded', 'hybrid', 'off')
++    _BG_MODES_BY_INDEX = ('insitu', 'prerecorded', 'hybrid', 'kinetics_trend', 'off')
+ 
+     def _background_mode_changed(self, index):
+         if not (0 <= index < len(self._BG_MODES_BY_INDEX)):
+@@ -386,6 +388,79 @@ class TemperatureController(QtCore.QObject):
+         if getattr(cfg, 'mode', 'dual') == 'single':
+             gb.set_us_row_visible(False)
+ 
++    _KINETICS_TREND_INDEX = 3  # index in _BG_MODES_BY_INDEX / mode_combo
++
++    def _set_kinetics_trend_enabled(self, enabled):
++        """Enable/disable the 'Kinetics trend' combo entry based on whether
++        the current data has multiple frames. If the mode is currently set
++        to kinetics_trend and kinetics data isn't available, silently fall
++        back to insitu."""
++        combo = self.widget.background_subtraction_gb.mode_combo
++        item = combo.model().item(self._KINETICS_TREND_INDEX)
++        if item is not None:
++            item.setEnabled(bool(enabled))
++        if not enabled and combo.currentIndex() == self._KINETICS_TREND_INDEX:
++            combo.setCurrentIndex(0)  # insitu; triggers _background_mode_changed
++
++    # -------- BG diagnostic tab -----------------------------------------------
++    def _bg_diagnostic_visible(self):
++        tabs = self.widget.roi_widget.left_tab_widget
++        return tabs.currentWidget() is self.widget.roi_widget.bg_widget
++
++    def _refresh_bg_diagnostic_matrices(self):
++        """Push data into the BG tab based on the currently selected view mode.
++        Triggers trend computation on first call after invalidation; cheap on
++        subsequent calls. Only called when the BG tab is visible or explicitly
++        requested."""
++        cfg = self.model.current_configuration
++        bg = self.widget.roi_widget.bg_widget
++        img = getattr(cfg, 'data_img_file', None)
++        kinetics = img is not None and int(getattr(img, 'num_frames', 0) or 0) > 1
++        mode = bg.current_mode()
++        if not kinetics:
++            bg.set_bg_matrix('ds', None)
++            bg.set_bg_matrix('us', None)
++            bg.set_raw_stack(None, 1)
++            return
++        if mode == 'raw':
++            stack, h_roi = cfg.get_bg_raw_stack('ds')
++            bg.set_raw_stack(stack, h_roi)
++        else:
++            bg.set_bg_matrix('ds', cfg.get_bg_matrix('ds'))
++            if getattr(cfg, 'mode', 'dual') == 'dual':
++                bg.set_bg_matrix('us', cfg.get_bg_matrix('us'))
++            else:
++                bg.set_bg_matrix('us', None)
++
++    def _refresh_bg_diagnostic_marker(self):
++        """Update the frame-marker positions on the BG tab. Cheap; safe to
++        call on every frame change."""
++        cfg = self.model.current_configuration
++        bg = self.widget.roi_widget.bg_widget
++        img = getattr(cfg, 'data_img_file', None)
++        kinetics = img is not None and int(getattr(img, 'num_frames', 0) or 0) > 1
++        if not kinetics:
++            bg.set_current_frame('ds', None)
++            bg.set_current_frame('us', None)
++            bg.set_raw_current_frame(None)
++            return
++        if bg.current_mode() == 'raw':
++            # Raw view is anchored to the DS bg ROI; use DS frame.
++            bg.set_raw_current_frame(cfg.current_frame_ds)
++        else:
++            bg.set_current_frame('ds', cfg.current_frame_ds)
++            bg.set_current_frame('us', cfg.current_frame_us if getattr(cfg, 'mode', 'dual') == 'dual' else None)
++
++    def _on_roi_tab_changed(self, _index):
++        if self._bg_diagnostic_visible():
++            self._refresh_bg_diagnostic_matrices()
++            self._refresh_bg_diagnostic_marker()
++
++    def _on_bg_view_mode_changed(self, _mode):
++        if self._bg_diagnostic_visible():
++            self._refresh_bg_diagnostic_matrices()
++            self._refresh_bg_diagnostic_marker()
++
+     def _bg_scale_changed(self, side, value):
+         cfg = self.model.current_configuration
+         if side == 'ds':
+@@ -996,9 +1071,16 @@ class TemperatureController(QtCore.QObject):
+             if self.model.current_configuration.data_img_file.num_frames > 1:
+                 self.widget.frame_widget.setVisible(True)
+                 self.widget.temperature_spectrum_widget.show_time_lapse_plot(True)
++                self._set_kinetics_trend_enabled(True)
+             else:
+                 self.widget.frame_widget.setVisible(False)
+                 self.widget.temperature_spectrum_widget.show_time_lapse_plot(False)
++                self._set_kinetics_trend_enabled(False)
++            # Refresh the BG diagnostic tab only when the user is looking at it
++            # (matrix compute is triggered lazily by get_bg_matrix on first call).
++            if self._bg_diagnostic_visible():
++                self._refresh_bg_diagnostic_matrices()
++                self._refresh_bg_diagnostic_marker()
+            
+             self.set_frame_text(str(self.model.current_configuration.current_frame + 1))
+        
+@@ -1294,7 +1376,10 @@ class TemperatureController(QtCore.QObject):
+         elif self._history_x_mode == 'time':
+             self._history_x_mode = 'frame'
+         self._on_history_mode_changed(prev)
+-        self.redraw_time_lapse()
++        # Full recompute for correctness. The cached-redraw shortcut
++        # (redraw_time_lapse) proved unreliable on mode switch — reinstate
++        # once the render-only path is trusted end-to-end.
++        self.update_time_lapse()
+ 
+     def sync_frame_btn_toggled(self, checked):
+         prev = self._history_x_mode
+@@ -1307,7 +1392,7 @@ class TemperatureController(QtCore.QObject):
+         elif self._history_x_mode == 'sync_frame':
+             self._history_x_mode = 'frame'
+         self._on_history_mode_changed(prev)
+-        self.redraw_time_lapse()
++        self.update_time_lapse()
+ 
+     def _on_history_mode_changed(self, prev_mode):
+         """When entering a synced mode, load the coincident k that keeps DS's
+@@ -1372,6 +1457,9 @@ class TemperatureController(QtCore.QObject):
+             f = int(cfg.current_frame)
+             ds_x = us_x = float(f + 1)
+         self.widget.temperature_spectrum_widget.set_time_lapse_frame_marker(ds_x, us_x)
++        # Also update the BG-tab horizontal frame marker (cheap; no compute).
++        if self._bg_diagnostic_visible():
++            self._refresh_bg_diagnostic_marker()
+ 
+     def _time_lapse_x_axis_side(self, side, y):
+         """Return (x, y, label) for one side's history-plot data.
+diff --git a/pyradiant/model/TemperatureModelConfiguration.py b/pyradiant/model/TemperatureModelConfiguration.py
+index 442c932..c43384a 100644
+--- a/pyradiant/model/TemperatureModelConfiguration.py
++++ b/pyradiant/model/TemperatureModelConfiguration.py
+@@ -150,6 +150,15 @@ class TemperatureModelConfiguration(QtCore.QObject):
+         self.current_frame_us = 0
+         self.ds_temperature_model = SingleTemperatureModel(0, self.roi_data_manager)
+         self.us_temperature_model = SingleTemperatureModel(1, self.roi_data_manager)
++        # Back-reference so the per-side models can query kinetics-trend bg.
++        self.ds_temperature_model._parent_config = self
++        self.us_temperature_model._parent_config = self
++
++        # Kinetics-trend bg cache. Each entry is either None (needs recompute)
++        # or {'intercept': ndarray[W], 'slope': ndarray[W], 'x_min': int,
++        # 'x_max': int, 'masked_frames': list[int]}. Invalidated on file load,
++        # bg-ROI move, or image-dim change; rebuilt lazily by get_bg_trend().
++        self._bg_trend_cache = {'ds': None, 'us': None}
+ 
+         self.us_temperatures = []
+         self.us_temperatures_errors = []
+@@ -272,6 +281,9 @@ class TemperatureModelConfiguration(QtCore.QObject):
+             self.current_frame = 0
+             self._data_img = self.data_img_file.img
+ 
++        # New file (or reload) → bg-trend fits from the old file are stale.
++        self._invalidate_bg_trend()
++
+         self._sync_kinetics_from_file()
+         self._sync_cross_mode_rois()
+ 
+@@ -496,7 +508,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
+     # 'hybrid' behaves like 'prerecorded' but auto-scales the dark subtraction by
+     # mean(bg-ROI on current image) / mean(same bg-ROI on dark image) — combining
+     # the stability of a prerecorded master dark with in-situ exposure-tracking.
+-    _VALID_BACKGROUND_MODES = ('insitu', 'prerecorded', 'hybrid', 'off')
++    _VALID_BACKGROUND_MODES = ('insitu', 'prerecorded', 'hybrid', 'kinetics_trend', 'off')
+ 
+     def _propagate_dark_to_models(self):
+         """Push the current mode + per-side dark image + scale to both single models."""
+@@ -527,6 +539,119 @@ class TemperatureModelConfiguration(QtCore.QObject):
+         self.dirty = True
+         self.data_changed_emit(self.current_frame)
+ 
++    # -------- Kinetics-trend background ---------------------------------------
++    def _invalidate_bg_trend(self, side=None):
++        """Drop the cached per-column bg trend fit so it recomputes on next use.
++        Call with side='ds'|'us' to clear one, or side=None to clear both.
++        Cheap; safe to over-call."""
++        if side is None:
++            self._bg_trend_cache = {'ds': None, 'us': None}
++        else:
++            self._bg_trend_cache[side] = None
++
++    def _compute_bg_trend(self, side):
++        """Fit a per-column linear trend (in frame index) to the bg ROI stacked
++        across all kinetics frames on one side. Returns the cache dict or
++        None if kinetics data isn't loaded."""
++        if self.data_img_file is None:
++            return None
++        n = int(getattr(self.data_img_file, 'num_frames', 0) or 0)
++        if n <= 1:
++            return None
++        # Derive dim from the first frame; _data_img_dimension lives on the
++        # SingleTemperatureModel children, not on the config.
++        first = np.asarray(self.data_img_file.img[0])
++        h, w = first.shape
++        dim = (w, h)
++        roi_idx = 2 if side == 'ds' else 3
++        roi = validate_roi(self.roi_data_manager.get_roi(roi_idx, dim))
++        # Clamp to first-frame extents (all frames share shape).
++        if roi.x_max >= w:
++            roi.x_max = w - 1
++        if roi.y_max >= h:
++            roi.y_max = h - 1
++        x_min, x_max = int(roi.x_min), int(roi.x_max)
++        # Stack per-column bg sums: shape (N, W_roi).
++        W_roi = x_max - x_min + 1
++        B = np.empty((n, W_roi), dtype=float)
++        for f in range(n):
++            B[f, :] = get_roi_sum(np.asarray(self.data_img_file.img[f]), roi)
++        # Robust contamination reject on per-frame totals.
++        totals = B.sum(axis=1)
++        med = float(np.median(totals))
++        mad = 1.4826 * float(np.median(np.abs(totals - med)))
++        if mad > 0:
++            clean_mask = totals <= med + 5.0 * mad
++        else:
++            clean_mask = np.ones(n, dtype=bool)
++        # Never let the mask collapse to too few points for a stable line fit.
++        if int(clean_mask.sum()) < 3:
++            clean_mask = np.ones(n, dtype=bool)
++        clean_idx = np.where(clean_mask)[0]
++        masked_frames = [int(i) for i in np.where(~clean_mask)[0]]
++        # Vectorized per-column linear fit: solve A @ [slope, intercept] = B_clean.
++        A = np.stack([clean_idx.astype(float), np.ones_like(clean_idx, dtype=float)], axis=1)
++        coeffs, *_ = np.linalg.lstsq(A, B[clean_idx, :], rcond=None)
++        slope, intercept = coeffs[0], coeffs[1]
++        entry = {
++            'intercept': intercept,
++            'slope': slope,
++            'x_min': x_min,
++            'x_max': x_max,
++            'masked_frames': masked_frames,
++            # Raw per-column bg matrix (frame × column) that fed the fit.
++            # Kept for the BG diagnostic tab; cheap even for a few hundred frames.
++            'B': B,
++        }
++        self._bg_trend_cache[side] = entry
++        return entry
++
++    def get_bg_trend(self, side):
++        """Return the cached per-column bg trend for one side, computing it
++        lazily on first request. Returns None for non-kinetics data."""
++        cache = self._bg_trend_cache.get(side)
++        if cache is not None:
++            return cache
++        return self._compute_bg_trend(side)
++
++    def get_bg_matrix(self, side):
++        """Return the (N × W_roi) per-column bg matrix that feeds the trend
++        fit for one side, computing on demand. None for non-kinetics data."""
++        trend = self.get_bg_trend(side)
++        if trend is None:
++            return None
++        return trend.get('B')
++
++    def get_bg_raw_stack(self, side='ds'):
++        """Return raw 2D bg ROI stacked across all kinetics frames.
++        Shape: (N * H_roi, W_roi). Also returns H_roi so callers can place
++        per-frame markers. Not cached — cheap enough to recompute on view.
++        Returns (None, 0) for non-kinetics data.
++        """
++        if self.data_img_file is None:
++            return None, 0
++        n = int(getattr(self.data_img_file, 'num_frames', 0) or 0)
++        if n <= 1:
++            return None, 0
++        first = np.asarray(self.data_img_file.img[0])
++        h, w = first.shape
++        dim = (w, h)
++        roi_idx = 2 if side == 'ds' else 3
++        roi = validate_roi(self.roi_data_manager.get_roi(roi_idx, dim))
++        if roi.x_max >= w:
++            roi.x_max = w - 1
++        if roi.y_max >= h:
++            roi.y_max = h - 1
++        x_min, x_max = int(roi.x_min), int(roi.x_max)
++        y_min, y_max = int(roi.y_min), int(roi.y_max)
++        h_roi = y_max - y_min + 1
++        w_roi = x_max - x_min + 1
++        stack = np.empty((n * h_roi, w_roi), dtype=float)
++        for f in range(n):
++            img = np.asarray(self.data_img_file.img[f])
++            stack[f * h_roi:(f + 1) * h_roi, :] = img[y_min:y_max + 1, x_min:x_max + 1]
++        return stack, h_roi
++
+     def _load_dark_frame_file(self, filename):
+         """Dispatch to SpeFile / H5File / TifFile — mirrors load_ds_calibration_image."""
+         _, ext = os.path.splitext(filename)
+@@ -1474,6 +1599,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
+             return
+         self.roi_data_manager.set_roi(2, dim, ds_bg_limits)
+         self._mirror_roi_to_cal_dim(2, dim, ds_bg_limits)
++        self._invalidate_bg_trend('ds')
+         pipeline.run_ds(self, Stage.DATA_SPEC)
+         self.ds_calculations_changed_emit()
+ 
+@@ -1494,6 +1620,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
+             return
+         self.roi_data_manager.set_roi(3, dim, us_bg_limits)
+         self._mirror_roi_to_cal_dim(3, dim, us_bg_limits)
++        self._invalidate_bg_trend('us')
+         pipeline.run_us(self, Stage.DATA_SPEC)
+         self.us_calculations_changed_emit()
+ 
+@@ -1915,6 +2042,10 @@ class SingleTemperatureModel(QtCore.QObject):
+     def __init__(self, ind, roi_data_manager):
+         super(SingleTemperatureModel, self).__init__()
+         self.ind = ind
++        # Set by the owning TemperatureModelConfiguration right after construction.
++        # Used by the 'kinetics_trend' extraction branch to fetch the shared
++        # per-column bg trend fit (which spans all kinetics frames).
++        self._parent_config = None
+ 
+         self.data_spectrum = Spectrum([], [])
+         self.calibration_spectrum = Spectrum([], [])
+@@ -2131,6 +2262,39 @@ class SingleTemperatureModel(QtCore.QObject):
+                     dark_bg_mean = float(np.mean(get_roi_img(dark, roi_bg)))
+                     scale = data_bg_mean / dark_bg_mean if dark_bg_mean != 0 else 0.0
+                     data_y = data_y - get_roi_sum(dark, roi) * scale
++            elif mode == 'kinetics_trend':
++                side = 'ds' if self.ind == 0 else 'us'
++                trend = None
++                parent = self._parent_config
++                if parent is not None:
++                    trend = parent.get_bg_trend(side)
++                if trend is not None:
++                    if side == 'ds':
++                        frame = parent.current_frame_ds
++                    else:
++                        frame = parent.current_frame_us
++                    if frame is None:
++                        frame = parent.current_frame
++                    frame = int(frame)
++                    bg_pred = trend['intercept'] + trend['slope'] * frame
++                    # Slice bg_pred to match signal ROI's x range (bg ROI x range
++                    # can differ if the two ROIs were placed independently).
++                    x_lo = int(roi.x_min) - int(trend['x_min'])
++                    x_hi = x_lo + (int(roi.x_max) - int(roi.x_min) + 1)
++                    if 0 <= x_lo and x_hi <= len(bg_pred):
++                        data_y = data_y - bg_pred[x_lo:x_hi]
++                    else:
++                        # x ranges don't overlap; fall back to insitu.
++                        roi_bg = self.roi_data_manager.get_roi(self.ind+2, self._data_img_dimension)
++                        roi_bg.x_max = roi.x_max
++                        roi_bg.x_min = roi.x_min
++                        data_y = data_y - get_roi_sum(_data_img_as_array, roi_bg)
++                else:
++                    # Non-kinetics data (or dim not yet known): fall back to insitu.
++                    roi_bg = self.roi_data_manager.get_roi(self.ind+2, self._data_img_dimension)
++                    roi_bg.x_max = roi.x_max
++                    roi_bg.x_min = roi.x_min
++                    data_y = data_y - get_roi_sum(_data_img_as_array, roi_bg)
+ 
+             self.total_counts = np.sum(data_y)
+             self.data_spectrum.data = data_x, data_y
+@@ -2146,6 +2310,10 @@ class SingleTemperatureModel(QtCore.QObject):
+             if roi.y_max >= h:
+                 roi.y_max = h - 1
+             mode = getattr(self, 'background_mode', 'insitu')
++            # Calibration is single-frame; the kinetics-trend fit isn't
++            # meaningful here, so treat it as insitu.
++            if mode == 'kinetics_trend':
++                mode = 'insitu'
+             if mode == 'insitu':
+                 roi_bg = self.roi_data_manager.get_roi(self.ind+2, self._calibration_img_dimension)
+                 roi_bg.x_max = roi.x_max
+diff --git a/pyradiant/widget/RoiWidget.py b/pyradiant/widget/RoiWidget.py
+index 5c58c50..6446c22 100644
+--- a/pyradiant/widget/RoiWidget.py
++++ b/pyradiant/widget/RoiWidget.py
+@@ -76,6 +76,7 @@ class RoiWidget(QtWidgets.QWidget):
+         self.img_widget = RoiImageWidget(roi_num=roi_num, roi_colors=roi_colors)
+         self.ccd_widget = RoiImageWidget(roi_num=0, roi_colors=[])
+         self.specra_widget = RoiSpectraWidget()
++        self.bg_widget = RoiBgWidget()
+ 
+         # Intensity-calibration viewers (2D image + 1D extracted spectrum, per side).
+         # 2D viewers carry the same 4 ROIs as the data image so users can drag
+@@ -93,8 +94,9 @@ class RoiWidget(QtWidgets.QWidget):
+         self.left_tab_widget.addTab(self.specra_widget, '1D')
+         self.left_tab_widget.addTab(self.img_widget, '2D')
+         self.left_tab_widget.addTab(self.ccd_widget, 'RAW')
++        self.left_tab_widget.addTab(self.bg_widget, 'BG')
+         # Cal tabs — grouped per side, 1D then 2D to match the existing data
+-        # tab order above (1D, 2D, RAW).
++        # tab order above (1D, 2D, RAW, BG).
+         self._ds_cal_spec_tab_ind = self.left_tab_widget.addTab(self.ds_cal_spec_widget, 'DS Cal 1D')
+         self._ds_cal_img_tab_ind = self.left_tab_widget.addTab(self.ds_cal_img_widget, 'DS Cal 2D')
+         self._us_cal_spec_tab_ind = self.left_tab_widget.addTab(self.us_cal_spec_widget, 'US Cal 1D')
+@@ -682,6 +684,157 @@ class RoiSpectraWidget(QtWidgets.QWidget):
+             self._ds_plot.setTitle("Spectrum", color=QColor(colors['downstream']), size='20pt')
+ 
+ 
++class RoiBgWidget(QtWidgets.QWidget):
++    """Diagnostic view of the kinetics-frame background.
++
++    View modes:
++      * 'reduced' — two side-by-side heatmaps (DS left, US right), one row
++        per frame, per-column bg sum. Same data that feeds the 'kinetics_trend'
++        linear fit.
++      * 'raw' — a single heatmap of the raw 2D bg ROI stacked across all
++        frames (frame 0 on top). Shows the underlying pixel drift.
++
++    A dashed marker tracks the currently displayed readout frame; in raw
++    mode it spans the frame's row block."""
++
++    mode_changed = QtCore.pyqtSignal(str)
++
++    def __init__(self, *args, **kwargs):
++        super().__init__(*args, **kwargs)
++        outer = QtWidgets.QVBoxLayout(self)
++        outer.setContentsMargins(0, 0, 0, 0)
++        outer.setSpacing(2)
++
++        # Top bar: mode selector.
++        bar = QtWidgets.QHBoxLayout()
++        bar.setContentsMargins(6, 2, 6, 0)
++        bar.addWidget(QtWidgets.QLabel('View:'))
++        self.mode_combo = QtWidgets.QComboBox()
++        self.mode_combo.addItems(['Per-column sum (both sides)',
++                                  'Raw 2D stacked (one heatmap)'])
++        self.mode_combo.setToolTip(
++            "Per-column sum: DS/US bg ROI column-sums per frame (feeds the linear fit).\n"
++            "Raw 2D stacked: raw bg ROI pixels stacked frame-by-frame — shows drift.")
++        bar.addWidget(self.mode_combo)
++        bar.addStretch(1)
++        outer.addLayout(bar)
++
++        # Panels container.
++        self._panels_holder = QtWidgets.QWidget()
++        self._panels_layout = QtWidgets.QHBoxLayout(self._panels_holder)
++        self._panels_layout.setContentsMargins(0, 0, 0, 0)
++        self._panels_layout.setSpacing(4)
++        outer.addWidget(self._panels_holder, 1)
++
++        custom_colors = [(49, 52, 138), (112, 186, 234), (207, 223, 96),
++                         (222, 131, 46), (119, 31, 28)]
++        cmap = ColorMap(pos=[0, 0.25, 0.5, 0.75, 1], color=custom_colors)
++        self._cmap = cmap
++
++        self._ds_pg_widget, self._ds_img_item, self._ds_marker, self._ds_hist = \
++            self._make_panel('Downstream', QColor(colors['downstream']), cmap)
++        self._us_pg_widget, self._us_img_item, self._us_marker, self._us_hist = \
++            self._make_panel('Upstream', QColor(colors['upstream']), cmap)
++        self._raw_pg_widget, self._raw_img_item, self._raw_marker, self._raw_hist = \
++            self._make_panel('Raw bg ROI (stacked frames)', QColor('#DDDDDD'), cmap,
++                             y_label='row (frames stacked)')
++
++        self._panels_layout.addWidget(self._ds_pg_widget)
++        self._panels_layout.addWidget(self._us_pg_widget)
++        self._panels_layout.addWidget(self._raw_pg_widget)
++        self._raw_pg_widget.hide()
++
++        self._h_roi = 1  # rows-per-frame in raw view; updated on set_raw_stack.
++
++        self.mode_combo.currentIndexChanged.connect(self._on_mode_index_changed)
++
++    # -- mode -----------------------------------------------------------------
++    def current_mode(self):
++        """Return 'reduced' or 'raw'."""
++        return 'raw' if self.mode_combo.currentIndex() == 1 else 'reduced'
++
++    def _on_mode_index_changed(self, _idx):
++        mode = self.current_mode()
++        if mode == 'raw':
++            self._ds_pg_widget.hide()
++            self._us_pg_widget.hide()
++            self._raw_pg_widget.show()
++        else:
++            self._raw_pg_widget.hide()
++            self._ds_pg_widget.show()
++            self._us_pg_widget.show()
++        self.mode_changed.emit(mode)
++
++    # -- panels ---------------------------------------------------------------
++    def _make_panel(self, title, title_color, cmap, y_label='frame index'):
++        pg_widget = pg.GraphicsLayoutWidget()
++        pg_layout = pg_widget.ci
++        pg_layout.setContentsMargins(0, 10, 15, 0)
++
++        plot = pg_layout.addPlot(row=0, col=0)
++        plot.setTitle(title, color=title_color, size='12pt')
++        plot.setLabel('bottom', 'column (px within bg ROI)')
++        plot.setLabel('left', y_label)
++        plot.getViewBox().invertY(True)
++
++        img_item = pg.ImageItem()
++        plot.addItem(img_item)
++
++        marker = pg.InfiniteLine(angle=0, movable=False,
++                                 pen=pg.mkPen(title_color, width=1, style=QtCore.Qt.PenStyle.DashLine))
++        marker.hide()
++        plot.addItem(marker)
++
++        hist_item = HistogramLUTItem(img_item)
++        hist_item.axis.setStyle(showValues=False)
++        hist_item.setFixedWidth(70)
++        hist_item.gradient.setColorMap(cmap)
++        pg_layout.addItem(hist_item, row=0, col=1)
++
++        return pg_widget, img_item, marker, hist_item
++
++    # -- reduced-mode data ----------------------------------------------------
++    def set_bg_matrix(self, side, matrix):
++        """Push the (N × W_roi) bg matrix into the DS or US panel. Pass None
++        to clear that side (e.g., non-kinetics data)."""
++        img_item = self._ds_img_item if side == 'ds' else self._us_img_item
++        marker = self._ds_marker if side == 'ds' else self._us_marker
++        if matrix is None or not hasattr(matrix, 'shape') or matrix.size == 0:
++            img_item.clear()
++            marker.hide()
++            return
++        img_item.setImage(np.asarray(matrix).T, autoLevels=True)
++
++    def set_current_frame(self, side, frame):
++        """Show or hide the horizontal frame marker in the reduced view."""
++        marker = self._ds_marker if side == 'ds' else self._us_marker
++        if frame is None:
++            marker.hide()
++            return
++        marker.setPos(float(frame) + 0.5)
++        marker.show()
++
++    # -- raw-mode data --------------------------------------------------------
++    def set_raw_stack(self, matrix, h_roi):
++        """Push the (N*H_roi × W_roi) raw 2D stacked bg into the single raw
++        panel. Pass matrix=None to clear."""
++        if matrix is None or not hasattr(matrix, 'shape') or matrix.size == 0:
++            self._raw_img_item.clear()
++            self._raw_marker.hide()
++            self._h_roi = 1
++            return
++        self._h_roi = max(1, int(h_roi))
++        self._raw_img_item.setImage(np.asarray(matrix).T, autoLevels=True)
++
++    def set_raw_current_frame(self, frame):
++        """Place the frame marker at the center of the given frame's row block."""
++        if frame is None:
++            self._raw_marker.hide()
++            return
++        self._raw_marker.setPos(float(frame) * self._h_roi + self._h_roi / 2.0)
++        self._raw_marker.show()
++
++
+ class RoiImageWidget(QtWidgets.QWidget):
+     mouse_moved = QtCore.pyqtSignal(float, float)
+     #mouse_left_clicked = QtCore.pyqtSignal(float, float)
+diff --git a/pyradiant/widget/TemperatureWidget.py b/pyradiant/widget/TemperatureWidget.py
+index 5a5875f..f7eb98d 100644
+--- a/pyradiant/widget/TemperatureWidget.py
++++ b/pyradiant/widget/TemperatureWidget.py
+@@ -719,7 +719,12 @@ class BackgroundSubtractionGB(QtWidgets.QGroupBox):
+         # Row 0: mode selector
+         self._layout.addWidget(QtWidgets.QLabel('Mode:'), 0, 0)
+         self.mode_combo = QtWidgets.QComboBox()
+-        self.mode_combo.addItems(['In-situ ROI', 'Prerecorded dark', 'Hybrid (auto-scaled dark)', 'Off'])
++        self.mode_combo.addItems(['In-situ ROI', 'Prerecorded dark', 'Hybrid (auto-scaled dark)', 'Kinetics trend', 'Off'])
++        self.mode_combo.setItemData(
++            3,
++            "Per-column linear background trend fit across all kinetics frames "
++            "(robust to signal bleed). Requires kinetics data (num_frames > 1).",
++            QtCore.Qt.ItemDataRole.ToolTipRole)
+         self._layout.addWidget(self.mode_combo, 0, 1, 1, 4)
+ 
+         # Row 1: DS dark controls (visible only in prerecorded mode)

@@ -114,6 +114,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.filter_section = FilterSettings()
 
         self.settings_gb = SettingsGroupBox()
+        self.kinetics_gb = KineticsGB()
         self.epics_gb = EPICSGroupBox()
         self.zmq_gb = ZmqWorkerGroupBox()
         self.epicslogger_gb = EpicsLoggerGroupBox()
@@ -126,6 +127,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._other_settings_widget_layout.addWidget(self.config_widget)
         self._other_settings_widget_layout.addWidget(self.measurement_mode_gb)
         self._other_settings_widget_layout.addWidget(self.settings_gb)
+        self._other_settings_widget_layout.addWidget(self.kinetics_gb)
         self._other_settings_widget_layout.addWidget(self.wl_range_widget)
         self._other_settings_widget_layout.addWidget(self.roi_gb)
         self._other_settings_widget_layout.addWidget(self.wavelength_calibration_gb)
@@ -219,8 +221,8 @@ class TemperatureWidget(QtWidgets.QWidget):
         
         self.frame_num_txt = self.control_widget.file_gb.frame_txt
         self.frame_widget = self.control_widget.file_gb.frame_control_widget
-        self.lab_time_btn = self.control_widget.file_gb.lab_time_btn
-        self.sync_frame_btn = self.control_widget.file_gb.sync_frame_btn
+        self.lab_time_btn = self.kinetics_gb.lab_time_btn
+        self.sync_frame_btn = self.kinetics_gb.sync_frame_btn
 
         self.autoprocess_cb = self.control_widget.file_gb.autoprocess_cb
         self.autoprocess_lbl = self.control_widget.file_gb.autoprocess_lbl
@@ -263,6 +265,7 @@ class TemperatureWidget(QtWidgets.QWidget):
 
         self.load_setting_btn = self.settings_gb.load_setting_btn
         self.save_setting_btn = self.settings_gb.save_setting_btn
+        self.import_slots_btn = self.kinetics_gb.import_slots_btn
 
         self.save_data_btn = self.control_widget.output_gb.save_data_btn
         self.save_graph_btn = self.control_widget.output_gb.save_graph_btn
@@ -622,7 +625,7 @@ class SettingsGroupBox(QtWidgets.QGroupBox):
 
         self.save_setting_btn = QtWidgets.QPushButton("Save")
         save_setting_pixmap = QStyle.StandardPixmap.SP_DialogSaveButton
-        save_setting_icon = self.style().standardIcon(save_setting_pixmap)  
+        save_setting_icon = self.style().standardIcon(save_setting_pixmap)
         self.save_setting_btn.setIcon(save_setting_icon)
 
         self._btns_layout.addWidget(self.load_setting_btn)
@@ -635,6 +638,95 @@ class SettingsGroupBox(QtWidgets.QGroupBox):
 
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
+
+
+class KineticsGB(QtWidgets.QGroupBox):
+    """All kinetics-mode controls in one place.
+
+    Hidden when kinetics_mode == 'off'. Shown for 'interleaved' and
+    'true_single'.
+    """
+    def __init__(self):
+        super().__init__('Kinetics')
+        self._layout = QtWidgets.QVBoxLayout()
+
+        # Row 1 — history-plot axis-alignment toggles.
+        self._toggles = QtWidgets.QHBoxLayout()
+        self.lab_time_btn = QtWidgets.QPushButton('Lab time')
+        self.lab_time_btn.setCheckable(True)
+        self.lab_time_btn.setToolTip(
+            'Show the history plot x-axis as time (s) with DS/US aligned '
+            'by physical exposure via the per-side mask offset.')
+        self.sync_frame_btn = QtWidgets.QPushButton('Sync frame')
+        self.sync_frame_btn.setCheckable(True)
+        self.sync_frame_btn.setToolTip(
+            'Show the history plot x-axis as coincident-exposure frame '
+            'index (DS and US frames from the same physical exposure '
+            'share the same x). Mutually exclusive with Lab time.')
+        self._toggles.addWidget(self.lab_time_btn)
+        self._toggles.addWidget(self.sync_frame_btn)
+        self._toggles.addStretch()
+        self._layout.addLayout(self._toggles)
+
+        # Row 2 — import-slots action.
+        self.import_slots_btn = QtWidgets.QPushButton('Import slots')
+        self.import_slots_btn.setToolTip(
+            "Import DS/US mask-slot offsets from another .trs (for "
+            "kinetics-cal sessions where sync alignment can't be derived "
+            "from the current cal).")
+        self._layout.addWidget(self.import_slots_btn)
+
+        # Row 3 — read-only info grid.
+        info = QtWidgets.QGridLayout()
+        info.setContentsMargins(0, 4, 0, 0)
+        info.setHorizontalSpacing(8)
+        info.setVerticalSpacing(2)
+        small = QtGui.QFont()
+        small.setPointSize(9)
+
+        def _lbl(text, dim=False):
+            w = QtWidgets.QLabel(text)
+            w.setFont(small)
+            if dim:
+                w.setStyleSheet('color: #888888;')
+            return w
+
+        info.addWidget(_lbl('Mode:', dim=True), 0, 0)
+        self.mode_lbl = _lbl('—')
+        info.addWidget(self.mode_lbl, 0, 1)
+        info.addWidget(_lbl('Geometry:', dim=True), 1, 0)
+        self.geom_lbl = _lbl('—')
+        info.addWidget(self.geom_lbl, 1, 1)
+        info.addWidget(_lbl('DS slot:', dim=True), 2, 0)
+        self.q_ds_lbl = _lbl('—')
+        info.addWidget(self.q_ds_lbl, 2, 1)
+        info.addWidget(_lbl('US slot:', dim=True), 3, 0)
+        self.q_us_lbl = _lbl('—')
+        info.addWidget(self.q_us_lbl, 3, 1)
+        self._layout.addLayout(info)
+
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+        self.hide()
+
+    def apply_kinetics_state(self, mode, info, q_ds, q_us):
+        """Refresh visibility and info labels from the current config state.
+
+        `mode` is the config's kinetics_mode ('off' | 'interleaved' |
+        'true_single'). `info` is the kinetics_info dict. `q_ds` / `q_us`
+        are the effective per-side slot offsets, or None if unavailable.
+        """
+        if mode not in ('interleaved', 'true_single'):
+            self.hide()
+            return
+        self.show()
+        self.mode_lbl.setText(
+            'interleaved' if mode == 'interleaved' else 'single strip')
+        n = info.get('n_strips', '?') if info else '?'
+        h = info.get('window_height', '?') if info else '?'
+        self.geom_lbl.setText(f'{n} strips × {h} rows')
+        self.q_ds_lbl.setText(str(int(q_ds)) if q_ds is not None else '—')
+        self.q_us_lbl.setText(str(int(q_us)) if q_us is not None else '—')
 
 
 class MeasurementModeGB(QtWidgets.QGroupBox):

@@ -164,10 +164,8 @@ class TemperatureController(QtCore.QObject):
     def disconnect_folder_monitor(self):
         if eps.epics_settings['T_folder'] is not None \
                 and eps.epics_settings['T_folder'] != 'None':
-            try:
-                camonitor_clear(eps.epics_settings['T_folder'])
-            except:
-                pass
+            # DEBUG: try/except removed so failures raise with full traceback.
+            camonitor_clear(eps.epics_settings['T_folder'])
         self.widget.monitor_folder_indicator.set_inactive()
         self.widget.monitor_folder_path_lbl.setText("")
 
@@ -262,6 +260,7 @@ class TemperatureController(QtCore.QObject):
         # Setting signals
         self.connect_click_function(self.widget.load_setting_btn, self.load_setting_file)
         self.connect_click_function(self.widget.save_setting_btn, self.save_setting_file)
+        self.connect_click_function(self.widget.import_slots_btn, self.import_slots_from_trs)
         self.widget.settings_cb.currentIndexChanged.connect(self.settings_cb_changed)
         self.widget.setup_epics_pb.clicked.connect(self.setup_epics_pb_clicked)
 
@@ -345,10 +344,8 @@ class TemperatureController(QtCore.QObject):
 
     def frame_num_txt_callback(self):
         self.widget.frame_num_txt.clearFocus()
-        try:
-            val = int(self.widget.frame_num_txt.text())
-        except ValueError:
-            return
+        # DEBUG: try/except removed so failures raise with full traceback.
+        val = int(self.widget.frame_num_txt.text())
         cfg = self.model.current_configuration
         if self._history_x_mode in ('time', 'sync_frame'):
             rng = cfg.get_coincident_frame_range()
@@ -413,18 +410,11 @@ class TemperatureController(QtCore.QObject):
         if not filename:
             return
         cfg = self.model.current_configuration
-        try:
-            if side == 'ds':
-                cfg.load_ds_dark_frame(filename)
-            else:
-                cfg.load_us_dark_frame(filename)
-        except (OSError, ValueError, KeyError) as exc:
-            QtWidgets.QMessageBox.warning(
-                self.widget,
-                "Dark frame",
-                f"Failed to load dark frame:\n{filename}\n\n{exc}",
-            )
-            return
+        # DEBUG: try/except removed so failures raise with full traceback.
+        if side == 'ds':
+            cfg.load_ds_dark_frame(filename)
+        else:
+            cfg.load_us_dark_frame(filename)
         self._sync_background_widgets()
 
     def clear_ds_dark_file(self):
@@ -442,10 +432,8 @@ class TemperatureController(QtCore.QObject):
         """
         cfg = self.model.current_configuration
         mode = getattr(cfg, 'background_mode', 'insitu')
-        try:
-            idx = self._BG_MODES_BY_INDEX.index(mode)
-        except ValueError:
-            idx = 0
+        # DEBUG: try/except removed so failures raise with full traceback.
+        idx = self._BG_MODES_BY_INDEX.index(mode)
         gb = self.widget.background_subtraction_gb
         # Update combo without re-emitting -> avoid recursion into set_background_mode
         gb.mode_combo.blockSignals(True)
@@ -544,7 +532,7 @@ class TemperatureController(QtCore.QObject):
     def process_multiframe(self):
         # hack, refactor later:
         # Since the entire timelapse calculation is costly,
-        # it should only get recalculated when the actual file changes, 
+        # it should only get recalculated when the actual file changes,
         # or any setting changes
         # - not when only the frame number is updated.
 
@@ -553,10 +541,11 @@ class TemperatureController(QtCore.QObject):
         # next or previous file is loaded
         # Area Detector data is updated
 
-        if self.model.current_configuration.data_img_file is not None:
-            num_frames = self.model.current_configuration.data_img_file.num_frames
+        cfg = self.model.current_configuration
+        if cfg.data_img_file is not None:
+            num_frames = cfg.data_img_file.num_frames
             if num_frames>1:
-                
+
                 self.update_time_lapse()
 
     def load_data_file(self, filenames=None):
@@ -702,15 +691,8 @@ class TemperatureController(QtCore.QObject):
         if not filename:
             return
         cfg = self.model.current_configuration
-        try:
-            cfg.load_photron_wavelength_calibration(filename)
-        except (OSError, ValueError, KeyError) as exc:
-            QtWidgets.QMessageBox.warning(
-                self.widget,
-                "Wavelength calibration",
-                f"Failed to load calibration file:\n{filename}\n\n{exc}",
-            )
-            return
+        # DEBUG: try/except removed so failures raise with full traceback.
+        cfg.load_photron_wavelength_calibration(filename)
         self._update_wavelength_calibration_label()
         self._reload_current_tif_if_any()
 
@@ -875,8 +857,66 @@ class TemperatureController(QtCore.QObject):
         if filename != '':
             self.model.current_configuration._setting_working_dir = os.path.dirname(filename)
             self.model.current_configuration.load_setting(filename)
-            
+
             self.update_setting_combobox(filename)
+            # Reflect the new background_mode (and dark rows/scales) in the UI.
+            # load_setting mutates cfg.background_mode but does not touch widgets;
+            # without this the combo can lag the actual model state.
+            self._sync_background_widgets()
+            # Re-fit multi-frame data. New ROIs / cal / bg mode invalidate the
+            # cached ds_temperatures / us_temperatures, so history plots would
+            # otherwise show stale numbers until the user reloads the .spe by
+            # hand.
+            # DEBUG: try/except removed so failures raise with full traceback.
+            self.process_multiframe()
+
+    def import_slots_from_trs(self, filename=None):
+        """Pull DS/US mask-slot offsets from another .trs into the current
+        configuration. Only meaningful when the current cal can't supply
+        them (typically a kinetics-mode cal); otherwise the derived value
+        wins per _q_side precedence."""
+        cfg = self.model.current_configuration
+        if filename is None or filename is False:
+            filename = open_file_dialog(
+                self.widget, caption="Import DS/US slots from .trs",
+                directory=cfg._setting_working_dir,
+                filter="Settings (*.trs);;All files (*)")
+        if not filename:
+            print("[import_slots] cancelled (no file)")
+            return
+        base = os.path.basename(filename)
+        print(f"[import_slots] file={filename}")
+        # DEBUG: try/except removed so failures raise with full traceback.
+        q_ds, q_us, source = cfg.import_slots_from_trs(filename)
+        if q_ds is None and q_us is None:
+            msg = (f"Could not import slots from '{base}'.\n\n"
+                   "No q_ds_slot / q_us_slot attrs, and derivation from an "
+                   "embedded full-chip cal failed (missing cal image, missing "
+                   "kinetics_info, or cal is itself kinetics-shaped).")
+            print(f"[import_slots] no attrs and no derivation possible in {base}")
+            QtWidgets.QMessageBox.warning(self.widget, "Import slots", msg)
+            return
+        # Report what the config now uses (derived-from-cal wins over override).
+        effective_ds = cfg._q_side('ds')
+        effective_us = cfg._q_side('us')
+        source_ds = ("cross-mode cal" if cfg.cross_mode_cal_info('ds') is not None
+                     else "imported override")
+        source_us = ("cross-mode cal" if cfg.cross_mode_cal_info('us') is not None
+                     else "imported override")
+        source_label = {'attrs': 'saved attrs',
+                        'derived': 'derived from embedded cal',
+                        'none': 'none'}.get(source, source)
+        print(f"[import_slots] imported: q_ds={q_ds}, q_us={q_us} (source: {source})")
+        print(f"[import_slots] effective: q_ds={effective_ds} ({source_ds}), "
+              f"q_us={effective_us} ({source_us})")
+        msg = (f"Imported from {base} ({source_label}):\n"
+               f"  q_ds = {q_ds}\n  q_us = {q_us}\n\n"
+               f"Effective now:\n"
+               f"  q_ds = {effective_ds}  (from {source_ds})\n"
+               f"  q_us = {effective_us}  (from {source_us})")
+        QtWidgets.QMessageBox.information(self.widget, "Import slots", msg)
+        # Sync alignment now depends on new q values; re-render history plot.
+        self.redraw_time_lapse()
 
     def save_data_btn_clicked(self, filename=None):
         if filename is None or filename is False:
@@ -910,16 +950,14 @@ class TemperatureController(QtCore.QObject):
         folder = os.path.split(filename)[0]
         self._settings_files_list = []
         self._settings_file_names_list = []
-        try:
-            files = os.listdir(folder)
-            files = natsorted(files)
-            for file in files:
-                if file.endswith('.trs') and not file.startswith('.'):
-                    self._settings_files_list.append(file)
-                    name_for_list = os.path.splitext(file)[0]
-                    self._settings_file_names_list.append(name_for_list)
-        except:
-            pass
+        # DEBUG: try/except removed so failures raise with full traceback.
+        files = os.listdir(folder)
+        files = natsorted(files)
+        for file in files:
+            if file.endswith('.trs') and not file.startswith('.'):
+                self._settings_files_list.append(file)
+                name_for_list = os.path.splitext(file)[0]
+                self._settings_file_names_list.append(name_for_list)
         if not len(self._settings_files_list):
             self._settings_files_list.append(filename)
             name_for_list = os.path.splitext(os.path.basename(filename))[0]
@@ -1017,10 +1055,15 @@ class TemperatureController(QtCore.QObject):
         # Kinetics badge + strip-counter relabel, driven by the config's
         # auto-detected kinetics state (set in _sync_kinetics_from_file on
         # load, or restored from .trs attrs on workspace open).
-        self.widget.set_kinetics_badge(
-            getattr(self.model.current_configuration, 'kinetics_mode', 'off'),
-            getattr(self.model.current_configuration, 'kinetics_info', {}),
-        )
+        cfg = self.model.current_configuration
+        kmode = getattr(cfg, 'kinetics_mode', 'off')
+        kinfo = getattr(cfg, 'kinetics_info', {})
+        self.widget.set_kinetics_badge(kmode, kinfo)
+        # Refresh the consolidated Kinetics panel (visibility + info).
+        # DEBUG: try/except removed so failures raise with full traceback.
+        q_ds = cfg._q_side('ds')
+        q_us = cfg._q_side('us')
+        self.widget.kinetics_gb.apply_kinetics_state(kmode, kinfo, q_ds, q_us)
         # Apply the (possibly config-switched) measurement mode so the UI matches.
         mode = getattr(self.model.current_configuration, 'mode', 'dual')
         self.widget.apply_measurement_mode(mode)
@@ -1131,36 +1174,63 @@ class TemperatureController(QtCore.QObject):
         cal_file = cfg.ds_calibration_img_file if side == 'ds' else cfg.us_calibration_img_file
         if cal_file is None or getattr(cal_file, 'img', None) is None:
             return False
-        try:
-            shape = cal_file.img.shape
-        except Exception:
-            return False
+        # DEBUG: try/except removed so failures raise with full traceback.
+        shape = cal_file.img.shape
         if len(shape) != 2:
             return False
         if cfg.data_img_file is None:
             return False
-        try:
-            data_dim = cfg.data_img_file.get_dimension()
-        except Exception:
-            return False
+        # DEBUG: try/except removed so failures raise with full traceback.
+        data_dim = cfg.data_img_file.get_dimension()
         cal_dim = (shape[1], shape[0])
         return cal_dim != data_dim
+
+    def _cal_mode_tag(self, cfg, side):
+        """Short suffix describing the cal readout mode + adaptation status,
+        appended to the cal filename label so the user can tell at a glance
+        whether a full-chip or kinetics-mode cal is loaded.
+
+        Returns '' if no cal is loaded; otherwise one of:
+          '(full-chip)'                — normal cal, no adaptation needed
+          '(full-chip, auto-adapted)'  — normal cal + kinetics data (cross-mode)
+          '(kinetics)'                 — kinetics-mode cal
+        """
+        cal_file = cfg.ds_calibration_img_file if side == 'ds' else cfg.us_calibration_img_file
+        if cal_file is None:
+            return ''
+        cal_mode = str(getattr(cal_file, 'readout_mode', '') or '').lower()
+        if cal_mode == 'kinetics':
+            return '(kinetics)'
+        # Fall back to inference for cals loaded from .trs (stub DataModel
+        # has no readout_mode): if cal shape matches the currently-loaded
+        # kinetics data shape, treat the cal as kinetics-mode.
+        if (cal_mode == '' and cfg.kinetics_mode == 'interleaved'
+                and cfg.data_img_file is not None):
+            cal_shape = cal_file.img.shape
+            data_dim = cfg.data_img_file.get_dimension()
+            if len(cal_shape) == 2 and (cal_shape[1], cal_shape[0]) == data_dim:
+                return '(kinetics)'
+        if self._is_cal_kinetics_adapted(cfg, side):
+            return '(full-chip, auto-adapted)'
+        return '(full-chip)'
 
     def ds_calculations_changed(self):
         self._refresh_configuration_buttons()
         self._push_ds_calibration_view()
-        curr_frame = self.model.current_configuration.current_frame
-        ds_fit_ok = True
-        if hasattr(self.model, 'ds_temperatures'):
-            ds_temperatures = self.model.current_configuration.ds_temperatures
-            if curr_frame>=0 and curr_frame<len(ds_temperatures):
-                ds_fit_ok = ds_temperatures[curr_frame] > 0
+        cfg = self.model.current_configuration
+        # Use displayed_frame('ds') — in sync-frame / lab-time modes with
+        # q_ds != q_us, cfg.current_frame is DS's frame; but if we ever
+        # displayed the wrong index for a side the fit-curve gate would
+        # disagree with the T-text. Route both through the same accessor.
+        f_ds = cfg.displayed_frame('ds')
+        ds_fit_ok = f_ds is not None and cfg.frame_is_displayable('ds', f_ds)
       
 
         if self.model.current_configuration.ds_calibration_filename is not None:
             label = str(os.path.basename(self.model.current_configuration.ds_calibration_filename))
-            if self._is_cal_kinetics_adapted(self.model.current_configuration, 'ds'):
-                label = f"{label} (auto-adapted)"
+            tag = self._cal_mode_tag(self.model.current_configuration, 'ds')
+            if tag:
+                label = f"{label} {tag}"
             self.widget.ds_calibration_filename_lbl.setText(label)
         else:
             self.widget.ds_calibration_filename_lbl.setText('Select File...')
@@ -1220,17 +1290,20 @@ class TemperatureController(QtCore.QObject):
         if self.model.current_configuration.mode == 'single':
             return
         self._push_us_calibration_view()
-        curr_frame = self.model.current_configuration.current_frame
-        us_fit_ok = True
-        if hasattr(self.model, 'us_temperatures'):
-            us_temperatures = self.model.current_configuration.us_temperatures
-            if curr_frame>=0 and curr_frame<len(us_temperatures):
-                us_fit_ok = us_temperatures[curr_frame] > 0
+        cfg = self.model.current_configuration
+        # displayed_frame('us') — in sync modes this is US's readout frame,
+        # NOT the DS frame that cfg.current_frame points at. Prior code
+        # indexed us_temperatures with current_frame, which was DS's index
+        # in sync mode and produced a fit-curve/T-text gate that disagreed
+        # with the actual US readout.
+        f_us = cfg.displayed_frame('us')
+        us_fit_ok = f_us is not None and cfg.frame_is_displayable('us', f_us)
  
         if self.model.current_configuration.us_calibration_filename is not None:
             label = str(os.path.basename(self.model.current_configuration.us_calibration_filename))
-            if self._is_cal_kinetics_adapted(self.model.current_configuration, 'us'):
-                label = f"{label} (auto-adapted)"
+            tag = self._cal_mode_tag(self.model.current_configuration, 'us')
+            if tag:
+                label = f"{label} {tag}"
             self.widget.us_calibration_filename_lbl.setText(label)
         else:
             self.widget.us_calibration_filename_lbl.setText('Select File...')
@@ -1540,17 +1613,14 @@ class TemperatureController(QtCore.QObject):
     def roi_mouse_moved(self, x, y):
         x = int(np.floor(x))
         y = int(np.floor(y))
-        try:
-            
-            if self.model.current_configuration.data_img is not None:
-                s = self.model.current_configuration.data_img.shape
-                if int(y)< s[0] and int(x)< s[1] and int(x) >= 0 and int(y) >= 0:
-                    self.widget.roi_widget.pos_lbl.setText("X: {:5.0f}  Y: {:5.0f}    Int: {:6.0f}    Wavelength: {:5.2f} nm".
-                                                    format(x, y,
-                                                            self.model.current_configuration.data_img[int(y), int(x)],
-                                                            self.model.current_configuration.data_img_file.x_calibration[int(x)]))
-        except (IndexError, TypeError):
-            pass
+        # DEBUG: try/except removed so failures raise with full traceback.
+        if self.model.current_configuration.data_img is not None:
+            s = self.model.current_configuration.data_img.shape
+            if int(y)< s[0] and int(x)< s[1] and int(x) >= 0 and int(y) >= 0:
+                self.widget.roi_widget.pos_lbl.setText("X: {:5.0f}  Y: {:5.0f}    Int: {:6.0f}    Wavelength: {:5.2f} nm".
+                                                format(x, y,
+                                                        self.model.current_configuration.data_img[int(y), int(x)],
+                                                        self.model.current_configuration.data_img_file.x_calibration[int(x)]))
 
     def save_settings(self, settings):
         settings : AppSettings
@@ -1561,19 +1631,16 @@ class TemperatureController(QtCore.QObject):
         for ind, conf in enumerate(self.model.configurations):
             if conf.setting_filename is None:
                 continue
-            try:
-                set_fname = os.path.split(conf.setting_filename)[-1]
-                name_for_list = os.path.splitext(set_fname)[0]
-                conf_dict = {
-                    "temperature settings directory": conf._setting_working_dir,
-                    "temperature settings file": name_for_list,
-                }
-                if conf.data_img_file:
-                    conf_dict["temperature data file"] = conf.data_img_file.filename
-                configs.append(conf_dict)
-            except Exception as exc:
-                print(f"[workspace save] configuration {ind + 1} skipped: "
-                      f"{type(exc).__name__}: {exc}")
+            # DEBUG: try/except removed so failures raise with full traceback.
+            set_fname = os.path.split(conf.setting_filename)[-1]
+            name_for_list = os.path.splitext(set_fname)[0]
+            conf_dict = {
+                "temperature settings directory": conf._setting_working_dir,
+                "temperature settings file": name_for_list,
+            }
+            if conf.data_img_file:
+                conf_dict["temperature data file"] = conf.data_img_file.filename
+            configs.append(conf_dict)
 
         config_txt = json.dumps(configs)
         
@@ -1626,14 +1693,9 @@ class TemperatureController(QtCore.QObject):
         conf_list = json.loads(settings.get("temperature configurations", "[]"))
         
         if len(conf_list):
-            # Per-config error isolation: one bad .trs (or a bug hit during its
-            # restore) shouldn't lose the rest of the workspace. Log and keep going.
+            # DEBUG: try/except removed so failures raise with full traceback.
             def _safe_restore(conf, ind):
-                try:
-                    self.load_conf_settings(conf)
-                except Exception as exc:
-                    print(f"[workspace restore] configuration {ind + 1} failed to load: "
-                          f"{type(exc).__name__}: {exc}")
+                self.load_conf_settings(conf)
 
             _safe_restore(conf_list[0], 0)
 
@@ -1707,10 +1769,8 @@ class TemperatureController(QtCore.QObject):
         
 
     def check_pv(self, pv_name):
-        try:
-            value = caget(pv_name, timeout=0.2)  # Short timeout for quick response
-        except:
-            value = None
+        # DEBUG: try/except removed so failures raise with full traceback.
+        value = caget(pv_name, timeout=0.2)  # Short timeout for quick response
         return value is not None
  
     def setup_epics_datalog_file_monitor(self):
