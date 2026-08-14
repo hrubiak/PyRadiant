@@ -139,17 +139,39 @@ class TemperatureModelConfiguration(QtCore.QObject):
 
         # Kinetics readout mode of the loaded data file. Diagnostic/UI-facing
         # in this pass; downstream extraction is unchanged (SpeFile._read_frame
-        # already invisibly reconstructs each strip as a full-sensor canvas).
-        #   'off'         : normal full-frame or unknown readout.
-        #   'interleaved' : PI-MAX4 kinetics with DS and US on the same sensor,
-        #                   temporally offset by row-shift time. Only a subset
-        #                   of strip indices have DS+US exposure overlap.
-        #   'true_single' : (future) single-side kinetics, no interleaving.
+        # already invisibly reconstructs each strip as a full-sensor canvas
+        # for interleaved; non-interleaved frames come back at (window_height,
+        # sensor_width) with no padding).
+        #   'off'                  : normal full-frame or unknown readout.
+        #   'kinetics-interleaved' : PI-MAX4 kinetics with DS and US on the same
+        #                            sensor, temporally offset by row-shift time.
+        #                            Only a subset of strip indices have DS+US
+        #                            exposure overlap.
+        #   'kinetics'             : single-sided kinetics. Covers two physical
+        #                            shapes handled by the same code path:
+        #                              (a) window_height == 1 — one row per
+        #                                  strip, no in-frame bg possible;
+        #                                  user picks 'prerecorded' or
+        #                                  'kinetics_trend' bg mode.
+        #                              (b) window_height  > 1 — a strip window
+        #                                  holds one side's signal ROI plus a
+        #                                  bg ROI on different rows; the
+        #                                  existing 'insitu' bg subtraction
+        #                                  (bg row-band from the same frame)
+        #                                  handles it with no special-case
+        #                                  code.
         # kinetics_info carries geometry (window_height, n_strips, sensor) now
         # and will be extended with timing fields (shift_time_per_row,
         # readout_edge, strip_timestamps) when time-unscrambling lands.
         self.kinetics_mode = 'off'
         self.kinetics_info = {}
+        # User-forced kinetics mode. When set (via set_kinetics_mode by a UI
+        # selector), _sync_kinetics_from_file uses this instead of the
+        # window_height heuristic. Persists in .trs so a session's user choice
+        # survives reload. None = use auto-detect. Ross: add a UI dropdown
+        # (Off / Kinetics / Kinetics-interleaved) that flips this override; the
+        # extraction/UI is already threaded through cfg.kinetics_mode.
+        self.kinetics_mode_override = None
 
         # Per-side mask-slot offsets (frame-slot units). When set, these take
         # precedence over the value derived from cross_mode_cal_info in
@@ -159,10 +181,11 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.q_ds_override = None
         self.q_us_override = None
 
-        # Shared-bg convention flag: when True and kinetics_mode=='interleaved',
-        # editing one side's bg-ROI mirrors to the other. Captured at .trs save
-        # time from the current DS_bg == US_bg equality and restored on load.
-        # False in non-kinetics or when the two bg-ROIs deliberately differ.
+        # Shared-bg convention flag: when True and kinetics_mode ==
+        # 'kinetics-interleaved', editing one side's bg-ROI mirrors to the
+        # other. Captured at .trs save time from the current DS_bg == US_bg
+        # equality and restored on load. False in non-kinetics or when the
+        # two bg-ROIs deliberately differ.
         self.bg_shared_ds_us = False
         # Re-entry guard for the DS/US bg mirror (see _maybe_mirror_bg).
         self._bg_mirror_active = False
@@ -350,25 +373,66 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def _sync_kinetics_from_file(self):
         """Update kinetics_mode/kinetics_info from the currently-loaded reader.
 
-        Downstream extraction is agnostic: SpeFile._read_frame already pastes
-        each kinetics strip onto a full-sensor canvas. This just surfaces the
-        readout mode + geometry for the UI (badge, strip-counter relabel) and
-        for future time-unscrambling work.
+        Downstream extraction is agnostic for both kinetics modes: frames
+        come back at (window_height, sensor_width). Only the interpretation
+        of the strip differs — interleaved packs DS+US bands into one frame;
+        non-interleaved contains a single side's strip per frame.
+
+        The SPE XML uses the same 'Kinetics' string for both. We heuristically
+        distinguish non-interleaved by window_height==1 (one physical row per
+        frame can only hold a single strip). Anything larger is treated as
+        interleaved to preserve behavior for existing PI-MAX4 files at HPCAT
+        (which use window_height ≈ 64 for DS+US on the same strip). This is a
+        heuristic; if users encounter tall non-interleaved windows they can
+        override via [future UI].
         """
         reader = self.data_img_file
         mode_str = str(getattr(reader, 'readout_mode', '') or '').lower()
         if reader is not None and mode_str == 'kinetics':
-            self.kinetics_mode = 'interleaved'
+            sensor_h = int(getattr(reader, 'sensor_height', 0) or 0)
+            sensor_w = int(getattr(reader, 'sensor_width', 0) or 0)
+            win_h = int(getattr(reader, 'kinetics_window_height', 0) or 0)
+            # User override wins over the heuristic; else fall back to a
+            # window_height==1 signal for non-interleaved (single strip row
+            # can only hold one side's signal).
+            if self.kinetics_mode_override in ('kinetics', 'kinetics-interleaved'):
+                self.kinetics_mode = self.kinetics_mode_override
+            elif win_h == 1:
+                self.kinetics_mode = 'kinetics'
+            else:
+                self.kinetics_mode = 'kinetics-interleaved'
             self.kinetics_info = {
-                'window_height': int(getattr(reader, 'kinetics_window_height', 0) or 0),
+                'window_height': win_h,
                 'n_strips': int(getattr(reader, 'num_frames', 0) or 0),
-                'sensor_height': int(getattr(reader, 'sensor_height', 0) or 0),
-                'sensor_width': int(getattr(reader, 'sensor_width', 0) or 0),
+                'sensor_height': sensor_h,
+                'sensor_width': sensor_w,
                 'window_y': int(getattr(reader, 'kinetics_window_y', 0) or 0),
             }
         else:
             self.kinetics_mode = 'off'
             self.kinetics_info = {}
+
+    def set_kinetics_mode(self, mode):
+        """User-forced kinetics mode. Overrides the auto-detect heuristic and
+        persists in .trs. Pass None to clear the override.
+
+        Valid values: None, 'kinetics', 'kinetics-interleaved'. 'off' cannot
+        be forced — a non-kinetics data file always resolves to 'off' regardless
+        of the override."""
+        if mode not in (None, 'kinetics', 'kinetics-interleaved'):
+            raise ValueError(
+                f"kinetics_mode override must be None | 'kinetics' | "
+                f"'kinetics-interleaved', got {mode!r}")
+        if mode == self.kinetics_mode_override:
+            return
+        self.kinetics_mode_override = mode
+        # Re-sync from the current file so kinetics_mode reflects the new
+        # override immediately. _sync_cross_mode_rois picks up the change.
+        if self.data_img_file is not None:
+            self._sync_kinetics_from_file()
+            self._sync_cross_mode_rois()
+        self.dirty = True
+        self.data_changed_emit(self.current_frame)
 
     def load_data_image(self, filename, area_detector=None):
         """Load a data file and run the full calculation pipeline.
@@ -989,6 +1053,10 @@ class TemperatureModelConfiguration(QtCore.QObject):
         # badge and strip-counter labelling even though the raw reader isn't
         # persisted with the file.
         f.attrs['kinetics_mode'] = self.kinetics_mode
+        # User-forced override (Ross's "user picks the mode" requirement).
+        # Absent when None so legacy readers don't stumble on the attr.
+        if self.kinetics_mode_override is not None:
+            f.attrs['kinetics_mode_override'] = self.kinetics_mode_override
         if self.kinetics_info:
             kg = f.create_group('kinetics_info')
             for k, v in self.kinetics_info.items():
@@ -1001,7 +1069,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
         # when neither cross-mode cal nor a prior override supplies q.
         # Also hoist sensor geometry as top-level attrs so future readers
         # can consume it without opening the kinetics_info subgroup.
-        if self.kinetics_mode == 'interleaved':
+        if self.kinetics_mode == 'kinetics-interleaved':
             def _slot_out(side):
                 q = self._q_side(side)
                 if q:
@@ -1263,8 +1331,17 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.us_dark_frame_img = None
             self.us_dark_frame_filename = None
             self.us_dark_frame_scale = 1.0
-        # Kinetics readout state (backward compat: absent → 'off', empty info).
+        # Kinetics readout state (backward compat: absent → 'off', empty info;
+        # legacy 'interleaved' string → 'kinetics-interleaved').
         self.kinetics_mode = str(f.attrs.get('kinetics_mode', 'off'))
+        if self.kinetics_mode == 'interleaved':
+            self.kinetics_mode = 'kinetics-interleaved'
+        # User-forced override (may be absent). Restored BEFORE the reader-sync
+        # below so it takes precedence over the heuristic.
+        if 'kinetics_mode_override' in f.attrs:
+            self.kinetics_mode_override = str(f.attrs['kinetics_mode_override'])
+        else:
+            self.kinetics_mode_override = None
         if 'kinetics_info' in f:
             self.kinetics_info = {k: (v.item() if hasattr(v, 'item') else v)
                                   for k, v in f['kinetics_info'].attrs.items()}
@@ -1615,8 +1692,12 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def cross_mode_cal_info(self, side):
         """If `side` ('ds' or 'us') is in cross-mode (full-chip 2D cal +
         kinetics data of different dim), return dict with cal image shape,
-        cal-dim signal ROI limits, and kinetics window params. Else None."""
-        if self.kinetics_mode != 'interleaved':
+        cal-dim signal ROI limits, and kinetics window params. Else None.
+
+        Applies to both 'kinetics-interleaved' and 'kinetics' (non-interleaved)
+        — in both cases the kinetics data lives on a smaller per-frame canvas
+        than a full-chip cal image, and the cal-dim ROI needs its own storage."""
+        if self.kinetics_mode not in ('kinetics-interleaved', 'kinetics'):
             return None
         if self.data_img_file is None:
             return None
@@ -1694,8 +1775,10 @@ class TemperatureModelConfiguration(QtCore.QObject):
         modular geometry of PI-MAX4 kinetics readout: charge shifts up by
         h = window_height rows per frame, so a DS/US band at physical cal
         row Y appears at row ((Y - win_y) mod h) of every kinetics frame.
-        Idempotent."""
-        if self.kinetics_mode != 'interleaved':
+        Idempotent. Applies to both interleaved and non-interleaved kinetics
+        (for non-interleaved with h=1 the modular result collapses to 0,
+        which is the sole strip row — still correct)."""
+        if self.kinetics_mode not in ('kinetics-interleaved', 'kinetics'):
             return
         if self.data_img_file is None:
             return
@@ -1746,7 +1829,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
 
         Background ROIs (idx 2, 3) are not mirrored — dark regions are
         chosen independently for each readout mode."""
-        if self.kinetics_mode != 'interleaved':
+        if self.kinetics_mode not in ('kinetics-interleaved', 'kinetics'):
             return
         if idx not in (0, 1):
             return
@@ -2162,8 +2245,9 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def _signal_roi_fullchip_y(self, side):
         """(y_min_fullchip, y_max_fullchip) for the given side's signal ROI,
         or None if geometry is unavailable. For full-chip data the current
-        ROI y values are already full-chip. For kinetics-interleaved data,
-        add window_y to project the strip-relative y onto the physical chip."""
+        ROI y values are already full-chip. For kinetics data (interleaved
+        or non-interleaved), add window_y to project the strip-relative y
+        onto the physical chip."""
         try:
             roi = self.ds_roi if side == 'ds' else self.us_roi
         except Exception:
@@ -2172,7 +2256,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
             return None
         y_min = int(roi.y_min)
         y_max = int(roi.y_max)
-        if self.kinetics_mode == 'interleaved':
+        if self.kinetics_mode in ('kinetics-interleaved', 'kinetics'):
             win_y = int((self.kinetics_info or {}).get('window_y', 0) or 0)
             return win_y + y_min, win_y + y_max
         return y_min, y_max
@@ -2180,9 +2264,10 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def _slot_from_current(self, side):
         """Slot index q for `side` computed from the current signal ROI +
         kinetics_info. Deterministic; independent of q_*_override and
-        cross_mode_cal_info. Returns None when data is non-kinetics or
-        window_height is 0."""
-        if self.kinetics_mode != 'interleaved':
+        cross_mode_cal_info. Returns None when data isn't interleaved
+        kinetics or window_height is 0. Non-interleaved kinetics has no
+        slot concept — every frame is the same strip, just in time."""
+        if self.kinetics_mode != 'kinetics-interleaved':
             return None
         h = int((self.kinetics_info or {}).get('window_height', 0) or 0)
         if h <= 0:
@@ -2196,12 +2281,13 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def _maybe_mirror_bg(self, from_side, limits):
         """When bg_shared_ds_us is True and we're in kinetics-interleaved
         mode, mirror the just-set bg-ROI to the other side. Re-entry
-        guarded so the reciprocal setter call doesn't recurse."""
+        guarded so the reciprocal setter call doesn't recurse. Not applied
+        for single-sided 'kinetics' — there's no other side to mirror to."""
         if self._bg_mirror_active:
             return
         if not self.bg_shared_ds_us:
             return
-        if self.kinetics_mode != 'interleaved':
+        if self.kinetics_mode != 'kinetics-interleaved':
             return
         self._bg_mirror_active = True
         try:

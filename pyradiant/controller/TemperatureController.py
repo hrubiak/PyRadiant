@@ -261,6 +261,8 @@ class TemperatureController(QtCore.QObject):
         self.connect_click_function(self.widget.load_setting_btn, self.load_setting_file)
         self.connect_click_function(self.widget.save_setting_btn, self.save_setting_file)
         self.connect_click_function(self.widget.import_slots_btn, self.import_slots_from_trs)
+        self.widget.kinetics_gb.mode_combo.currentIndexChanged.connect(
+            self._kinetics_mode_combo_changed)
         self.widget.settings_cb.currentIndexChanged.connect(self.settings_cb_changed)
         self.widget.setup_epics_pb.clicked.connect(self.setup_epics_pb_clicked)
 
@@ -771,9 +773,9 @@ class TemperatureController(QtCore.QObject):
             return
         cfg.set_mode(mode)
         self.widget.apply_measurement_mode(mode)
-        # Give the time-lapse tab in DataHistoryWidget a chance to blank the us curve.
-        if hasattr(self.data_history_widget, 'temperatures_plot_widget'):
-            self.data_history_widget.temperatures_plot_widget.set_mode(mode)
+        # Blank the us curve on both history tabs (Latest + Total).
+        if hasattr(self.data_history_widget, 'set_mode'):
+            self.data_history_widget.set_mode(mode)
 
     def us_calibration_frame_range_callback(self, *args):
         us_start_frame = int(self.widget.us_calibration_start_frame.text())
@@ -1102,12 +1104,13 @@ class TemperatureController(QtCore.QObject):
         # DEBUG: try/except removed so failures raise with full traceback.
         q_ds = cfg._q_side('ds')
         q_us = cfg._q_side('us')
-        self.widget.kinetics_gb.apply_kinetics_state(kmode, kinfo, q_ds, q_us)
+        koverride = getattr(cfg, 'kinetics_mode_override', None)
+        self.widget.kinetics_gb.apply_kinetics_state(kmode, kinfo, q_ds, q_us, koverride)
         # Apply the (possibly config-switched) measurement mode so the UI matches.
         mode = getattr(self.model.current_configuration, 'mode', 'dual')
         self.widget.apply_measurement_mode(mode)
-        if hasattr(self.data_history_widget, 'temperatures_plot_widget'):
-            self.data_history_widget.temperatures_plot_widget.set_mode(mode)
+        if hasattr(self.data_history_widget, 'set_mode'):
+            self.data_history_widget.set_mode(mode)
 
         self.ds_calculations_changed()
         self.us_calculations_changed()
@@ -1209,8 +1212,9 @@ class TemperatureController(QtCore.QObject):
 
     def _is_cal_kinetics_adapted(self, cfg, side):
         """True when the cal image is a full-chip 2D frame and data is a
-        kinetics readout window — i.e. cross-mode ROI mirroring is in play."""
-        if getattr(cfg, 'kinetics_mode', 'off') != 'interleaved':
+        kinetics readout window — i.e. cross-mode ROI mirroring is in play.
+        Applies to both interleaved and non-interleaved kinetics."""
+        if getattr(cfg, 'kinetics_mode', 'off') not in ('kinetics-interleaved', 'kinetics'):
             return False
         cal_file = cfg.ds_calibration_img_file if side == 'ds' else cfg.us_calibration_img_file
         if cal_file is None or getattr(cal_file, 'img', None) is None:
@@ -1245,7 +1249,7 @@ class TemperatureController(QtCore.QObject):
         # Fall back to inference for cals loaded from .trs (stub DataModel
         # has no readout_mode): if cal shape matches the currently-loaded
         # kinetics data shape, treat the cal as kinetics-mode.
-        if (cal_mode == '' and cfg.kinetics_mode == 'interleaved'
+        if (cal_mode == '' and cfg.kinetics_mode in ('kinetics-interleaved', 'kinetics')
                 and cfg.data_img_file is not None):
             cal_shape = cal_file.img.shape
             data_dim = cfg.data_img_file.get_dimension()
@@ -1396,6 +1400,21 @@ class TemperatureController(QtCore.QObject):
                 if us_temp_pv is not None and not us_temp_pv =='' and not us_temp_pv == 'None':
                     caput(us_temp_pv, self.model.current_configuration.us_temperature)
                 
+
+    def _kinetics_mode_combo_changed(self, idx):
+        """User picked a new kinetics mode from the KineticsGB combo.
+        Index 0 clears the override (Auto); 1/2 force the mode. The model
+        setter re-runs _sync_kinetics_from_file and emits data_changed_signal,
+        which repopulates the combo — safely no-op via blockSignals in
+        KineticsGB.apply_kinetics_state."""
+        cfg = self.model.current_configuration
+        if cfg is None:
+            return
+        items = self.widget.kinetics_gb.MODE_COMBO_ITEMS
+        if not (0 <= idx < len(items)):
+            return
+        _, override = items[idx]
+        cfg.set_kinetics_mode(override)
 
     def lab_time_btn_toggled(self, checked):
         prev = self._history_x_mode
@@ -1602,13 +1621,18 @@ class TemperatureController(QtCore.QObject):
         configuration. Drives visibility of the read-only 'ROI (kinetics
         strip)' panel and full-chip vs strip-Y display in the main panel
         (signal projected via window_y; bg from cal-dim cross-mode info
-        when available, else disabled with 'N/A')."""
+        when available, else disabled with 'N/A').
+
+        The strip panel is only shown for interleaved kinetics, where a
+        strip↔full-chip Y projection is needed. Non-interleaved 'kinetics'
+        has one strip per frame — the main panel shows raw frame Y, which
+        equals the physical chip row when window_y=0."""
         cfg = self.model.current_configuration
         rw = self.widget.roi_widget
         if cfg is None:
             rw.set_kinetics_context(False, 0, 0, None, None)
             return
-        active = (cfg.kinetics_mode == 'interleaved')
+        active = (cfg.kinetics_mode == 'kinetics-interleaved')
         ki = cfg.kinetics_info or {}
         win_y = int(ki.get('window_y', 0) or 0)
         win_h = int(ki.get('window_height', 0) or 0)

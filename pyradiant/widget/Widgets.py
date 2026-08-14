@@ -170,17 +170,18 @@ class FileGroupBox(QtWidgets.QGroupBox):
     def set_kinetics_badge(self, mode, info):
         """Show/hide the kinetics badge and toggle the frame counter label.
 
-        mode: 'off' | 'interleaved' | 'true_single'
+        mode: 'off' | 'kinetics-interleaved' | 'kinetics'
         info: dict with 'n_strips', 'window_height' (used for interleaved text)
         """
-        if mode == 'interleaved':
+        if mode == 'kinetics-interleaved':
             n = info.get('n_strips', '?') if info else '?'
             h = info.get('window_height', '?') if info else '?'
             self.kinetics_badge.setText(f"KINETICS {n}x{h}")
             self.kinetics_badge.show()
             self.frame_lbl.setText('Strip:')
-        elif mode == 'true_single':
-            self.kinetics_badge.setText("KINETICS (single)")
+        elif mode == 'kinetics':
+            n = info.get('n_strips', '?') if info else '?'
+            self.kinetics_badge.setText(f"KINETICS {n} (single)")
             self.kinetics_badge.show()
             self.frame_lbl.setText('Strip:')
         else:

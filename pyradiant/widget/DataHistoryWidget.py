@@ -110,14 +110,24 @@ class historyPlotWidget(pg.GraphicsLayoutWidget):
         self._time_lapse_plot.addItem(self._time_lapse_us_data_item)
         self._time_lapse_plot.addItem(self.cursor_item)
 
+    # Current measurement mode ('dual' | 'single'). Callers push new data
+    # via plot_us_time_lapse / update_time_lapse_us_temperature_txt without
+    # knowing the mode; we short-circuit US updates here when the config is
+    # single-sided so the trace stays blank regardless of how many refresh
+    # paths (DataLog, load, calc-changed) re-invoke us.
+    _mode = 'dual'
+
     def plot_ds_time_lapse(self, x, y):
         if len(x) > 0 and not np.all(np.isnan(y)):
-            
+
             self._time_lapse_ds_data_item.setData(x, y)
         else:
             self._time_lapse_ds_data_item.setData([], [])
 
     def plot_us_time_lapse(self, x, y):
+        if self._mode == 'single':
+            self._time_lapse_us_data_item.setData([], [])
+            return
         if len(x) > 0 and not np.all(np.isnan(y)):
             self._time_lapse_us_data_item.setData(x, y)
         else:
@@ -130,13 +140,19 @@ class historyPlotWidget(pg.GraphicsLayoutWidget):
                                                     justify='left')
 
     def update_time_lapse_us_temperature_txt(self, txt):
+        if self._mode == 'single':
+            self._time_lapse_us_temperature_txt.setText('', size='16pt')
+            return
         self._time_lapse_us_temperature_txt.setText(txt,
                                                     size='16pt',
                                                     color=colors['upstream'],
                                                     justify='right')
 
     def set_mode(self, mode):
-        """Clear the us time-lapse curve/label in single-sided mode."""
+        """Store mode and clear the us time-lapse curve/label in single-sided
+        mode. Subsequent plot_us_time_lapse / update_time_lapse_us_temperature_txt
+        calls check self._mode and stay blank until dual mode is restored."""
+        self._mode = mode
         if mode == 'single':
             self._time_lapse_us_data_item.setData([], [])
             self._time_lapse_us_temperature_txt.setText('', size='16pt')
@@ -178,6 +194,12 @@ class dataHistoryWidget(QtWidgets.QWidget):
         self.plot_tab_widget.addTab(self.temperatures_plot_widget,'Latest')
         self.plot_tab_widget.addTab(self.static_temperature_plot_widget, 'Total')
         self._layout.addWidget(self.plot_tab_widget)
+
+    def set_mode(self, mode):
+        """Propagate the measurement mode to both history tabs. In 'single'
+        the us trace stays blank on Latest and Total."""
+        self.temperatures_plot_widget.set_mode(mode)
+        self.static_temperature_plot_widget.set_mode(mode)
 
 
 

@@ -645,12 +645,41 @@ class SettingsGroupBox(QtWidgets.QGroupBox):
 class KineticsGB(QtWidgets.QGroupBox):
     """All kinetics-mode controls in one place.
 
-    Hidden when kinetics_mode == 'off'. Shown for 'interleaved' and
-    'true_single'.
+    Hidden when kinetics_mode == 'off'. Shown for 'kinetics-interleaved'
+    and 'kinetics' (single-sided non-interleaved).
     """
+    # Combo item order — keep in sync with the mode <-> override map in
+    # apply_kinetics_state / the controller wire-up. Index 0 = Auto (no
+    # override); indices 1/2 force the mode.
+    MODE_COMBO_ITEMS = (
+        ('Auto (from file)', None),
+        ('Kinetics (single-sided)', 'kinetics'),
+        ('Kinetics-interleaved', 'kinetics-interleaved'),
+    )
+
     def __init__(self):
         super().__init__('Kinetics')
         self._layout = QtWidgets.QVBoxLayout()
+
+        # Row 0 — mode selector. Overrides the file-based auto-detect.
+        mode_row = QtWidgets.QHBoxLayout()
+        mode_row.setContentsMargins(0, 0, 0, 0)
+        mode_row.setSpacing(6)
+        mode_row.addWidget(QtWidgets.QLabel('Mode:'))
+        self.mode_combo = QtWidgets.QComboBox()
+        for label, _ in self.MODE_COMBO_ITEMS:
+            self.mode_combo.addItem(label)
+        self.mode_combo.setToolTip(
+            'Kinetics readout interpretation.\n'
+            '  Auto              — window_height==1 → single-sided;\n'
+            '                      window_height >1 → interleaved (heuristic).\n'
+            '  Single-sided      — one side per strip. Covers both narrow\n'
+            '                      (1-row) and windowed (multi-row with\n'
+            '                      signal + bg on same strip) acquisitions.\n'
+            '  Interleaved       — DS and US bands on the same strip.\n'
+            'The choice persists in .trs.')
+        mode_row.addWidget(self.mode_combo, 1)
+        self._layout.addLayout(mode_row)
 
         # Row 1 — history-plot axis-alignment toggles.
         self._toggles = QtWidgets.QHBoxLayout()
@@ -712,19 +741,31 @@ class KineticsGB(QtWidgets.QGroupBox):
         self.setMaximumWidth(300)
         self.hide()
 
-    def apply_kinetics_state(self, mode, info, q_ds, q_us):
+    def apply_kinetics_state(self, mode, info, q_ds, q_us, override=None):
         """Refresh visibility and info labels from the current config state.
 
-        `mode` is the config's kinetics_mode ('off' | 'interleaved' |
-        'true_single'). `info` is the kinetics_info dict. `q_ds` / `q_us`
+        `mode` is the config's kinetics_mode ('off' | 'kinetics-interleaved'
+        | 'kinetics'). `info` is the kinetics_info dict. `q_ds` / `q_us`
         are the effective per-side slot offsets, or None if unavailable.
+        `override` is cfg.kinetics_mode_override (None / 'kinetics' /
+        'kinetics-interleaved') — drives the mode-combo selection.
         """
-        if mode not in ('interleaved', 'true_single'):
+        if mode not in ('kinetics-interleaved', 'kinetics'):
             self.hide()
             return
         self.show()
+        # Sync combo to the current override without re-triggering the wire.
+        target_idx = 0
+        for i, (_, val) in enumerate(self.MODE_COMBO_ITEMS):
+            if val == override:
+                target_idx = i
+                break
+        if self.mode_combo.currentIndex() != target_idx:
+            self.mode_combo.blockSignals(True)
+            self.mode_combo.setCurrentIndex(target_idx)
+            self.mode_combo.blockSignals(False)
         self.mode_lbl.setText(
-            'interleaved' if mode == 'interleaved' else 'single strip')
+            'interleaved' if mode == 'kinetics-interleaved' else 'single strip')
         n = info.get('n_strips', '?') if info else '?'
         h = info.get('window_height', '?') if info else '?'
         self.geom_lbl.setText(f'{n} strips × {h} rows')

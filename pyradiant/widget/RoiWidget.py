@@ -445,10 +445,13 @@ class RoiWidget(QtWidgets.QWidget):
                              ds_cross_bg, us_cross_bg):
         """Set the kinetics-projection context for the ROI panels.
 
-        active: True when kinetics data is loaded (`kinetics_mode ==
-            'interleaved'`). Toggles visibility of the read-only
-            kinetics-strip panel; switches main-panel signal display
-            from strip-Y to full-chip Y.
+        active: True only for `kinetics_mode == 'kinetics-interleaved'`
+            (interleaved kinetics needs the strip↔full-chip projection).
+            For non-interleaved 'kinetics' the controller passes False
+            here: the strip panel stays hidden and the main panel shows
+            raw frame Y (which equals physical chip row when window_y=0).
+            Toggles visibility of the read-only kinetics-strip panel;
+            switches main-panel signal display from strip-Y to full-chip Y.
         window_y, window_height: kinetics_info fields; used for the
             strip ↔ full-chip projection.
         ds_cross_bg, us_cross_bg: cal-dim bg limits when the side is in
