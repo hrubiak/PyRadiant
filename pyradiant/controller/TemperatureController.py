@@ -275,6 +275,14 @@ class TemperatureController(QtCore.QObject):
         self.widget.roi_widget.wl_range_changed.connect(self.widget_wl_range_changed_callback)
         self.widget.roi_widget.cal_signal_roi_changed.connect(
             self.cal_signal_roi_dragged)
+        self.widget.roi_widget.cal_bg_roi_changed.connect(
+            self.cal_bg_roi_dragged)
+        # Main-panel BG edits in cross-mode are cal-dim edits (the main
+        # panel shows cal-dim bg when a full-chip cal is present with
+        # kinetics data). Route them to the same cal-dim setter used by
+        # the cal-viewer drag handler.
+        self.widget.roi_widget.main_bg_edit.connect(
+            self.cal_bg_roi_dragged)
 
         # mouse moved signals
         self.widget.temperature_spectrum_widget.mouse_moved.connect(self.graph_mouse_moved)
@@ -891,6 +899,7 @@ class TemperatureController(QtCore.QObject):
             # load_setting mutates cfg.background_mode but does not touch widgets;
             # without this the combo can lag the actual model state.
             self._sync_background_widgets()
+            self._refresh_roi_panels()
             # Re-fit multi-frame data. New ROIs / cal / bg mode invalidate the
             # cached ds_temperatures / us_temperatures, so history plots would
             # otherwise show stale numbers until the user reloads the .spe by
@@ -1021,6 +1030,7 @@ class TemperatureController(QtCore.QObject):
             if hasattr(self.model.current_configuration.data_img_file,'raw_ccd'):
                 self.widget.roi_widget.plot_raw_ccd(self.model.current_configuration.data_img_file.raw_ccd)
         self._refresh_bg_stack()
+        self._refresh_roi_panels()
         if self.model.current_configuration.x_calibration is not None and self.model.current_configuration.data_img is not None:
             wl_calibration = self.model.current_configuration.x_calibration
             #x_dim = self.model.current_configuration.data_img.shape[1]
@@ -1170,6 +1180,7 @@ class TemperatureController(QtCore.QObject):
         # have flipped; re-sync cal viewer geometry + ROI overlay.
         if img_changed:
             self._refresh_cross_mode_cal_viewers()
+            self._refresh_roi_panels()
 
     def _push_us_calibration_view(self):
         cfg = self.model.current_configuration
@@ -1187,6 +1198,7 @@ class TemperatureController(QtCore.QObject):
         self.widget.roi_widget.plot_us_calibration_spectrum(cal_x, cal_y)
         if img_changed:
             self._refresh_cross_mode_cal_viewers()
+            self._refresh_roi_panels()
 
     def set_frame_text(self, txt):
         self.widget.frame_num_txt.blockSignals(True)
@@ -1583,6 +1595,28 @@ class TemperatureController(QtCore.QObject):
             self._refresh_cross_mode_cal_viewers()
             # bg-ROI move changes the diagnostic BG Trend view (crop shifts).
             self._refresh_bg_stack()
+            self._refresh_roi_panels()
+
+    def _refresh_roi_panels(self):
+        """Sync the ROI widget's kinetics-projection context to the current
+        configuration. Drives visibility of the read-only 'ROI (kinetics
+        strip)' panel and full-chip vs strip-Y display in the main panel
+        (signal projected via window_y; bg from cal-dim cross-mode info
+        when available, else disabled with 'N/A')."""
+        cfg = self.model.current_configuration
+        rw = self.widget.roi_widget
+        if cfg is None:
+            rw.set_kinetics_context(False, 0, 0, None, None)
+            return
+        active = (cfg.kinetics_mode == 'interleaved')
+        ki = cfg.kinetics_info or {}
+        win_y = int(ki.get('window_y', 0) or 0)
+        win_h = int(ki.get('window_height', 0) or 0)
+        ds_cross = cfg.cross_mode_cal_info('ds')
+        us_cross = cfg.cross_mode_cal_info('us')
+        ds_bg = ds_cross['bg_roi_limits'] if ds_cross else None
+        us_bg = us_cross['bg_roi_limits'] if us_cross else None
+        rw.set_kinetics_context(active, win_y, win_h, ds_bg, us_bg)
 
     def _refresh_bg_stack(self):
         """Rebuild the 'BG Trend' diagnostic image (vstacked bg-ROI slices).
@@ -1620,11 +1654,14 @@ class TemperatureController(QtCore.QObject):
                 self.widget.roi_widget.set_cross_mode_cal(
                     side, info['cal_shape'],
                     info['signal_roi_limits'],
-                    (x, 0, w, cal_h))
+                    (x, 0, w, cal_h),
+                    bg_roi_limits=info['bg_roi_limits'])
             else:
                 signal_idx = 0 if side == 'ds' else 1
+                bg_idx = 2 if side == 'ds' else 3
                 self.widget.roi_widget.clear_cross_mode_cal(
-                    side, shared_rect, rois[signal_idx])
+                    side, shared_rect, rois[signal_idx],
+                    shared_bg_roi=rois[bg_idx])
 
     def cal_signal_roi_dragged(self, side, cal_dim_limits):
         """User dragged the signal ROI on a cal 2D viewer while that side
@@ -1641,6 +1678,17 @@ class TemperatureController(QtCore.QObject):
         rois = cfg.get_roi_data_list()
         cfg.set_rois(rois)
         self.widget.roi_widget.set_rois(rois)
+
+    def cal_bg_roi_dragged(self, side, cal_dim_limits):
+        """User dragged the bg ROI on a cal 2D viewer in cross-mode. The
+        cal-dim bg is the bg that applies to the full-chip cal image
+        itself and is stored independently of the kinetics-data bg (no
+        physical projection between the two — see _sync_cross_mode_rois).
+        Update cal-dim only; leave data-dim bg alone."""
+        cfg = self.model.current_configuration
+        if cfg is None:
+            return
+        cfg.set_cal_dim_bg_roi(side, cal_dim_limits)
 
 
     def widget_wl_range_changed_callback(self, wl_range):

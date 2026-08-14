@@ -159,6 +159,14 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.q_ds_override = None
         self.q_us_override = None
 
+        # Shared-bg convention flag: when True and kinetics_mode=='interleaved',
+        # editing one side's bg-ROI mirrors to the other. Captured at .trs save
+        # time from the current DS_bg == US_bg equality and restored on load.
+        # False in non-kinetics or when the two bg-ROIs deliberately differ.
+        self.bg_shared_ds_us = False
+        # Re-entry guard for the DS/US bg mirror (see _maybe_mirror_bg).
+        self._bg_mirror_active = False
+
         # True when this configuration has unsaved changes (data/calibration/ROI/etc.
         # loaded or modified since the last save_setting or load_setting call).
         # Consumed at app-close to prompt for saving.
@@ -986,14 +994,41 @@ class TemperatureModelConfiguration(QtCore.QObject):
             for k, v in self.kinetics_info.items():
                 kg.attrs[k] = v
 
-        # Persist DS/US mask-slot offsets so a later kinetics-only session
-        # can import them for sync-frame / lab-time alignment when its own
-        # cal can't supply them (see import_slots_from_trs).
-        q_ds = self._q_side('ds')
-        q_us = self._q_side('us')
-        if q_ds or q_us or self.q_ds_override is not None or self.q_us_override is not None:
-            f.attrs['q_ds_slot'] = int(q_ds)
-            f.attrs['q_us_slot'] = int(q_us)
+        # Persist DS/US mask-slot offsets so a later session can restore
+        # sync-frame / lab-time alignment without needing a companion
+        # full-chip cal. Deterministic in kinetics mode: fall back to a
+        # value computed directly from the current signal ROI + window_y
+        # when neither cross-mode cal nor a prior override supplies q.
+        # Also hoist sensor geometry as top-level attrs so future readers
+        # can consume it without opening the kinetics_info subgroup.
+        if self.kinetics_mode == 'interleaved':
+            def _slot_out(side):
+                q = self._q_side(side)
+                if q:
+                    return int(q)
+                override = self.q_ds_override if side == 'ds' else self.q_us_override
+                if override is not None:
+                    return int(override)
+                sc = self._slot_from_current(side)
+                if sc is not None:
+                    return int(sc)
+                return 0
+            f.attrs['q_ds_slot'] = _slot_out('ds')
+            f.attrs['q_us_slot'] = _slot_out('us')
+            ki = self.kinetics_info or {}
+            sw = int(ki.get('sensor_width', 0) or 0)
+            sh = int(ki.get('sensor_height', 0) or 0)
+            if sw:
+                f.attrs['sensor_width'] = sw
+            if sh:
+                f.attrs['sensor_height'] = sh
+            # Shared-bg convention: True when DS_bg and US_bg limits match at
+            # save time. Consumers restore mirror behavior on load.
+            try:
+                shared = (self.ds_roi_bg.as_list() == self.us_roi_bg.as_list())
+            except Exception:
+                shared = False
+            f.attrs['bg_shared_ds_us'] = bool(shared)
 
         # Prerecorded dark frames per side (only stored when present). The
         # image is embedded in the .trs so the config is self-contained even
@@ -1119,6 +1154,13 @@ class TemperatureModelConfiguration(QtCore.QObject):
         if q is None:
             return roi_saved, bg_saved
         key_h = int(key_dim[1])
+        # Recovery only makes sense when the key is a FULL-CHIP cal image.
+        # If key_h == h (kinetics-strip key, e.g. kinetics-mode cal), the
+        # saved ROIs are already correctly in strip coords and must NOT
+        # be shifted — doing so would project them into full-chip Y and
+        # then clamp to key_h-1, collapsing the ROI.
+        if key_h <= h:
+            return roi_saved, bg_saved
         y_min = int(roi_saved[2]); y_max = int(roi_saved[3])
         by_min = int(bg_saved[2]); by_max = int(bg_saved[3])
         # Heuristic: cal image is much taller than the loaded ROI (typical
@@ -1232,6 +1274,10 @@ class TemperatureModelConfiguration(QtCore.QObject):
         # → clear so we don't inherit stale values from a prior session.
         self.q_ds_override = int(f.attrs['q_ds_slot']) if 'q_ds_slot' in f.attrs else None
         self.q_us_override = int(f.attrs['q_us_slot']) if 'q_us_slot' in f.attrs else None
+        # Shared-bg convention. Default False for legacy .trs — preserves
+        # pre-change behavior. Newer saves capture the DS_bg == US_bg
+        # equality explicitly so the mirror can be reinstated on load.
+        self.bg_shared_ds_us = bool(f.attrs.get('bg_shared_ds_us', False))
         ds_group = f['downstream_calibration']
         # DS intensity calibration image (optional — single-sided/no-cal configs skip)
         if 'image' in ds_group:
@@ -1589,13 +1635,18 @@ class TemperatureModelConfiguration(QtCore.QObject):
         if cal_dim == data_dim:
             return None
         idx = 0 if side == 'ds' else 1
+        bg_idx = 2 if side == 'ds' else 3
         cal_roi = self.roi_data_manager.get_roi(idx, cal_dim)
+        cal_bg = self.roi_data_manager.get_roi(bg_idx, cal_dim)
         return {
             'cal_shape': cal_shape,
             'cal_dim': cal_dim,
             'signal_idx': idx,
             'signal_roi_limits': [int(cal_roi.x_min), int(cal_roi.x_max),
                                   int(cal_roi.y_min), int(cal_roi.y_max)],
+            'bg_idx': bg_idx,
+            'bg_roi_limits': [int(cal_bg.x_min), int(cal_bg.x_max),
+                              int(cal_bg.y_min), int(cal_bg.y_max)],
             'win_y': int(self.kinetics_info.get('window_y', 0) or 0),
             'window_height': int(self.kinetics_info.get('window_height', 0) or 0),
         }
@@ -1618,6 +1669,25 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.roi_data_manager.set_roi(idx, cal_dim,
                                       [x_min, x_max, y_min, y_max])
         self._sync_cross_mode_rois()
+
+    def set_cal_dim_bg_roi(self, side, limits):
+        """Set the cal-dim bg ROI (idx 2 for DS, 3 for US) from a cal-viewer
+        drag. Only meaningful in cross-mode: the cal-dim bg is what applies
+        to the full-chip cal image itself, and stays decoupled from the
+        kinetics-data bg (which is per-strip and has its own extractor)."""
+        info = self.cross_mode_cal_info(side)
+        if info is None:
+            return
+        cal_dim = info['cal_dim']
+        bg_idx = info['bg_idx']
+        x_min, x_max, y_min, y_max = (int(v) for v in limits)
+        cal_h = info['cal_shape'][0]
+        y_min = max(0, min(cal_h - 1, y_min))
+        y_max = max(0, min(cal_h - 1, y_max))
+        if y_min > y_max:
+            return
+        self.roi_data_manager.set_roi(bg_idx, cal_dim,
+                                      [x_min, x_max, y_min, y_max])
 
     def _sync_cross_mode_rois(self):
         """Derive kinetics-dim ROIs from full-chip cal-dim ROIs using the
@@ -1794,6 +1864,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self._invalidate_bg_matrix('ds')
         pipeline.run_ds(self, Stage.DATA_SPEC)
         self.ds_calculations_changed_emit()
+        self._maybe_mirror_bg('ds', ds_bg_limits)
 
     @property
     def us_roi_bg(self):
@@ -1815,6 +1886,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self._invalidate_bg_matrix('us')
         pipeline.run_us(self, Stage.DATA_SPEC)
         self.us_calculations_changed_emit()
+        self._maybe_mirror_bg('us', us_bg_limits)
 
     @property
     def ds_filter_oscillation(self):
@@ -2086,6 +2158,59 @@ class TemperatureModelConfiguration(QtCore.QObject):
         if override is not None:
             return int(override)
         return 0
+
+    def _signal_roi_fullchip_y(self, side):
+        """(y_min_fullchip, y_max_fullchip) for the given side's signal ROI,
+        or None if geometry is unavailable. For full-chip data the current
+        ROI y values are already full-chip. For kinetics-interleaved data,
+        add window_y to project the strip-relative y onto the physical chip."""
+        try:
+            roi = self.ds_roi if side == 'ds' else self.us_roi
+        except Exception:
+            return None
+        if roi is None:
+            return None
+        y_min = int(roi.y_min)
+        y_max = int(roi.y_max)
+        if self.kinetics_mode == 'interleaved':
+            win_y = int((self.kinetics_info or {}).get('window_y', 0) or 0)
+            return win_y + y_min, win_y + y_max
+        return y_min, y_max
+
+    def _slot_from_current(self, side):
+        """Slot index q for `side` computed from the current signal ROI +
+        kinetics_info. Deterministic; independent of q_*_override and
+        cross_mode_cal_info. Returns None when data is non-kinetics or
+        window_height is 0."""
+        if self.kinetics_mode != 'interleaved':
+            return None
+        h = int((self.kinetics_info or {}).get('window_height', 0) or 0)
+        if h <= 0:
+            return None
+        fc = self._signal_roi_fullchip_y(side)
+        if fc is None:
+            return None
+        win_y = int((self.kinetics_info or {}).get('window_y', 0) or 0)
+        return (fc[0] - win_y) // h
+
+    def _maybe_mirror_bg(self, from_side, limits):
+        """When bg_shared_ds_us is True and we're in kinetics-interleaved
+        mode, mirror the just-set bg-ROI to the other side. Re-entry
+        guarded so the reciprocal setter call doesn't recurse."""
+        if self._bg_mirror_active:
+            return
+        if not self.bg_shared_ds_us:
+            return
+        if self.kinetics_mode != 'interleaved':
+            return
+        self._bg_mirror_active = True
+        try:
+            if from_side == 'ds':
+                self.us_roi_bg = limits
+            else:
+                self.ds_roi_bg = limits
+        finally:
+            self._bg_mirror_active = False
 
     def import_slots_from_trs(self, filename):
         """Read DS/US mask-slot offsets from another .trs and set them as

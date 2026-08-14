@@ -120,9 +120,10 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.epicslogger_gb = EpicsLoggerGroupBox()
         
         self.roi_gb = self.roi_widget.roi_gb
+        self.roi_kin_gb = self.roi_widget.roi_kin_gb
         self.wl_range_widget = self.roi_widget.wl_range_widget
 
-        
+
         self._other_settings_widget_layout.addWidget(self.side_bar_close_btn_widget)
         self._other_settings_widget_layout.addWidget(self.config_widget)
         self._other_settings_widget_layout.addWidget(self.measurement_mode_gb)
@@ -130,6 +131,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._other_settings_widget_layout.addWidget(self.kinetics_gb)
         self._other_settings_widget_layout.addWidget(self.wl_range_widget)
         self._other_settings_widget_layout.addWidget(self.roi_gb)
+        self._other_settings_widget_layout.addWidget(self.roi_kin_gb)
         self._other_settings_widget_layout.addWidget(self.wavelength_calibration_gb)
         self._other_settings_widget_layout.addWidget(self.background_subtraction_gb)
         self._other_settings_widget_layout.addWidget(self.calibration_section)
@@ -671,9 +673,10 @@ class KineticsGB(QtWidgets.QGroupBox):
         # Row 2 — import-slots action.
         self.import_slots_btn = QtWidgets.QPushButton('Import slots')
         self.import_slots_btn.setToolTip(
-            "Import DS/US mask-slot offsets from another .trs (for "
-            "kinetics-cal sessions where sync alignment can't be derived "
-            "from the current cal).")
+            "Legacy: import DS/US mask-slot offsets from another .trs. "
+            "New kinetics-cal .trs files store the slot offsets directly, "
+            "so this is normally not needed — use only for older files "
+            "saved before the change.")
         self._layout.addWidget(self.import_slots_btn)
 
         # Row 3 — read-only info grid.
