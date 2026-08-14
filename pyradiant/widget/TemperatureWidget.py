@@ -811,7 +811,7 @@ class BackgroundSubtractionGB(QtWidgets.QGroupBox):
         # Row 0: mode selector
         self._layout.addWidget(QtWidgets.QLabel('Mode:'), 0, 0)
         self.mode_combo = QtWidgets.QComboBox()
-        self.mode_combo.addItems(['In-situ ROI', 'Prerecorded dark', 'Hybrid (auto-scaled dark)', 'Off'])
+        self.mode_combo.addItems(['In-situ ROI', 'Prerecorded dark', 'Hybrid (auto-scaled dark)', 'Kinetics trend', 'Off'])
         self._layout.addWidget(self.mode_combo, 0, 1, 1, 4)
 
         # Row 1: DS dark controls (visible only in prerecorded mode)

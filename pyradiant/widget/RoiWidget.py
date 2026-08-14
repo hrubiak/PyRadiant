@@ -75,6 +75,11 @@ class RoiWidget(QtWidgets.QWidget):
 
         self.img_widget = RoiImageWidget(roi_num=roi_num, roi_colors=roi_colors)
         self.ccd_widget = RoiImageWidget(roi_num=0, roi_colors=[])
+        # Diagnostic viewer for the kinetics-trend bg subtraction: vstacked
+        # per-frame bg-ROI extracts, so the across-strip bg trend and any
+        # outliers are visible at a glance. Populated only for kinetics
+        # data (>1 frame); tab is hidden otherwise.
+        self.bg_stack_widget = RoiImageWidget(roi_num=0, roi_colors=[])
         self.specra_widget = RoiSpectraWidget()
 
         # Intensity-calibration viewers (2D image + 1D extracted spectrum, per side).
@@ -93,6 +98,7 @@ class RoiWidget(QtWidgets.QWidget):
         self.left_tab_widget.addTab(self.specra_widget, '1D')
         self.left_tab_widget.addTab(self.img_widget, '2D')
         self.left_tab_widget.addTab(self.ccd_widget, 'RAW')
+        self._bg_stack_tab_ind = self.left_tab_widget.addTab(self.bg_stack_widget, 'BG Trend')
         # Cal tabs — grouped per side, 1D then 2D to match the existing data
         # tab order above (1D, 2D, RAW).
         self._ds_cal_spec_tab_ind = self.left_tab_widget.addTab(self.ds_cal_spec_widget, 'DS Cal 1D')
@@ -374,6 +380,16 @@ class RoiWidget(QtWidgets.QWidget):
     def plot_raw_ccd(self, ccd_data):
         if ccd_data is not None:
             self.ccd_widget.plot_image(ccd_data.T)
+
+    def plot_bg_stack(self, bg_stack_data):
+        """Show the per-frame bg-ROI extracts stacked vertically. Passing
+        None hides the tab (non-kinetics / no bg-ROI). Otherwise the tab
+        is made visible and the image is drawn."""
+        if bg_stack_data is None:
+            self.left_tab_widget.setTabVisible(self._bg_stack_tab_ind, False)
+            return
+        self.left_tab_widget.setTabVisible(self._bg_stack_tab_ind, True)
+        self.bg_stack_widget.plot_image(bg_stack_data.T)
 
     def plot_ds_calibration_image(self, img_data):
         if img_data is not None:

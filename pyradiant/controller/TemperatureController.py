@@ -367,13 +367,19 @@ class TemperatureController(QtCore.QObject):
             conf.close_log()
 
     # ---- Background subtraction handlers -------------------------------------
-    _BG_MODES_BY_INDEX = ('insitu', 'prerecorded', 'hybrid', 'off')
+    _BG_MODES_BY_INDEX = ('insitu', 'prerecorded', 'hybrid', 'kinetics_trend', 'off')
 
     def _background_mode_changed(self, index):
         if not (0 <= index < len(self._BG_MODES_BY_INDEX)):
             return
         mode = self._BG_MODES_BY_INDEX[index]
         cfg = self.model.current_configuration
+        # Kinetics-trend requires >1 frame; ignore selection on single-frame
+        # data (the entry is disabled but a stale programmatic set may still
+        # arrive during config-switch sync).
+        if mode == 'kinetics_trend' and not self._kinetics_trend_available(cfg):
+            self._sync_background_widgets()
+            return
         cfg.set_background_mode(mode)
         gb = self.widget.background_subtraction_gb
         uses_dark = mode in ('prerecorded', 'hybrid')
@@ -382,6 +388,16 @@ class TemperatureController(QtCore.QObject):
         # Re-hide US row if we're in single-sided measurement mode.
         if getattr(cfg, 'mode', 'dual') == 'single':
             gb.set_us_row_visible(False)
+        # Every per-frame T depends on bg subtraction — refit the whole
+        # history so the plot matches the current-frame spectrum. No-op
+        # for single-frame data.
+        self.process_multiframe()
+
+    def _kinetics_trend_available(self, cfg):
+        f = getattr(cfg, 'data_img_file', None)
+        if f is None:
+            return False
+        return int(getattr(f, 'num_frames', 0) or 0) > 1
 
     def _bg_scale_changed(self, side, value):
         cfg = self.model.current_configuration
@@ -432,9 +448,21 @@ class TemperatureController(QtCore.QObject):
         """
         cfg = self.model.current_configuration
         mode = getattr(cfg, 'background_mode', 'insitu')
+        # If kinetics_trend is persisted but the current data file has only
+        # one frame, downgrade the mode so combo + config stay consistent.
+        if mode == 'kinetics_trend' and not self._kinetics_trend_available(cfg):
+            cfg.set_background_mode('insitu')
+            mode = 'insitu'
         # DEBUG: try/except removed so failures raise with full traceback.
         idx = self._BG_MODES_BY_INDEX.index(mode)
         gb = self.widget.background_subtraction_gb
+        # Enable/disable the kinetics_trend entry based on num_frames.
+        kt_idx = self._BG_MODES_BY_INDEX.index('kinetics_trend')
+        kt_avail = self._kinetics_trend_available(cfg)
+        item = gb.mode_combo.model().item(kt_idx)
+        if item is not None:
+            item.setEnabled(kt_avail)
+            item.setToolTip('' if kt_avail else 'Requires kinetics data (>1 frame)')
         # Update combo without re-emitting -> avoid recursion into set_background_mode
         gb.mode_combo.blockSignals(True)
         gb.mode_combo.setCurrentIndex(idx)
@@ -992,6 +1020,7 @@ class TemperatureController(QtCore.QObject):
         if self.model.current_configuration.data_img_file is not None:
             if hasattr(self.model.current_configuration.data_img_file,'raw_ccd'):
                 self.widget.roi_widget.plot_raw_ccd(self.model.current_configuration.data_img_file.raw_ccd)
+        self._refresh_bg_stack()
         if self.model.current_configuration.x_calibration is not None and self.model.current_configuration.data_img is not None:
             wl_calibration = self.model.current_configuration.x_calibration
             #x_dim = self.model.current_configuration.data_img.shape[1]
@@ -1552,6 +1581,20 @@ class TemperatureController(QtCore.QObject):
             # quotient-preserving mirror; refresh cross-mode cal viewers so
             # the cal 2D overlay follows.
             self._refresh_cross_mode_cal_viewers()
+            # bg-ROI move changes the diagnostic BG Trend view (crop shifts).
+            self._refresh_bg_stack()
+
+    def _refresh_bg_stack(self):
+        """Rebuild the 'BG Trend' diagnostic image (vstacked bg-ROI slices).
+        Called on data change and ROI change. Hides the tab when the
+        current data doesn't support it (single-frame, no data)."""
+        cfg = self.model.current_configuration
+        if cfg is None or cfg.data_img_file is None:
+            self.widget.roi_widget.plot_bg_stack(None)
+            return
+        # DS bg-ROI (index 2) — conventionally identical to US bg in kinetics.
+        img = cfg.compute_bg_stack_image('ds')
+        self.widget.roi_widget.plot_bg_stack(img)
 
     def _refresh_cross_mode_cal_viewers(self):
         """Re-apply per-side cross-mode setup on the cal 2D viewers so a

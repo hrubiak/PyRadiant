@@ -178,6 +178,15 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.current_frame_us = 0
         self.ds_temperature_model = SingleTemperatureModel(0, self.roi_data_manager)
         self.us_temperature_model = SingleTemperatureModel(1, self.roi_data_manager)
+        # Back-ref so the pipeline's 'kinetics_trend' branch can reach the
+        # shared bg-matrix cache and geometry.
+        self.ds_temperature_model._parent_config = self
+        self.us_temperature_model._parent_config = self
+
+        # Per-side (N × W_bg) column-mean bg cache for the 'kinetics_trend'
+        # background-subtraction mode. None means "needs (re)compute";
+        # invalidated on file load, bg-ROI move, or dim change.
+        self._bg_matrix_cache = {'ds': None, 'us': None}
 
         # Per-frame, per-side cache of raw pipeline output. Length matches
         # data_img_file.num_frames after the first ensure_records_cache().
@@ -320,6 +329,9 @@ class TemperatureModelConfiguration(QtCore.QObject):
         else:
             self.current_frame = 0
             self._data_img = self.data_img_file.img
+
+        # New file (or reload) → bg-matrix cache from the old file is stale.
+        self._invalidate_bg_matrix()
 
         self._sync_kinetics_from_file()
         self._sync_cross_mode_rois()
@@ -545,7 +557,10 @@ class TemperatureModelConfiguration(QtCore.QObject):
     # 'hybrid' behaves like 'prerecorded' but auto-scales the dark subtraction by
     # mean(bg-ROI on current image) / mean(same bg-ROI on dark image) — combining
     # the stability of a prerecorded master dark with in-situ exposure-tracking.
-    _VALID_BACKGROUND_MODES = ('insitu', 'prerecorded', 'hybrid', 'off')
+    # 'kinetics_trend' interpolates bg at the signal-ROI y by canvas-y-blending
+    # the current strip's bg-ROI with an adjacent strip's bg-ROI (kinetics only;
+    # falls back to 'insitu' for single-frame data or at endpoint strips).
+    _VALID_BACKGROUND_MODES = ('insitu', 'prerecorded', 'hybrid', 'kinetics_trend', 'off')
 
     def _propagate_dark_to_models(self):
         """Push the current mode + per-side dark image + scale to both single models."""
@@ -575,6 +590,148 @@ class TemperatureModelConfiguration(QtCore.QObject):
         pipeline.run(self, Stage.DATA_SPEC)
         self.dirty = True
         self.data_changed_emit(self.current_frame)
+
+    # -------- Kinetics-trend background (canvas-y bg interpolation) -----------
+    def _invalidate_bg_matrix(self, side=None):
+        """Drop the cached per-column bg matrix so it recomputes on next use.
+        side='ds'|'us' clears one; side=None clears both. Cheap; safe to
+        over-call. Callers: file load, bg-ROI setter."""
+        if side is None:
+            self._bg_matrix_cache = {'ds': None, 'us': None}
+        else:
+            self._bg_matrix_cache[side] = None
+
+    def _compute_bg_matrix(self, side):
+        """Build the (N × W_bg) column-mean bg matrix for one side by
+        extracting the bg-ROI from every kinetics frame. Returns the ndarray
+        or None if not applicable (single-frame data, no image loaded)."""
+        if self.data_img_file is None:
+            return None
+        n = int(getattr(self.data_img_file, 'num_frames', 0) or 0)
+        if n <= 1:
+            return None
+        first = np.asarray(self.data_img_file.img[0])
+        h, w = first.shape
+        dim = (w, h)
+        roi_idx = 2 if side == 'ds' else 3
+        roi = validate_roi(self.roi_data_manager.get_roi(roi_idx, dim))
+        if roi.x_max >= w:
+            roi.x_max = w - 1
+        if roi.y_max >= h:
+            roi.y_max = h - 1
+        w_roi = int(roi.x_max) - int(roi.x_min) + 1
+        if w_roi <= 0:
+            return None
+        B = np.empty((n, w_roi), dtype=float)
+        for f in range(n):
+            B[f, :] = get_roi_sum(np.asarray(self.data_img_file.img[f]), roi)
+        return B
+
+    def get_bg_matrix(self, side):
+        """Cached accessor for the (N × W_bg) per-column bg matrix.
+        None means the mode isn't applicable to the current data."""
+        cached = self._bg_matrix_cache.get(side)
+        if cached is not None:
+            return cached
+        B = self._compute_bg_matrix(side)
+        self._bg_matrix_cache[side] = B
+        return B
+
+    def compute_bg_stack_image(self, side):
+        """Diagnostic: vstack of the raw bg-ROI slice from every frame.
+        Row-band f (rows [f·H_bg, (f+1)·H_bg)) is frame f's bg-ROI region.
+        Height ≈ N · bg_roi_height, width = bg_roi_width. Returns None on
+        non-kinetics data or when no data image is loaded. Not cached —
+        called only on data / ROI change (cheap for typical N≤64)."""
+        if self.data_img_file is None:
+            return None
+        n = int(getattr(self.data_img_file, 'num_frames', 0) or 0)
+        if n <= 1:
+            return None
+        first = np.asarray(self.data_img_file.img[0])
+        h_img, w_img = first.shape
+        dim = (w_img, h_img)
+        roi_idx = 2 if side == 'ds' else 3
+        roi = validate_roi(self.roi_data_manager.get_roi(roi_idx, dim))
+        if roi.x_max >= w_img:
+            roi.x_max = w_img - 1
+        if roi.y_max >= h_img:
+            roi.y_max = h_img - 1
+        w_roi = int(roi.x_max) - int(roi.x_min) + 1
+        h_roi = int(roi.y_max) - int(roi.y_min) + 1
+        if w_roi <= 0 or h_roi <= 0:
+            return None
+        slabs = [get_roi_img(np.asarray(self.data_img_file.img[f]), roi)
+                 for f in range(n)]
+        return np.vstack(slabs)
+
+    def _bg_interp_for_signal_roi(self, side, signal_roi, current_frame):
+        """Return per-column interpolated bg for the given signal ROI at
+        the given readout-frame index, sliced to match the signal ROI's x
+        extent. Returns None when the caller should fall back to insitu:
+          * non-kinetics data
+          * endpoint frame with missing neighbor
+          * bg-ROI x-range does not cover the signal-ROI x-range
+
+        Interpolation axis is canvas-y on the vstacked RAW (frame f
+        occupies rows [f·H, (f+1)·H) where H = per-frame height). For a
+        signal row at canvas-y (f·H + y_sig_center), the two bracketing
+        bg samples are frame f itself and one neighbor (f-1 or f+1)
+        chosen by the sign of (y_bg_center - y_sig_center). Linear blend
+        by canvas-y distance.
+        """
+        B = self.get_bg_matrix(side)
+        if B is None:
+            return None
+        n = int(B.shape[0])
+        f = int(current_frame)
+        if f < 0 or f >= n:
+            return None
+        dim = self._effective_roi_dimension()
+        if dim is None:
+            return None
+        w_img, h_img = int(dim[0]), int(dim[1])
+        bg_roi_idx = 2 if side == 'ds' else 3
+        bg_roi = validate_roi(self.roi_data_manager.get_roi(bg_roi_idx, dim))
+        sig_roi = validate_roi(signal_roi)
+        # Clamp to image extents (mirror _update_data_spectrum).
+        if bg_roi.y_max >= h_img:
+            bg_roi.y_max = h_img - 1
+        if sig_roi.y_max >= h_img:
+            sig_roi.y_max = h_img - 1
+        if bg_roi.x_max >= w_img:
+            bg_roi.x_max = w_img - 1
+        if sig_roi.x_max >= w_img:
+            sig_roi.x_max = w_img - 1
+        # x-range of the bg-ROI must cover the signal-ROI's x-range.
+        x0_off = int(sig_roi.x_min) - int(bg_roi.x_min)
+        x1_off = x0_off + (int(sig_roi.x_max) - int(sig_roi.x_min) + 1)
+        if x0_off < 0 or x1_off > B.shape[1]:
+            return None
+        # Canvas-y centers within a per-frame image (all frames share layout).
+        y_bg_c = 0.5 * (int(bg_roi.y_min) + int(bg_roi.y_max))
+        y_sig_c = 0.5 * (int(sig_roi.y_min) + int(sig_roi.y_max))
+        delta = y_bg_c - y_sig_c   # >0 if bg below signal (higher row index)
+        H = float(h_img)           # per-frame stride on the canvas
+        own = B[f, x0_off:x1_off]
+        if delta == 0.0:
+            return own
+        if delta > 0:
+            # Neighbor bg (frame f-1) sits above signal on canvas.
+            if f - 1 < 0:
+                return None
+            neighbor = B[f - 1, x0_off:x1_off]
+            w_own = (H - delta) / H
+            w_nb = delta / H
+        else:
+            # Neighbor bg (frame f+1) sits below signal on canvas.
+            if f + 1 >= n:
+                return None
+            neighbor = B[f + 1, x0_off:x1_off]
+            adelta = -delta
+            w_own = (H - adelta) / H
+            w_nb = adelta / H
+        return w_own * own + w_nb * neighbor
 
     def _load_dark_frame_file(self, filename):
         """Dispatch to SpeFile / H5File / TifFile — mirrors load_ds_calibration_image."""
@@ -1036,9 +1193,9 @@ class TemperatureModelConfiguration(QtCore.QObject):
             if loaded_bg in self._VALID_BACKGROUND_MODES:
                 self.background_mode = loaded_bg
             else:
-                # Older .trs files may carry now-removed mode names (e.g.
-                # 'kinetics_trend'). Fall back to 'insitu' so bg subtraction
-                # still runs instead of silently no-op'ing downstream.
+                # Unknown/deprecated mode name in the .trs — fall back to
+                # 'insitu' so bg subtraction still runs instead of silently
+                # no-op'ing downstream.
                 self.background_mode = 'insitu'
         else:
             legacy_bg = True
@@ -1230,6 +1387,11 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self._sync_kinetics_from_file()
 
         self._sync_cross_mode_rois()
+
+        # bg-ROI keys may have been restored via direct set_roi calls above
+        # (bypassing the property setters that normally invalidate). Ensure
+        # the kinetics-trend bg-matrix cache is rebuilt on next use.
+        self._invalidate_bg_matrix()
 
         pipeline.run(self, Stage.DATA_SPEC)
 
@@ -1629,6 +1791,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
             return
         self.roi_data_manager.set_roi(2, dim, ds_bg_limits)
         self._mirror_roi_to_cal_dim(2, dim, ds_bg_limits)
+        self._invalidate_bg_matrix('ds')
         pipeline.run_ds(self, Stage.DATA_SPEC)
         self.ds_calculations_changed_emit()
 
@@ -1649,6 +1812,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
             return
         self.roi_data_manager.set_roi(3, dim, us_bg_limits)
         self._mirror_roi_to_cal_dim(3, dim, us_bg_limits)
+        self._invalidate_bg_matrix('us')
         pipeline.run_us(self, Stage.DATA_SPEC)
         self.us_calculations_changed_emit()
 
@@ -2308,6 +2472,11 @@ class SingleTemperatureModel(QtCore.QObject):
     def __init__(self, ind, roi_data_manager):
         super(SingleTemperatureModel, self).__init__()
         self.ind = ind
+        # Set by the owning TemperatureModelConfiguration right after
+        # construction. Used by the 'kinetics_trend' extraction branch to
+        # reach the shared bg-matrix cache and the per-side current-frame
+        # index.
+        self._parent_config = None
 
         self.data_spectrum = Spectrum([], [])
         self.calibration_spectrum = Spectrum([], [])
@@ -2525,6 +2694,26 @@ class SingleTemperatureModel(QtCore.QObject):
                     dark_bg_mean = float(np.mean(get_roi_img(dark, roi_bg)))
                     scale = data_bg_mean / dark_bg_mean if dark_bg_mean != 0 else 0.0
                     data_y = data_y - get_roi_sum(dark, roi) * scale
+            elif mode == 'kinetics_trend':
+                # Canvas-y bg interpolation between the current strip and one
+                # neighbor. Falls back to in-situ subtraction whenever the mode
+                # isn't applicable (single-frame data, endpoint strip, or
+                # bg-ROI x-range doesn't cover the signal-ROI x-range).
+                side = 'ds' if self.ind == 0 else 'us'
+                bg_interp = None
+                parent = self._parent_config
+                if parent is not None:
+                    f = parent.current_frame_ds if side == 'ds' else parent.current_frame_us
+                    if f is None:
+                        f = parent.current_frame
+                    bg_interp = parent._bg_interp_for_signal_roi(side, roi, int(f))
+                if bg_interp is not None:
+                    data_y = data_y - bg_interp
+                else:
+                    roi_bg = self.roi_data_manager.get_roi(self.ind+2, self._data_img_dimension)
+                    roi_bg.x_max = roi.x_max
+                    roi_bg.x_min = roi.x_min
+                    data_y = data_y - get_roi_sum(_data_img_as_array, roi_bg)
 
             self.total_counts = np.sum(data_y)
             self.data_spectrum.data = data_x, data_y
@@ -2541,6 +2730,10 @@ class SingleTemperatureModel(QtCore.QObject):
             if roi.y_max >= h:
                 roi.y_max = h - 1
             mode = getattr(self, 'background_mode', 'insitu')
+            # Calibration is single-frame; 'kinetics_trend' has no meaning
+            # here — treat it as 'insitu'.
+            if mode == 'kinetics_trend':
+                mode = 'insitu'
             if mode == 'insitu':
                 roi_bg = self.roi_data_manager.get_roi(self.ind+2, self._calibration_img_dimension)
                 roi_bg.x_max = roi.x_max
