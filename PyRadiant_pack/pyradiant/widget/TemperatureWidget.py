@@ -1,0 +1,1212 @@
+# -*- coding: utf8 -*-
+# PyRadiant - GUI program for analysis of thermal spectra during
+# laser heated diamond anvil cell experiments
+# Copyright (C) 2024 Ross Hrubiak (hrubiak@anl.gov)
+# High Pressure Collaborative Access Team, Argonne National Laboratory
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+from PyQt6 import QtCore, QtWidgets, QtGui
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QStyle
+from PyQt6.QtGui import QIcon
+import os
+from .TemperatureSpectrumWidget import TemperatureSpectrumWidget
+from .RoiWidget import RoiWidget, IntegerTextField
+from .Widgets import FileGroupBox
+from .Widgets import OutputGroupBox, StatusBar
+from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem
+
+from .. import resources_path
+
+
+
+class TemperatureWidget(QtWidgets.QWidget):
+    file_dragged_in = QtCore.pyqtSignal(list)
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+
+        self.config_widget = args[0].configuration_widget
+        self._main_layout = QtWidgets.QVBoxLayout()
+        self._main_layout.setContentsMargins(0, 0, 0, 0)
+        self._main_layout.setSpacing(0)
+
+        self.control_widget =  TemperatureFileNavigation()
+        self._main_layout.addWidget(self.control_widget)
+        
+
+        self.left_widget = QtWidgets.QWidget()
+        self._left_layout = QtWidgets.QVBoxLayout(self.left_widget)
+        self._left_layout.setContentsMargins(0, 0, 0, 0)
+        self._left_layout.setSpacing(0)
+        self.left_widget.resize(600,600)
+
+        self.splitter_horizontal = QtWidgets.QSplitter(Qt.Orientation.Horizontal)
+        self._main_layout.addWidget(self.splitter_horizontal)
+
+        
+        self.tab_widget = QtWidgets.QTabWidget()
+        
+        self.graph_widget = QtWidgets.QWidget()
+        self._graph_widget_layout = QtWidgets.QVBoxLayout(self.graph_widget)
+        self.temperature_spectrum_widget = TemperatureSpectrumWidget()
+        self.graph_status_bar = StatusBar()
+        self._graph_widget_layout.addWidget(self.temperature_spectrum_widget)
+        self._graph_widget_layout.addWidget(self.graph_status_bar)
+        
+        self.settings_widget = QtWidgets.QWidget()
+        self._settings_widget_layout = QtWidgets.QHBoxLayout(self.settings_widget)
+        self._settings_widget_layout.setSpacing(0)
+        self._settings_widget_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.roi_settings_widget = QtWidgets.QWidget()
+        self._roi_settings_widget_layout = QtWidgets.QVBoxLayout(self.roi_settings_widget)
+        self.roi_widget = RoiWidget(4, ['Downstream', 'Upstream', 'Background', 'Background'],
+                                    roi_colors=[(255, 215, 0), (255, 111, 97),(151, 135, 50), (157,  60, 50)])
+        self._roi_settings_widget_layout.addWidget(self.roi_widget)
+        
+        # scroll area stuff
+        self.scroll_area = QtWidgets.QScrollArea()
+        self.scroll_area.setStyleSheet("QScrollArea { border: 0px;}")
+        self.scroll_area.setMaximumWidth(320)
+        self.scroll_area.setMinimumWidth(320)
+        
+        self.other_settings_widget = QtWidgets.QWidget()
+        self.scroll_area.setWidget(self.other_settings_widget)
+        self.scroll_area.setWidgetResizable(True)
+
+        
+        self.other_settings_widget.setMaximumWidth(300)
+        self._other_settings_widget_layout = QtWidgets.QVBoxLayout(self.other_settings_widget)
+
+        self.side_bar_close_btn_widget = QtWidgets.QWidget()
+        self._side_bar_close_btn_widget_layout = QtWidgets.QHBoxLayout(self.side_bar_close_btn_widget)
+        self._side_bar_close_btn_widget_layout.setSpacing(0)
+        self._side_bar_close_btn_widget_layout.setContentsMargins(0, 0, 0, 0)
+        self.side_bar_close_btn = QtWidgets.QPushButton()
+        side_bar_close_icon = QIcon()
+        side_bar_close_icon.addFile(os.path.join(resources_path,'style','right_panel_close.svg'))
+        self.side_bar_close_btn.setIcon(side_bar_close_icon)
+        self._side_bar_close_btn_widget_layout.addWidget(self.side_bar_close_btn)
+        self._side_bar_close_btn_widget_layout.addSpacerItem(HorizontalSpacerItem())
+        
+        self.measurement_mode_gb = MeasurementModeGB()
+
+        self.wavelength_calibration_gb = WavelengthCalibrationGB()
+
+        self.background_subtraction_gb = BackgroundSubtractionGB()
+
+        self.calibration_section = TemperatureCalibrationSection()
+        
+        self.t_function_type_section = TemperatureFitSettings()
+
+        self.filter_section = FilterSettings()
+
+        self.settings_gb = SettingsGroupBox()
+        self.kinetics_gb = KineticsGB()
+        self.epics_gb = EPICSGroupBox()
+        self.zmq_gb = ZmqWorkerGroupBox()
+        self.epicslogger_gb = EpicsLoggerGroupBox()
+        
+        self.roi_gb = self.roi_widget.roi_gb
+        self.roi_kin_gb = self.roi_widget.roi_kin_gb
+        self.wl_range_widget = self.roi_widget.wl_range_widget
+
+
+        self._other_settings_widget_layout.addWidget(self.side_bar_close_btn_widget)
+        self._other_settings_widget_layout.addWidget(self.config_widget)
+        self._other_settings_widget_layout.addWidget(self.measurement_mode_gb)
+        self._other_settings_widget_layout.addWidget(self.settings_gb)
+        self._other_settings_widget_layout.addWidget(self.kinetics_gb)
+        self._other_settings_widget_layout.addWidget(self.wl_range_widget)
+        self._other_settings_widget_layout.addWidget(self.roi_gb)
+        self._other_settings_widget_layout.addWidget(self.roi_kin_gb)
+        self._other_settings_widget_layout.addWidget(self.wavelength_calibration_gb)
+        self._other_settings_widget_layout.addWidget(self.background_subtraction_gb)
+        self._other_settings_widget_layout.addWidget(self.calibration_section)
+        self._other_settings_widget_layout.addWidget(self.filter_section)
+        self._other_settings_widget_layout.addWidget(self.t_function_type_section)
+        
+        self._other_settings_widget_layout.addWidget(self.epics_gb)
+        self._other_settings_widget_layout.addWidget(self.zmq_gb)
+        self._other_settings_widget_layout.addWidget(self.epicslogger_gb)
+        self._other_settings_widget_layout.addSpacerItem(VerticalSpacerItem())
+        
+        self._settings_widget_layout.addWidget(self.roi_settings_widget)
+
+
+        temperature_tab_icon = QIcon()
+        temperature_tab_icon.addFile(os.path.join(resources_path,'style','device_thermostat.svg'))
+        spectrum_tab_icon = QIcon()
+        spectrum_tab_icon.addFile(os.path.join(resources_path,'style','infrared.svg'))
+        
+        self.tab_widget.addTab(self.graph_widget,temperature_tab_icon, 'Temperature')
+        self.tab_widget.addTab(self.settings_widget,spectrum_tab_icon, 'Spectrum')
+        
+        
+        self._left_layout.addWidget(self.tab_widget)
+
+        self.splitter_horizontal.addWidget(self.left_widget)
+        self.splitter_horizontal.addWidget(self.scroll_area)
+        
+        
+
+        self.setLayout(self._main_layout)
+
+        self.style_widgets()
+        self.create_shortcuts()
+
+        self.setAcceptDrops(True) 
+
+        self.side_bar_close_btn.clicked.connect(self.hide_right_panel)
+
+    def hide_right_panel(self):
+        self.splitter_horizontal.setSizes([self.splitter_horizontal.width(), 0])
+
+    def show_right_panel(self):
+        self.splitter_horizontal.setSizes([self.splitter_horizontal.width() - self.scroll_area.width(), self.scroll_area.width()])
+
+    def apply_measurement_mode(self, mode):
+        """Show/hide every us-side sub-widget for single-sided mode.
+
+        Central place for the visibility rules so the controller only has to
+        call this one method whenever the mode changes or the config switches.
+        """
+        dual = mode == 'dual'
+        # Keep the mode-selector radios in sync (may have been driven by config load)
+        if dual and not self.dual_mode_rb.isChecked():
+            self.dual_mode_rb.setChecked(True)
+        elif not dual and not self.single_mode_rb.isChecked():
+            self.single_mode_rb.setChecked(True)
+        # Sub-widget visibility
+        self.temperature_spectrum_widget.set_mode(mode)
+        self.roi_widget.set_mode(mode)
+        # Intensity-calibration section: hide us group, retitle ds group
+        self.calibration_section.upstream_gb.setVisible(dual)
+        self.calibration_section.downstream_gb.setTitle(
+            'Downstream' if dual else 'Temperature'
+        )
+        # Interference filter: hide us row
+        self.filter_section.set_mode(mode)
+        # 2-color pyrometry: requires both sides
+        self.two_color_btn.setEnabled(dual)
+        if not dual:
+            if self.two_color_btn.isChecked():
+                self.two_color_btn.setChecked(False)
+            self.two_color_btn.setToolTip('Requires dual-sided mode')
+        else:
+            self.two_color_btn.setToolTip('')
+        # Background subtraction: hide the US dark row in single mode.
+        self.background_subtraction_gb.set_us_row_visible(dual)
+
+    def style_widgets(self):
+        pass
+
+    def create_shortcuts(self):
+        self.load_data_file_btn = self.control_widget.file_gb.load_file_btn
+        self.load_next_data_file_btn = self.control_widget.file_gb.load_next_file_btn
+        self.load_previous_data_file_btn = self.control_widget.file_gb.load_previous_file_btn
+
+        self.load_next_frame_btn = self.control_widget.file_gb.load_next_frame_btn
+        self.load_previous_frame_btn = self.control_widget.file_gb.load_previous_frame_btn
+        
+        self.frame_num_txt = self.control_widget.file_gb.frame_txt
+        self.frame_widget = self.control_widget.file_gb.frame_control_widget
+        self.lab_time_btn = self.kinetics_gb.lab_time_btn
+        self.sync_frame_btn = self.kinetics_gb.sync_frame_btn
+
+        self.autoprocess_cb = self.control_widget.file_gb.autoprocess_cb
+        self.autoprocess_lbl = self.control_widget.file_gb.autoprocess_lbl
+        self.filename_lbl = self.control_widget.file_gb.filename_lbl
+        self.dirname_lbl = self.control_widget.file_gb.dirname_lbl
+        self.mtime = self.control_widget.file_gb.mtime
+
+        self.dual_mode_rb = self.measurement_mode_gb.dual_mode_rb
+        self.single_mode_rb = self.measurement_mode_gb.single_mode_rb
+
+        self.load_wavelength_calibration_btn = self.wavelength_calibration_gb.load_btn
+        self.clear_wavelength_calibration_btn = self.wavelength_calibration_gb.clear_btn
+        self.wavelength_calibration_filename_lbl = self.wavelength_calibration_gb.file_lbl
+
+        self.load_ds_calibration_file_btn = self.calibration_section.downstream_gb.load_file_btn
+        self.load_us_calibration_file_btn = self.calibration_section.upstream_gb.load_file_btn
+        self.clear_ds_calibration_file_btn = self.calibration_section.downstream_gb.clear_file_btn
+        self.clear_us_calibration_file_btn = self.calibration_section.upstream_gb.clear_file_btn
+        self.ds_calibration_filename_lbl = self.calibration_section.downstream_gb.file_lbl
+        self.us_calibration_filename_lbl = self.calibration_section.upstream_gb.file_lbl
+        self.ds_calibration_start_frame = self.calibration_section.downstream_gb.start_frame
+        self.us_calibration_start_frame = self.calibration_section.upstream_gb.start_frame
+        self.ds_calibration_end_frame = self.calibration_section.downstream_gb.end_frame
+        self.us_calibration_end_frame = self.calibration_section.upstream_gb.end_frame
+
+        self.ds_temperature_rb = self.calibration_section.downstream_gb.temperature_rb
+        self.us_temperature_rb = self.calibration_section.upstream_gb.temperature_rb
+        self.ds_standard_rb = self.calibration_section.downstream_gb.standard_rb
+        self.us_standard_rb = self.calibration_section.upstream_gb.standard_rb
+        self.ds_load_standard_file_btn = self.calibration_section.downstream_gb.load_standard_btn
+        self.us_load_standard_file_btn = self.calibration_section.upstream_gb.load_standard_btn
+
+        self.ds_save_standard_file_btn = self.calibration_section.downstream_gb.save_standard_btn
+        self.us_save_standard_file_btn = self.calibration_section.upstream_gb.save_standard_btn
+
+        self.ds_standard_filename_lbl = self.calibration_section.downstream_gb.standard_file_lbl
+        self.us_standard_filename_lbl = self.calibration_section.upstream_gb.standard_file_lbl
+        self.ds_temperature_txt = self.calibration_section.downstream_gb.temperature_txt
+        self.us_temperature_txt = self.calibration_section.upstream_gb.temperature_txt
+
+        self.load_setting_btn = self.settings_gb.load_setting_btn
+        self.save_setting_btn = self.settings_gb.save_setting_btn
+        self.import_slots_btn = self.kinetics_gb.import_slots_btn
+
+        self.save_data_btn = self.control_widget.output_gb.save_data_btn
+        self.save_graph_btn = self.control_widget.output_gb.save_graph_btn
+        self.data_history_btn = self.control_widget.file_gb.data_history_btn
+        self.two_color_btn = self.control_widget.file_gb.two_color_btn
+
+        self.settings_cb = self.settings_gb.settings_cb
+
+        self.roi_img_item = self.roi_widget.img_widget.pg_img_item
+        self.time_lapse_layout = self.temperature_spectrum_widget._pg_time_lapse_layout
+
+        self.graph_mouse_pos_lbl = self.graph_status_bar.left_lbl
+        self.graph_info_lbl = self.graph_status_bar.right_lbl
+
+        self.setup_epics_pb = self.epics_gb.setup_epics_pb
+        self.connect_to_epics_cb = self.epics_gb.connect_to_epics_cb
+        self.connect_to_epics_datalog_cb = self.epics_gb.connect_to_epics_datalog_cb
+        self.monitor_folder_cb = self.epics_gb.monitor_folder_cb
+        self.connect_to_ad_cb = self.epics_gb.connect_to_ad_cb
+        self.epics_publish_indicator = self.epics_gb.epics_publish_indicator
+        self.monitor_folder_indicator = self.epics_gb.monitor_folder_indicator
+        self.ad_indicator = self.epics_gb.ad_indicator
+        self.monitor_folder_path_lbl = self.epics_gb.monitor_folder_path_lbl
+        self.ad_last_update_lbl = self.epics_gb.ad_last_update_lbl
+        self.file_system_rb = self.epics_gb.file_system_rb
+        self.live_stream_rb = self.epics_gb.live_stream_rb
+
+
+        self.source_mode_badge = self.control_widget.file_gb.source_mode_badge
+        self.kinetics_badge = self.control_widget.file_gb.kinetics_badge
+        self.set_kinetics_badge = self.control_widget.file_gb.set_kinetics_badge
+
+        self.browse_by_name_rb = self.control_widget.file_gb.browse_by_name_rb
+        self.browse_by_time_rb = self.control_widget.file_gb.browse_by_time_rb
+
+        self.temperature_function_plank_rb = self.t_function_type_section.plank_btn
+        self.temperature_function_wien_rb = self.t_function_type_section.wien_btn
+
+        self.ds_interference_filter_cb = self.filter_section.ds_filter_btn
+        self.us_interference_filter_cb = self.filter_section.us_filter_btn
+        self.save_filtered_cb = self.filter_section.save_filtered_cb
+        self.filter_freq_min_sb = self.filter_section.freq_min_sb
+        self.filter_freq_max_sb = self.filter_section.freq_max_sb
+
+        # Background-subtraction widgets
+        self.background_mode_combo = self.background_subtraction_gb.mode_combo
+        self.load_ds_dark_btn = self.background_subtraction_gb.load_ds_dark_btn
+        self.clear_ds_dark_btn = self.background_subtraction_gb.clear_ds_dark_btn
+        self.ds_dark_filename_lbl = self.background_subtraction_gb.ds_dark_filename_lbl
+        self.ds_dark_scale_sb = self.background_subtraction_gb.ds_dark_scale_sb
+        self.load_us_dark_btn = self.background_subtraction_gb.load_us_dark_btn
+        self.clear_us_dark_btn = self.background_subtraction_gb.clear_us_dark_btn
+        self.us_dark_filename_lbl = self.background_subtraction_gb.us_dark_filename_lbl
+        self.us_dark_scale_sb = self.background_subtraction_gb.us_dark_scale_sb
+
+
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls:
+            e.accept()
+        else:
+            e.ignore()
+
+    def dragMoveEvent(self, e):
+        if e.mimeData().hasUrls:
+            e.accept()
+        else:
+            e.ignore()
+
+    def dropEvent(self, e):
+        """
+        Drop files directly onto the widget
+
+        File locations are stored in fname
+        :param e:
+        :return:
+        """
+        if e.mimeData().hasUrls:
+            e.setDropAction(QtCore.Qt.CopyAction)
+            e.accept()
+            fnames = list()
+            for url in e.mimeData().urls():
+                fname = str(url.toLocalFile())  
+                fnames.append(fname)
+            self.file_dragged_in.emit(fnames)
+        else:
+            e.ignore() 
+
+
+    def show_error_dialog(self, message_text:str, dialog_title:str):
+        error_dialog = QtWidgets.QMessageBox()
+        error_dialog.setIcon(QtWidgets.QMessageBox.Icon.Critical)
+        error_dialog.setText(message_text)
+        error_dialog.setWindowTitle(dialog_title)
+        error_dialog.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
+
+        error_dialog.exec()
+        
+
+class TemperatureFileNavigation(QtWidgets.QWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self._layout = QtWidgets.QHBoxLayout()
+
+        self.file_gb = FileGroupBox()
+        self.output_gb = OutputGroupBox()
+        
+        self._layout.addWidget(self.file_gb)
+        self._layout.addWidget(self.output_gb)
+        self.setMaximumHeight(120)
+        self.setMinimumHeight(120)
+
+      
+        self.setLayout(self._layout)
+        
+
+
+class StatusIndicator(QtWidgets.QLabel):
+    _STYLE = "background-color: {color}; border-radius: 5px;"
+
+    def __init__(self):
+        super().__init__()
+        self.setFixedSize(10, 10)
+        self.set_inactive()
+
+    def set_active(self):
+        self.setStyleSheet(self._STYLE.format(color="#4DDECD"))
+        self.setToolTip("Connected")
+
+    def set_inactive(self):
+        self.setStyleSheet(self._STYLE.format(color="#505050"))
+        self.setToolTip("Not connected")
+
+    def set_error(self):
+        self.setStyleSheet(self._STYLE.format(color="#FF5555"))
+        self.setToolTip("Connection failed")
+
+    def set_ready(self):
+        self.setStyleSheet(self._STYLE.format(color="#F0A500"))
+        self.setToolTip("Socket ready — awaiting confirmation from remote")
+
+
+class EPICSGroupBox(QtWidgets.QGroupBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__('EPICS')
+
+        self._layout = QtWidgets.QGridLayout()
+
+        self.setup_epics_pb = QtWidgets.QPushButton("Setup EPICS")
+        self.connect_to_epics_cb = QtWidgets.QCheckBox("Publish temperatures to EPICS")
+        self.connect_to_epics_datalog_cb = QtWidgets.QCheckBox("Connect to datalog")
+        self.monitor_folder_cb = QtWidgets.QCheckBox("Monitor file folder via EPICS")
+        self.connect_to_ad_cb = QtWidgets.QCheckBox("Stream from Area Detector")
+        self.epics_publish_indicator = StatusIndicator()
+        self.monitor_folder_indicator = StatusIndicator()
+        self.ad_indicator = StatusIndicator()
+
+        # Data source mode selector
+        self.data_source_bg = QtWidgets.QButtonGroup()
+        self.file_system_rb = QtWidgets.QRadioButton("File system")
+        self.live_stream_rb = QtWidgets.QRadioButton("Live AD stream")
+        self.data_source_bg.addButton(self.file_system_rb)
+        self.data_source_bg.addButton(self.live_stream_rb)
+        self.file_system_rb.setChecked(True)
+
+        mode_widget = QtWidgets.QWidget()
+        mode_layout = QtWidgets.QHBoxLayout(mode_widget)
+        mode_layout.setContentsMargins(0, 2, 0, 2)
+        mode_layout.setSpacing(6)
+        mode_lbl = QtWidgets.QLabel("Source:")
+        mode_layout.addWidget(mode_lbl)
+        mode_layout.addWidget(self.file_system_rb)
+        mode_layout.addWidget(self.live_stream_rb)
+        mode_layout.addStretch()
+
+        self.monitor_folder_path_lbl = QtWidgets.QLabel("")
+        self.monitor_folder_path_lbl.setWordWrap(True)
+        self.monitor_folder_path_lbl.setStyleSheet("color: #888888; padding-left: 4px;")
+        small_font = self.monitor_folder_path_lbl.font()
+        small_font.setPointSize(small_font.pointSize() - 1)
+        self.monitor_folder_path_lbl.setFont(small_font)
+
+        self.ad_last_update_lbl = QtWidgets.QLabel("")
+        self.ad_last_update_lbl.setWordWrap(True)
+        self.ad_last_update_lbl.setStyleSheet("color: #888888; padding-left: 4px;")
+        small_font2 = self.ad_last_update_lbl.font()
+        small_font2.setPointSize(small_font2.pointSize() - 1)
+        self.ad_last_update_lbl.setFont(small_font2)
+
+        self._layout.addWidget(self.setup_epics_pb, 0, 0, 1, 2)
+        self._layout.addWidget(mode_widget, 1, 0, 1, 2)
+        self._layout.addWidget(self.connect_to_epics_cb, 2, 0)
+        self._layout.addWidget(self.epics_publish_indicator, 2, 1)
+        self._layout.addWidget(self.monitor_folder_cb, 3, 0)
+        self._layout.addWidget(self.monitor_folder_indicator, 3, 1)
+        self._layout.addWidget(self.monitor_folder_path_lbl, 4, 0, 1, 2)
+        self._layout.addWidget(self.connect_to_ad_cb, 5, 0)
+        self._layout.addWidget(self.ad_indicator, 5, 1)
+        self._layout.addWidget(self.ad_last_update_lbl, 6, 0, 1, 2)
+
+        self.setLayout(self._layout)
+
+
+class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__('ZMQ Worker')
+        self._layout = QtWidgets.QGridLayout()
+        self._layout.setHorizontalSpacing(6)
+        self._layout.setVerticalSpacing(4)
+
+        # Row 0 — config file
+        self.load_config_btn = QtWidgets.QPushButton("Load config.yaml")
+        self._layout.addWidget(self.load_config_btn, 0, 0, 1, 2)
+        self.config_lbl = QtWidgets.QLabel("—")
+        self.config_lbl.setStyleSheet("color: #888888;")
+        small = self.config_lbl.font()
+        small.setPointSize(small.pointSize() - 1)
+        self.config_lbl.setFont(small)
+        self.config_lbl.setWordWrap(True)
+        self._layout.addWidget(self.config_lbl, 1, 0, 1, 2)
+
+        # Row 2 — worker name / port / results port / health port / directories
+        self._layout.addWidget(QtWidgets.QLabel("Worker:"), 2, 0)
+        self.worker_name_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.worker_name_lbl, 2, 1)
+
+        self._layout.addWidget(QtWidgets.QLabel("Port:"), 3, 0)
+        self.port_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.port_lbl, 3, 1)
+
+        self._layout.addWidget(QtWidgets.QLabel("Results port:"), 4, 0)
+        self.results_port_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.results_port_lbl, 4, 1)
+
+        self._layout.addWidget(QtWidgets.QLabel("Health port:"), 5, 0)
+        self.health_port_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.health_port_lbl, 5, 1)
+
+        # Row 6 — listen toggle + status indicator
+        self.listen_btn = QtWidgets.QPushButton("Start Listening")
+        self.listen_btn.setEnabled(False)
+        self.status_indicator = StatusIndicator()
+        self.status_lbl = QtWidgets.QLabel("Idle")
+        status_row = QtWidgets.QWidget()
+        status_row_layout = QtWidgets.QHBoxLayout(status_row)
+        status_row_layout.setContentsMargins(0, 0, 0, 0)
+        status_row_layout.addWidget(self.status_indicator)
+        status_row_layout.addWidget(self.status_lbl)
+        status_row_layout.addStretch()
+        self._layout.addWidget(self.listen_btn, 6, 0)
+        self._layout.addWidget(status_row, 6, 1)
+
+        # Row 7/8 — last received job (read-only text area showing raw JSON)
+        self._layout.addWidget(QtWidgets.QLabel("Last received:"), 7, 0, 1, 2)
+        self.last_job_txt = QtWidgets.QPlainTextEdit()
+        self.last_job_txt.setReadOnly(True)
+        self.last_job_txt.setPlaceholderText("No job received yet")
+        self.last_job_txt.setFont(small)
+        self.last_job_txt.setMaximumHeight(90)
+        self.last_job_txt.setStyleSheet(
+            "color: #cccccc; background-color: #2a2a2a; border: 1px solid #444;"
+        )
+        self._layout.addWidget(self.last_job_txt, 8, 0, 1, 2)
+
+        # Row 9/10 — last dispatched result (read-only text area showing raw JSON)
+        self._layout.addWidget(QtWidgets.QLabel("Last dispatched:"), 9, 0, 1, 2)
+        self.last_result_txt = QtWidgets.QPlainTextEdit()
+        self.last_result_txt.setReadOnly(True)
+        self.last_result_txt.setPlaceholderText("No result dispatched yet")
+        self.last_result_txt.setFont(small)
+        self.last_result_txt.setMaximumHeight(90)
+        self.last_result_txt.setStyleSheet(
+            "color: #cccccc; background-color: #2a2a2a; border: 1px solid #444;"
+        )
+        self._layout.addWidget(self.last_result_txt, 10, 0, 1, 2)
+
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+
+
+class EpicsLoggerGroupBox(QtWidgets.QGroupBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__('epicsLogger Publisher')
+        self._layout = QtWidgets.QGridLayout()
+        self._layout.setHorizontalSpacing(6)
+        self._layout.setVerticalSpacing(4)
+
+        # Row 0 — config file
+        self.load_config_btn = QtWidgets.QPushButton("Load config.yaml")
+        self._layout.addWidget(self.load_config_btn, 0, 0, 1, 2)
+        self.config_lbl = QtWidgets.QLabel("—")
+        self.config_lbl.setStyleSheet("color: #888888;")
+        small = self.config_lbl.font()
+        small.setPointSize(small.pointSize() - 1)
+        self.config_lbl.setFont(small)
+        self.config_lbl.setWordWrap(True)
+        self._layout.addWidget(self.config_lbl, 1, 0, 1, 2)
+
+        # Row 2 — host / port / health port
+        self._layout.addWidget(QtWidgets.QLabel("Host:"), 2, 0)
+        self.host_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.host_lbl, 2, 1)
+
+        self._layout.addWidget(QtWidgets.QLabel("Port:"), 3, 0)
+        self.port_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.port_lbl, 3, 1)
+
+        self._layout.addWidget(QtWidgets.QLabel("Health port:"), 4, 0)
+        self.health_port_lbl = QtWidgets.QLabel("—")
+        self._layout.addWidget(self.health_port_lbl, 4, 1)
+
+        # Row 5 — connect toggle + status indicator
+        self.connect_btn = QtWidgets.QPushButton("Connect")
+        self.connect_btn.setEnabled(False)
+        self.status_indicator = StatusIndicator()
+        self.status_lbl = QtWidgets.QLabel("Idle")
+        status_row = QtWidgets.QWidget()
+        status_row_layout = QtWidgets.QHBoxLayout(status_row)
+        status_row_layout.setContentsMargins(0, 0, 0, 0)
+        status_row_layout.addWidget(self.status_indicator)
+        status_row_layout.addWidget(self.status_lbl)
+        status_row_layout.addStretch()
+        self._layout.addWidget(self.connect_btn, 5, 0)
+        self._layout.addWidget(status_row, 5, 1)
+
+        # Row 6 — publish temperatures checkbox + indicator
+        self.publish_temperatures_cb = QtWidgets.QCheckBox("Publish temperatures to ZMQ")
+        self.publish_indicator = StatusIndicator()
+        self._layout.addWidget(self.publish_temperatures_cb, 6, 0)
+        self._layout.addWidget(self.publish_indicator, 6, 1)
+
+        # Row 7 — last trigger timestamp
+        self._layout.addWidget(QtWidgets.QLabel("Last trigger:"), 7, 0)
+        self.last_trigger_lbl = QtWidgets.QLabel("—")
+        self.last_trigger_lbl.setFont(small)
+        self.last_trigger_lbl.setStyleSheet("color: #888888;")
+        self._layout.addWidget(self.last_trigger_lbl, 7, 1)
+
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+
+
+class SettingsGroupBox(QtWidgets.QGroupBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__('Settings save and restore')
+
+        self._layout = QtWidgets.QVBoxLayout()
+   
+        self.settings_cb = QtWidgets.QComboBox()
+        '''self.settings_cb.setMinimumWidth(250)
+        self.settings_cb.setMaximumWidth(250)'''
+        
+        self._btns_layout = QtWidgets.QHBoxLayout()
+        self.load_setting_btn = QtWidgets.QPushButton("Load")
+        load_setting_icon = QIcon()
+        load_setting_icon.addFile(os.path.join(resources_path,'style','input.svg'))
+        self.load_setting_btn.setIcon(load_setting_icon)
+
+        self.save_setting_btn = QtWidgets.QPushButton("Save")
+        save_setting_pixmap = QStyle.StandardPixmap.SP_DialogSaveButton
+        save_setting_icon = self.style().standardIcon(save_setting_pixmap)
+        self.save_setting_btn.setIcon(save_setting_icon)
+
+        self._btns_layout.addWidget(self.load_setting_btn)
+        self._btns_layout.addWidget(self.save_setting_btn)
+        #self._btns_layout.addSpacerItem(HorizontalSpacerItem())
+
+        self._layout.addWidget(self.settings_cb)
+        self._layout.addLayout(self._btns_layout)
+
+
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+
+
+class KineticsGB(QtWidgets.QGroupBox):
+    """All kinetics-mode controls in one place.
+
+    Hidden when kinetics_mode == 'off'. Shown for 'kinetics-interleaved'
+    and 'kinetics' (single-sided non-interleaved).
+    """
+    # Combo item order — keep in sync with the mode <-> override map in
+    # apply_kinetics_state / the controller wire-up. Index 0 = Auto (no
+    # override); indices 1/2 force the mode.
+    MODE_COMBO_ITEMS = (
+        ('Auto (from file)', None),
+        ('Kinetics (single-sided)', 'kinetics'),
+        ('Kinetics-interleaved', 'kinetics-interleaved'),
+    )
+
+    def __init__(self):
+        super().__init__('Kinetics')
+        self._layout = QtWidgets.QVBoxLayout()
+
+        # Row 0 — mode selector. Overrides the file-based auto-detect.
+        mode_row = QtWidgets.QHBoxLayout()
+        mode_row.setContentsMargins(0, 0, 0, 0)
+        mode_row.setSpacing(6)
+        mode_row.addWidget(QtWidgets.QLabel('Mode:'))
+        self.mode_combo = QtWidgets.QComboBox()
+        for label, _ in self.MODE_COMBO_ITEMS:
+            self.mode_combo.addItem(label)
+        self.mode_combo.setToolTip(
+            'Kinetics readout interpretation.\n'
+            '  Auto              — window_height==1 → single-sided;\n'
+            '                      window_height >1 → interleaved (heuristic).\n'
+            '  Single-sided      — one side per strip. Covers both narrow\n'
+            '                      (1-row) and windowed (multi-row with\n'
+            '                      signal + bg on same strip) acquisitions.\n'
+            '  Interleaved       — DS and US bands on the same strip.\n'
+            'The choice persists in .trs.')
+        mode_row.addWidget(self.mode_combo, 1)
+        self._layout.addLayout(mode_row)
+
+        # Row 1 — history-plot axis-alignment toggles.
+        self._toggles = QtWidgets.QHBoxLayout()
+        self.lab_time_btn = QtWidgets.QPushButton('Lab time')
+        self.lab_time_btn.setCheckable(True)
+        self.lab_time_btn.setToolTip(
+            'Show the history plot x-axis as time (s) with DS/US aligned '
+            'by physical exposure via the per-side mask offset.')
+        self.sync_frame_btn = QtWidgets.QPushButton('Sync frame')
+        self.sync_frame_btn.setCheckable(True)
+        self.sync_frame_btn.setToolTip(
+            'Show the history plot x-axis as coincident-exposure frame '
+            'index (DS and US frames from the same physical exposure '
+            'share the same x). Mutually exclusive with Lab time.')
+        self._toggles.addWidget(self.lab_time_btn)
+        self._toggles.addWidget(self.sync_frame_btn)
+        self._toggles.addStretch()
+        self._layout.addLayout(self._toggles)
+
+        # Row 2 — import-slots action.
+        self.import_slots_btn = QtWidgets.QPushButton('Import slots')
+        self.import_slots_btn.setToolTip(
+            "Legacy: import DS/US mask-slot offsets from another .trs. "
+            "New kinetics-cal .trs files store the slot offsets directly, "
+            "so this is normally not needed — use only for older files "
+            "saved before the change.")
+        self._layout.addWidget(self.import_slots_btn)
+
+        # Row 3 — read-only info grid.
+        info = QtWidgets.QGridLayout()
+        info.setContentsMargins(0, 4, 0, 0)
+        info.setHorizontalSpacing(8)
+        info.setVerticalSpacing(2)
+        small = QtGui.QFont()
+        small.setPointSize(9)
+
+        def _lbl(text, dim=False):
+            w = QtWidgets.QLabel(text)
+            w.setFont(small)
+            if dim:
+                w.setStyleSheet('color: #888888;')
+            return w
+
+        info.addWidget(_lbl('Mode:', dim=True), 0, 0)
+        self.mode_lbl = _lbl('—')
+        info.addWidget(self.mode_lbl, 0, 1)
+        info.addWidget(_lbl('Geometry:', dim=True), 1, 0)
+        self.geom_lbl = _lbl('—')
+        info.addWidget(self.geom_lbl, 1, 1)
+        info.addWidget(_lbl('DS slot:', dim=True), 2, 0)
+        self.q_ds_lbl = _lbl('—')
+        info.addWidget(self.q_ds_lbl, 2, 1)
+        info.addWidget(_lbl('US slot:', dim=True), 3, 0)
+        self.q_us_lbl = _lbl('—')
+        info.addWidget(self.q_us_lbl, 3, 1)
+        self._layout.addLayout(info)
+
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+        self.hide()
+
+    def apply_kinetics_state(self, mode, info, q_ds, q_us, override=None):
+        """Refresh visibility and info labels from the current config state.
+
+        `mode` is the config's kinetics_mode ('off' | 'kinetics-interleaved'
+        | 'kinetics'). `info` is the kinetics_info dict. `q_ds` / `q_us`
+        are the effective per-side slot offsets, or None if unavailable.
+        `override` is cfg.kinetics_mode_override (None / 'kinetics' /
+        'kinetics-interleaved') — drives the mode-combo selection.
+        """
+        if mode not in ('kinetics-interleaved', 'kinetics'):
+            self.hide()
+            return
+        self.show()
+        # Sync combo to the current override without re-triggering the wire.
+        target_idx = 0
+        for i, (_, val) in enumerate(self.MODE_COMBO_ITEMS):
+            if val == override:
+                target_idx = i
+                break
+        if self.mode_combo.currentIndex() != target_idx:
+            self.mode_combo.blockSignals(True)
+            self.mode_combo.setCurrentIndex(target_idx)
+            self.mode_combo.blockSignals(False)
+        self.mode_lbl.setText(
+            'interleaved' if mode == 'kinetics-interleaved' else 'single strip')
+        n = info.get('n_strips', '?') if info else '?'
+        h = info.get('window_height', '?') if info else '?'
+        self.geom_lbl.setText(f'{n} strips × {h} rows')
+        self.q_ds_lbl.setText(str(int(q_ds)) if q_ds is not None else '—')
+        self.q_us_lbl.setText(str(int(q_us)) if q_us is not None else '—')
+
+
+class MeasurementModeGB(QtWidgets.QGroupBox):
+    """Per-configuration measurement mode: dual-sided (DS+US) or single-sided.
+
+    Dual is the classical two-beam DAC geometry (downstream + upstream).
+    Single hides the us-side UI, disables 2-color pyrometry, and blanks
+    us-side fields in log/EPICS/ZMQ output.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__('Measurement mode')
+        self._layout = QtWidgets.QHBoxLayout()
+        self._layout.setContentsMargins(6, 4, 6, 4)
+        self._layout.setSpacing(8)
+
+        self.dual_mode_rb = QtWidgets.QRadioButton('Dual (DS + US)')
+        self.dual_mode_rb.setToolTip('Two spectra — downstream and upstream (classical DAC setup)')
+        self.single_mode_rb = QtWidgets.QRadioButton('Single sided')
+        self.single_mode_rb.setToolTip('One spectrum — hides upstream widgets and disables 2-color pyrometry')
+        self.dual_mode_rb.setChecked(True)
+
+        self._btn_group = QtWidgets.QButtonGroup(self)
+        self._btn_group.addButton(self.dual_mode_rb)
+        self._btn_group.addButton(self.single_mode_rb)
+
+        self._layout.addWidget(self.dual_mode_rb)
+        self._layout.addWidget(self.single_mode_rb)
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+
+
+class WavelengthCalibrationGB(QtWidgets.QGroupBox):
+    """Explicit-load wavelength calibration for TIFF files.
+
+    User picks a calibration.json produced by photron/calibrate.py; the
+    polynomial coefficients are stored on the current configuration and
+    applied to every TIFF loaded thereafter (until cleared or overwritten).
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__('Wavelength calibration (TIFF)')
+        self._layout = QtWidgets.QHBoxLayout()
+        self._layout.setContentsMargins(6, 4, 6, 4)
+        self._layout.setSpacing(6)
+
+        self.load_btn = QtWidgets.QPushButton('Load...')
+        self.load_btn.setToolTip('Load a calibration.json produced by photron/calibrate.py')
+        self.clear_btn = QtWidgets.QPushButton('Clear')
+        self.clear_btn.setToolTip('Remove the current wavelength calibration; TIFFs revert to pixel-index x-axis')
+        self.file_lbl = QtWidgets.QLabel('None loaded')
+        self.file_lbl.setStyleSheet('color: gray;')
+
+        self._layout.addWidget(self.load_btn)
+        self._layout.addWidget(self.file_lbl, 1)
+        self._layout.addWidget(self.clear_btn)
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+
+
+class BackgroundSubtractionGB(QtWidgets.QGroupBox):
+    """Per-configuration background subtraction mode with optional prerecorded dark.
+
+    Modes:
+      * In-situ ROI  — sum a per-side ROI on the same frame (indices 2/3).
+      * Prerecorded dark — subtract a stored dark image per side, scaled by the
+        manual × spinbox.
+      * Hybrid (auto-scaled dark) — subtract a stored dark image per side,
+        auto-scaled by mean(bg-ROI on current image) / mean(same bg-ROI on
+        dark image). Manual × spinbox is inactive.
+      * Off — no subtraction.
+
+    Dark-file rows (DS + US) are shown in Prerecorded and Hybrid modes. In
+    single-sided measurement mode the US row is hidden (see
+    TemperatureWidget.apply_measurement_mode).
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__('Background subtraction')
+        self._layout = QtWidgets.QGridLayout()
+        self._layout.setContentsMargins(6, 4, 6, 4)
+        self._layout.setHorizontalSpacing(6)
+        self._layout.setVerticalSpacing(4)
+
+        # Row 0: mode selector
+        self._layout.addWidget(QtWidgets.QLabel('Mode:'), 0, 0)
+        self.mode_combo = QtWidgets.QComboBox()
+        self.mode_combo.addItems(['In-situ ROI', 'Prerecorded dark', 'Hybrid (auto-scaled dark)', 'Kinetics trend', 'Off'])
+        self._layout.addWidget(self.mode_combo, 0, 1, 1, 4)
+
+        # Row 1: DS dark controls (visible only in prerecorded mode)
+        self._ds_label = QtWidgets.QLabel('DS:')
+        self.load_ds_dark_btn = QtWidgets.QPushButton('Load…')
+        self.clear_ds_dark_btn = QtWidgets.QPushButton('Clear')
+        self.ds_dark_filename_lbl = QtWidgets.QLabel('None')
+        self.ds_dark_filename_lbl.setStyleSheet('color: gray;')
+        self.ds_dark_scale_sb = QtWidgets.QDoubleSpinBox()
+        self.ds_dark_scale_sb.setDecimals(3)
+        self.ds_dark_scale_sb.setRange(0.0, 1e6)
+        self.ds_dark_scale_sb.setSingleStep(0.1)
+        self.ds_dark_scale_sb.setValue(1.0)
+        self.ds_dark_scale_sb.setPrefix('× ')
+        self.ds_dark_scale_sb.setMaximumWidth(90)
+        self._layout.addWidget(self._ds_label,           1, 0)
+        self._layout.addWidget(self.load_ds_dark_btn,    1, 1)
+        self._layout.addWidget(self.clear_ds_dark_btn,   1, 2)
+        self._layout.addWidget(self.ds_dark_filename_lbl,1, 3)
+        self._layout.addWidget(self.ds_dark_scale_sb,    1, 4)
+
+        # Row 2: US dark controls
+        self._us_label = QtWidgets.QLabel('US:')
+        self.load_us_dark_btn = QtWidgets.QPushButton('Load…')
+        self.clear_us_dark_btn = QtWidgets.QPushButton('Clear')
+        self.us_dark_filename_lbl = QtWidgets.QLabel('None')
+        self.us_dark_filename_lbl.setStyleSheet('color: gray;')
+        self.us_dark_scale_sb = QtWidgets.QDoubleSpinBox()
+        self.us_dark_scale_sb.setDecimals(3)
+        self.us_dark_scale_sb.setRange(0.0, 1e6)
+        self.us_dark_scale_sb.setSingleStep(0.1)
+        self.us_dark_scale_sb.setValue(1.0)
+        self.us_dark_scale_sb.setPrefix('× ')
+        self.us_dark_scale_sb.setMaximumWidth(90)
+        self._layout.addWidget(self._us_label,           2, 0)
+        self._layout.addWidget(self.load_us_dark_btn,    2, 1)
+        self._layout.addWidget(self.clear_us_dark_btn,   2, 2)
+        self._layout.addWidget(self.us_dark_filename_lbl,2, 3)
+        self._layout.addWidget(self.us_dark_scale_sb,    2, 4)
+
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+        self._set_dark_rows_visible(False)  # shown in prerecorded/hybrid only
+
+    def _set_dark_rows_visible(self, visible):
+        """Show DS+US dark rows when a dark file is used (prerecorded or hybrid)."""
+        for w in (self._ds_label, self.load_ds_dark_btn, self.clear_ds_dark_btn,
+                  self.ds_dark_filename_lbl, self.ds_dark_scale_sb,
+                  self._us_label, self.load_us_dark_btn, self.clear_us_dark_btn,
+                  self.us_dark_filename_lbl, self.us_dark_scale_sb):
+            w.setVisible(visible)
+
+    def set_scale_spinboxes_enabled(self, enabled):
+        """Disable the manual × scale spinboxes when the auto-scale (hybrid) is active."""
+        tip = '' if enabled else 'Auto-scaled from bg-ROI in hybrid mode'
+        for sb in (self.ds_dark_scale_sb, self.us_dark_scale_sb):
+            sb.setEnabled(enabled)
+            sb.setToolTip(tip)
+
+    def set_us_row_visible(self, visible):
+        """Hide the US dark row entirely (used when measurement mode is single)."""
+        for w in (self._us_label, self.load_us_dark_btn, self.clear_us_dark_btn,
+                  self.us_dark_filename_lbl, self.us_dark_scale_sb):
+            w.setVisible(visible)
+
+
+class TemperatureCalibrationSection(QtWidgets.QGroupBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__('Intensity calibration')
+        self._layout = QtWidgets.QVBoxLayout()
+
+        self.downstream_gb = CalibrationGB('Downstream', 'rgba(255, 215, 0, 255)')
+        self.upstream_gb = CalibrationGB('Upstream', 'rgba(255, 111, 97, 255)')
+
+        self._layout.addWidget(self.downstream_gb)
+        self._layout.addWidget(self.upstream_gb)
+
+        #self._layout.addSpacerItem(VerticalSpacerItem())
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+
+class TemperatureFitSettings(QtWidgets.QGroupBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__('Temperature fit function')
+        self._layout = QtWidgets.QHBoxLayout()
+
+        self.plank_btn = QtWidgets.QRadioButton("Plank")
+        self.wien_btn = QtWidgets.QRadioButton("Wien")
+        
+
+        self._layout.addWidget(self.plank_btn)
+        self._layout.addWidget(self.wien_btn)
+        self.plank_btn.setChecked(True)
+
+        #self._layout.addSpacerItem(VerticalSpacerItem())
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+
+class FilterSettings(QtWidgets.QGroupBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__('Interference filter')
+        self._layout = QtWidgets.QGridLayout()
+        self._layout.setHorizontalSpacing(8)
+        self._layout.setVerticalSpacing(4)
+
+        # Header row
+        self._layout.addWidget(QtWidgets.QLabel(''),       0, 0)
+        self._layout.addWidget(QtWidgets.QLabel('Apply'),  0, 1)
+        self._layout.addWidget(QtWidgets.QLabel('Fringe (cm)'), 0, 2)
+        self._layout.addWidget(QtWidgets.QLabel('n·d (μm)'),    0, 3)
+
+        # DS row
+        self._layout.addWidget(QtWidgets.QLabel('DS'), 1, 0)
+        self.ds_filter_btn = QtWidgets.QCheckBox()
+        self.ds_filter_btn.setChecked(False)
+        self._layout.addWidget(self.ds_filter_btn, 1, 1)
+        self.ds_fringe_lbl = QtWidgets.QLabel('—')
+        self.ds_nd_lbl     = QtWidgets.QLabel('—')
+        self._layout.addWidget(self.ds_fringe_lbl, 1, 2)
+        self._layout.addWidget(self.ds_nd_lbl,     1, 3)
+
+        # US row
+        self._layout.addWidget(QtWidgets.QLabel('US'), 2, 0)
+        self.us_filter_btn = QtWidgets.QCheckBox()
+        self.us_filter_btn.setChecked(False)
+        self._layout.addWidget(self.us_filter_btn, 2, 1)
+        self.us_fringe_lbl = QtWidgets.QLabel('—')
+        self.us_nd_lbl     = QtWidgets.QLabel('—')
+        self._layout.addWidget(self.us_fringe_lbl, 2, 2)
+        self._layout.addWidget(self.us_nd_lbl,     2, 3)
+
+        # Save filtered output option
+        self._layout.addWidget(QtWidgets.QLabel('Save filtered'), 3, 0, 1, 2)
+        self.save_filtered_cb = QtWidgets.QCheckBox()
+        self.save_filtered_cb.setChecked(False)
+        self._layout.addWidget(self.save_filtered_cb, 3, 2, 1, 2)
+
+        # Frequency search range rows
+        self._layout.addWidget(QtWidgets.QLabel('f min (cm)'), 4, 0, 1, 2)
+        self.freq_min_sb = QtWidgets.QDoubleSpinBox()
+        self.freq_min_sb.setDecimals(4)
+        self.freq_min_sb.setRange(0.0, 0.5)
+        self.freq_min_sb.setSingleStep(0.0005)
+        self.freq_min_sb.setValue(0.0005)
+        self._layout.addWidget(self.freq_min_sb, 4, 2, 1, 2)
+
+        self._layout.addWidget(QtWidgets.QLabel('f max (cm)'), 5, 0, 1, 2)
+        self.freq_max_sb = QtWidgets.QDoubleSpinBox()
+        self.freq_max_sb.setDecimals(4)
+        self.freq_max_sb.setRange(0.0, 0.5)
+        self.freq_max_sb.setSingleStep(0.001)
+        self.freq_max_sb.setValue(0.05)
+        self._layout.addWidget(self.freq_max_sb, 5, 2, 1, 2)
+
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+
+    def set_mode(self, mode):
+        """Hide the US filter row in single-sided mode."""
+        dual = mode == 'dual'
+        for col in range(4):
+            item = self._layout.itemAtPosition(2, col)
+            if item is not None and item.widget() is not None:
+                item.widget().setVisible(dual)
+
+
+class CalibrationGB(QtWidgets.QGroupBox):
+    def __init__(self, title, color):
+        super(CalibrationGB, self).__init__(title)
+
+        self.color = color
+        self._layout = QtWidgets.QGridLayout()
+        self._layout.setVerticalSpacing(8)
+        self._layout.setHorizontalSpacing(8)
+
+        self.load_file_btn = QtWidgets.QPushButton('Load File')
+        self.clear_file_btn = QtWidgets.QPushButton('Clear')
+        self.clear_file_btn.setToolTip(
+            'Drop the intensity calibration for this side; corrected spectrum '
+            'falls back to raw ROI counts (transfer function = 1).')
+        self.file_lbl = QtWidgets.QLabel('Select File...')
+
+        self.temperature_txt = QtWidgets.QLineEdit('2000')
+        self.temperature_txt.setMinimumWidth(70)
+        self.temperature_unit_lbl = QtWidgets.QLabel('K')
+
+        self.temperature_rb = QtWidgets.QRadioButton('Temperature')
+        self.standard_rb = QtWidgets.QRadioButton('Standard Spectrum')
+        self.load_standard_btn = QtWidgets.QPushButton('...')
+        self.standard_file_lbl = QtWidgets.QLabel('Select File...')
+        self.save_standard_btn = QtWidgets.QPushButton('Save Standard')
+
+        self.start_frame_lbl = QtWidgets.QLabel('Start frame')
+        self.end_frame_lbl = QtWidgets.QLabel('End frame')
+        self.start_frame = IntegerTextField('1')
+        self.end_frame = IntegerTextField('1')
+
+        self._layout.addWidget(self.load_file_btn, 0, 0, 1, 2)
+        self._layout.addWidget(self.clear_file_btn, 0, 2)
+        self._layout.addWidget(self.file_lbl, 0, 3)
+        self._layout.addWidget(self.temperature_txt, 1, 0, 1, 2)
+        self._layout.addWidget(self.temperature_unit_lbl, 1, 2)
+        self._layout.addWidget(self.temperature_rb, 1, 3)
+        self._layout.addWidget(self.load_standard_btn, 2, 1, 1, 2)
+        self._layout.addWidget(self.standard_rb, 2, 3)
+        self._layout.addWidget(self.standard_file_lbl, 3, 3)
+        self._layout.addWidget(self.start_frame_lbl, 4, 0, 1,2)
+        self._layout.addWidget(self.start_frame, 4, 2, 1,2)
+        self._layout.addWidget(self.end_frame_lbl, 5, 0, 1,2)
+        self._layout.addWidget(self.end_frame,5, 2,1,2)
+        self._layout.addWidget(self.save_standard_btn, 6, 0, 1, 2)
+
+        self.setLayout(self._layout)
+        self.style_widgets()
+        self.set_stylesheet()
+
+    def style_widgets(self):
+
+        self.temperature_txt.setValidator(QtGui.QDoubleValidator())
+        self.temperature_txt.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        self.temperature_rb.toggle()
+
+    def set_stylesheet(self):
+        style_str = "QGroupBox { color: %s; border: 1px solid %s}" % (self.color, self.color)
+        self.setStyleSheet(style_str)
+
+
+class SetupEpicsDialog(QtWidgets.QDialog):
+    """
+    Dialog for inputting map positions manually
+    """
+
+    def __init__(self, parent):
+        super(SetupEpicsDialog, self).__init__()
+
+        self._parent = parent
+        self._create_widgets()
+        self._layout_widgets()
+        #self._style_widgets()
+
+        self._connect_widgets()
+        self.approved = False
+
+    def _create_widgets(self):
+        self.us_temp_lbl = QtWidgets.QLabel("US Temperature PV")
+        self.us_temp_lbl.setMinimumWidth(200)
+        self.ds_temp_lbl = QtWidgets.QLabel("DS Temperature PV")
+     
+        self.temperature_file_directory_pv_lbl = QtWidgets.QLabel("T File Directory PV")
+
+        self.area_detector_pv_lbl = QtWidgets.QLabel("Area Detector PV")
+
+        self.us_temp_txt = QtWidgets.QLineEdit()
+        self.us_temp_txt.setMinimumWidth(200)
+        self.ds_temp_txt = QtWidgets.QLineEdit()
+   
+        self.temperature_file_directory_pv_txt = QtWidgets.QLineEdit()
+        self.area_detector_pv_txt = QtWidgets.QLineEdit()
+
+        self.us_temp_txt.setToolTip("Enter the complete PV, or None")
+        self.ds_temp_txt.setToolTip("Enter the complete PV, or None")
+     
+        self.temperature_file_directory_pv_txt.setToolTip("Enter the PV which points to the T files folder, or None")
+
+        self.ok_btn = QtWidgets.QPushButton("Done")
+        self.cancel_btn = QtWidgets.QPushButton("Cancel")
+
+    def _layout_widgets(self):
+        self._grid_layout = QtWidgets.QGridLayout()
+
+        self._grid_layout.addWidget(self.us_temp_lbl, 0, 0)
+        self._grid_layout.addWidget(self.ds_temp_lbl, 1, 0)
+
+        self._grid_layout.addWidget(self.temperature_file_directory_pv_lbl, 2, 0)
+        self._grid_layout.addWidget(self.us_temp_txt, 0, 1)
+        self._grid_layout.addWidget(self.ds_temp_txt, 1, 1)
+
+        self._grid_layout.addWidget(self.temperature_file_directory_pv_txt, 2, 1)
+
+        self._grid_layout.addWidget(self.area_detector_pv_lbl, 3, 0)
+        self._grid_layout.addWidget(self.area_detector_pv_txt, 3, 1)
+
+        self._grid_layout.addWidget(self.ok_btn, 4, 0)
+        self._grid_layout.addWidget(self.cancel_btn, 4, 1)
+
+
+
+        self.setLayout(self._grid_layout)
+
+    '''def _style_widgets(self):
+        self.ok_btn.setEnabled(False)
+        self.setWindowFlags(QtCore.Qt.WindowType.FramelessWindowHint)
+
+        file = open(os.path.join(style_path, "stylesheet.qss"))
+        stylesheet = file.read()
+        self.setStyleSheet(stylesheet)
+        file.close()'''
+
+    def _connect_widgets(self):
+        """
+        Connecting actions to slots.
+        """
+        self.ok_btn.clicked.connect(self.accept_epics_setup)
+        self.cancel_btn.clicked.connect(self.reject_epics_setup)
+
+    def accept_epics_setup(self):
+        self.approved = True
+        self.accept()
+
+    def reject_epics_setup(self):
+        self.approved = False
+        self.reject()
+
+    @property
+    def us_temp_pv(self):
+        return str(self.us_temp_txt.text())
+
+    @us_temp_pv.setter
+    def us_temp_pv(self, pv):
+        self.us_temp_txt.setText(pv)
+
+    @property
+    def ds_temp_pv(self):
+        return str(self.ds_temp_txt.text())
+
+    @ds_temp_pv.setter
+    def ds_temp_pv(self, pv):
+        self.ds_temp_txt.setText(pv)
+
+    @property
+    def temperature_file_folder_pv(self):
+        return str(self.temperature_file_directory_pv_txt.text())
+
+    @temperature_file_folder_pv.setter
+    def temperature_file_folder_pv(self, pv):
+        self.temperature_file_directory_pv_txt.setText(pv)
+
+    @property
+    def area_detector_pv(self):
+        return str(self.area_detector_pv_txt.text())
+
+    @area_detector_pv.setter
+    def area_detector_pv(self, pv):
+        self.area_detector_pv_txt.setText(pv)
+
+    def exec(self):
+        """
+        Overwriting the dialog exec function to center the widget in the parent window before execution.
+        """
+        parent_center = self._parent.window().mapToGlobal(self._parent.window().rect().center())
+        self.move(parent_center.x() - 101, parent_center.y() - 48)
+        super(SetupEpicsDialog, self).exec()
+
+
