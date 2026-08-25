@@ -1315,7 +1315,11 @@ class TemperatureController(QtCore.QObject):
         self.widget.roi_widget.specra_widget.plot_ds_data(*self.model.current_configuration.ds_temperature_model.data_spectrum.data)
 
         
-        self.widget.temperature_spectrum_widget.update_ds_roi_max_txt(self.model.current_configuration.ds_temperature_model.data_roi_max)
+        cfg = self.model.current_configuration
+        ds_sat = cfg.saturation_limit(cfg.data_img)
+        ds_fmt_max = 65536 if not np.isfinite(ds_sat) else float(ds_sat) + 2
+        self.widget.temperature_spectrum_widget.update_ds_roi_max_txt(
+            cfg.ds_temperature_model.data_roi_max, format_max=ds_fmt_max)
 
         f = self.model.current_configuration.ds_fringe_frequency
         nd = self.model.current_configuration.ds_fringe_nd_um
@@ -1387,7 +1391,11 @@ class TemperatureController(QtCore.QObject):
         self.widget.roi_widget.specra_widget.plot_us_data(*self.model.current_configuration.us_temperature_model.data_spectrum.data)
 
         
-        self.widget.temperature_spectrum_widget.update_us_roi_max_txt(self.model.current_configuration.us_temperature_model.data_roi_max)
+        cfg = self.model.current_configuration
+        us_sat = cfg.saturation_limit(cfg.data_img)
+        us_fmt_max = 65536 if not np.isfinite(us_sat) else float(us_sat) + 2
+        self.widget.temperature_spectrum_widget.update_us_roi_max_txt(
+            cfg.us_temperature_model.data_roi_max, format_max=us_fmt_max)
 
         f = self.model.current_configuration.us_fringe_frequency
         nd = self.model.current_configuration.us_fringe_nd_um

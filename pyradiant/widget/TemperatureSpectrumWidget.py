@@ -538,7 +538,14 @@ class IntensityIndicator(pg.GraphicsWidget):
         self.inside_rect.setBrush(QtGui.QBrush(set_color))
 
     def set_intensity(self, intensity):
-        self._intensity_level = intensity
+        # Clamp to [0, 1]; anything above 1 would draw the bar past the
+        # plot rect and cross the 0.8 red threshold on an out-of-scale
+        # ratio (e.g. summed data against a stale uint16 full-scale).
+        try:
+            v = float(intensity)
+        except (TypeError, ValueError):
+            v = 0.0
+        self._intensity_level = max(0.0, min(1.0, v))
         self.__geometryChanged()
 
 

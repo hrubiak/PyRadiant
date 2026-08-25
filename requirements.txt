@@ -3,6 +3,7 @@ scipy>=1.10
 opencv-python-headless
 pillow>=10.0
 tifffile>=2024.0
+imagecodecs>=2024.0  # required by tifffile to decode 12-bit packed TIFFs (Photron batch exporter)
 PyQt6>=6.7
 pyqtgraph>=0.13
 python-dateutil

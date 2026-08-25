@@ -287,6 +287,23 @@ class TemperatureModelConfiguration(QtCore.QObject):
     def load_data_image_ad(self, area_detector):
         self.load_data_image(area_detector.record_name, area_detector=area_detector)
 
+    def saturation_limit(self, array=None):
+        """Per-array saturation threshold from source dtype.
+        Any integer dtype → iinfo(dtype).max - 1 (headroom of one count
+        below true max, matching the historic uint16=65534 convention).
+        Float → np.inf (detection disabled — summed/float data has no
+        physically-meaningful full-scale limit).
+        Mirror of SingleTemperatureModel.saturation_limit for use at the
+        top-level cfg (e.g. from the controller for the intensity gauge)."""
+        if array is None:
+            array = getattr(self, 'data_img', None)
+        if array is None:
+            return np.inf
+        dtype = np.asarray(array).dtype
+        if np.issubdtype(dtype, np.integer):
+            return int(np.iinfo(dtype).max) - 1
+        return np.inf
+
     # Photron TIFF wavelength calibration (explicit load; per-configuration)
     #########################################################################
     def load_photron_wavelength_calibration(self, json_filename):
@@ -2838,19 +2855,36 @@ class SingleTemperatureModel(QtCore.QObject):
     # Spectrum calculations
     #########################################################################
 
-    def columns_within_limit(self, array, limit=65534):
-        # Check if any element in each column is above the limit
+    def saturation_limit(self, array=None):
+        """Per-array saturation threshold derived from the source dtype.
+
+        Any integer dtype → iinfo(dtype).max - 1 (headroom of one count
+            below true max — preserves the historic uint16=65534
+            convention where a single noisy pixel at max-1 isn't flagged).
+        Float dtype → np.inf (saturation detection disabled — summed
+            or float data has no physically-meaningful full-scale limit
+            at this layer)."""
+        if array is None:
+            array = getattr(self, 'data_img', None)
+        if array is None:
+            return np.inf
+        dtype = np.asarray(array).dtype
+        if np.issubdtype(dtype, np.integer):
+            return int(np.iinfo(dtype).max) - 1
+        return np.inf
+
+    def columns_within_limit(self, array, limit=None):
+        if limit is None:
+            limit = self.saturation_limit(array)
         above_limit = np.any(array > limit, axis=0)
         return ~above_limit
 
-    def count_columns_above_limit(self, array, limit=65534):
-        # Check if any element in each column is above the limit
+    def count_columns_above_limit(self, array, limit=None):
+        if limit is None:
+            limit = self.saturation_limit(array)
         above_limit = np.any(array > limit, axis=0)
-        # Check if all elements in each column are below or equal to the limit
-        below_limit = ~np.any(array > limit, axis=0)
-        # Count the number of True values (columns with values above limit)
+        below_limit = ~above_limit
         above_limit_count = np.sum(above_limit)
-        # Count the number of True values (columns with all values below or equal to limit)
         below_limit_count = np.sum(below_limit)
         return above_limit_count, below_limit_count
 
@@ -2878,7 +2912,8 @@ class SingleTemperatureModel(QtCore.QObject):
 
             roi_img = get_roi_img(_data_img_as_array, roi)
             within_limit = self.columns_within_limit(roi_img)
-            if np.any(roi_img > 65534):
+            sat_limit = self.saturation_limit(roi_img)
+            if np.isfinite(sat_limit) and np.any(roi_img > sat_limit):
                 above_limit_count, below_limit_count = self.count_columns_above_limit(roi_img)
                 #print("saturated columns = " + str(above_limit_count))
 
