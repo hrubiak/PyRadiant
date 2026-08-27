@@ -20,7 +20,7 @@
 import os
 from datetime import datetime
 
-from PyQt6 import QtWidgets, QtCore
+from PyQt6 import QtWidgets, QtCore, QtGui
 
 from ..widget.TemperatureWidget import TemperatureWidget, SetupEpicsDialog
 from ..widget.ConfigurationWidget import ConfigurationWidget
@@ -91,7 +91,16 @@ class TemperatureController(QtCore.QObject):
         self.data_history_widget.temperatures_plot_widget.update_time_lapse_us_temperature_txt('Upstream')
 
         self._exp_working_dir = ''
-        
+
+        # Per-purpose "last-used directory" memory. Each file-picker gets its
+        # own key so loading a calibration doesn't clobber the data-file dir
+        # and vice versa. Persisted in load_settings/save_settings as JSON.
+        # Purposes in use: data, ds_cal, us_cal, ds_standard, us_standard,
+        # wavelength_cal, dark_ds, dark_us, cal_dark_ds, cal_dark_us,
+        # save_data, save_graph, import_slots.
+        self._last_dirs = {}
+
+
 
         self.live_data = False # this is True when AD checkbox is checked and an area detector connection is established, otherwise it's False
         self._AD_watcher = None
@@ -196,11 +205,94 @@ class TemperatureController(QtCore.QObject):
         self.widget.ad_indicator.set_inactive()
         self.widget.ad_last_update_lbl.setText("")
 
+    # Map purpose -> callable(cfg) that returns the filename most
+    # recently loaded for that purpose (or None). Callables let us reach
+    # into nested attributes (e.g. cfg.ds_temperature_model.standard_file_name)
+    # or dict entries (photron_wavelength_calibration['source_filename'])
+    # without a special-case switch in _cfg_dir_for_purpose.
+    _PURPOSE_CFG_FILE_GETTERS = {
+        'data':           lambda c: getattr(c.data_img_file, 'filename', None) if c.data_img_file else None,
+        'ds_cal':         lambda c: getattr(c.ds_calibration_img_file, 'filename', None) if c.ds_calibration_img_file else None,
+        'us_cal':         lambda c: getattr(c.us_calibration_img_file, 'filename', None) if c.us_calibration_img_file else None,
+        'dark_ds':        lambda c: c.ds_dark_frame_filename,
+        'dark_us':        lambda c: c.us_dark_frame_filename,
+        'cal_dark_ds':    lambda c: c.ds_cal_dark_frame_filename,
+        'cal_dark_us':    lambda c: c.us_cal_dark_frame_filename,
+        'wavelength_cal': lambda c: (c.photron_wavelength_calibration or {}).get('source_filename'),
+        'ds_standard':    lambda c: getattr(getattr(c, 'ds_temperature_model', None), 'standard_file_name', None),
+        'us_standard':    lambda c: getattr(getattr(c, 'us_temperature_model', None), 'standard_file_name', None),
+    }
+
+    # Sentinel string used by SingleTemperatureModel before a standard
+    # has been loaded — not an actual file path.
+    _STANDARD_UNSET = 'Select File...'
+
+    def _cfg_dir_for_purpose(self, purpose):
+        """Return the parent directory of the file currently loaded for
+        `purpose` on the active configuration, or '' if none.
+
+        Highest-priority source of truth: the folder the currently-loaded
+        file lives in is almost always where the user wants to browse
+        next. More accurate than persisted _last_dirs (global across
+        configs, loaded in restore order) or _exp_working_dir (whichever
+        data file was loaded most recently)."""
+        getter = self._PURPOSE_CFG_FILE_GETTERS.get(purpose)
+        if getter is None:
+            return ''
+        cfg = self.model.current_configuration
+        if cfg is None:
+            return ''
+        try:
+            fname = getter(cfg)
+        except AttributeError:
+            return ''
+        if not fname or fname == self._STANDARD_UNSET:
+            return ''
+        d = os.path.dirname(str(fname))
+        return d if d and os.path.isdir(d) else ''
+
+    def _last_dir_for(self, purpose):
+        """Starting directory for a file-picker of the given purpose.
+        Priority: (1) directory of the file currently loaded for this
+        purpose in the active config, (2) purpose-specific persisted
+        memory, (3) global _exp_working_dir, (4) OS default ('')."""
+        d = self._cfg_dir_for_purpose(purpose)
+        if d:
+            return d
+        d = self._last_dirs.get(purpose, '')
+        if d and os.path.isdir(d):
+            return d
+        if self._exp_working_dir and os.path.isdir(self._exp_working_dir):
+            return self._exp_working_dir
+        return ''
+
+    def _remember_dir(self, purpose, path):
+        """Record the parent directory of `path` under `purpose`. Idempotent."""
+        if not path:
+            return
+        d = os.path.dirname(str(path))
+        if d:
+            self._last_dirs[purpose] = d
+
     def create_signals(self):
         # File signals
         self.connect_click_function(self.widget.load_data_file_btn, self.load_data_file)
         self.widget.load_next_data_file_btn.clicked.connect(self.load_next_data_image)
         self.widget.load_previous_data_file_btn.clicked.connect(self.load_previous_data_image)
+        # Left/Right arrow shortcuts mirror the previous/next file buttons.
+        # WindowShortcut context: fires when the temperature widget's window
+        # is active. Spinboxes use up/down (not left/right) for increment,
+        # so no conflict with numeric editing.
+        self._prev_file_shortcut = QtGui.QShortcut(
+            QtGui.QKeySequence(QtCore.Qt.Key.Key_Left), self.widget)
+        self._prev_file_shortcut.setContext(
+            QtCore.Qt.ShortcutContext.WindowShortcut)
+        self._prev_file_shortcut.activated.connect(self.load_previous_data_image)
+        self._next_file_shortcut = QtGui.QShortcut(
+            QtGui.QKeySequence(QtCore.Qt.Key.Key_Right), self.widget)
+        self._next_file_shortcut.setContext(
+            QtCore.Qt.ShortcutContext.WindowShortcut)
+        self._next_file_shortcut.activated.connect(self.load_next_data_image)
         self.widget.browse_by_name_rb.clicked.connect(self.toggle_browse_mode)
         self.widget.browse_by_time_rb.clicked.connect(self.toggle_browse_mode)
         self.widget.load_next_frame_btn.clicked.connect(self.load_next_img_frame_callback)
@@ -247,6 +339,7 @@ class TemperatureController(QtCore.QObject):
 
         self.widget.temperature_function_plank_rb.clicked.connect(self.temperature_function_callback)
         self.widget.temperature_function_wien_rb.clicked.connect(self.temperature_function_callback)
+        self.widget.t_function_type_section.error_limit_sb.valueChanged.connect(self.error_limit_changed)
 
         self.widget.dual_mode_rb.toggled.connect(self._measurement_mode_changed)
         self.widget.single_mode_rb.toggled.connect(self._measurement_mode_changed)
@@ -263,6 +356,8 @@ class TemperatureController(QtCore.QObject):
         self.connect_click_function(self.widget.import_slots_btn, self.import_slots_from_trs)
         self.widget.kinetics_gb.mode_combo.currentIndexChanged.connect(
             self._kinetics_mode_combo_changed)
+        self.widget.camera_mode_gb.mode_combo.currentIndexChanged.connect(
+            self._camera_mode_changed)
         self.widget.settings_cb.currentIndexChanged.connect(self.settings_cb_changed)
         self.widget.setup_epics_pb.clicked.connect(self.setup_epics_pb_clicked)
 
@@ -284,6 +379,12 @@ class TemperatureController(QtCore.QObject):
         # kinetics data). Route them to the same cal-dim setter used by
         # the cal-viewer drag handler.
         self.widget.roi_widget.main_bg_edit.connect(
+            self.cal_bg_roi_dragged)
+        # Numeric cal-ROI panel edits route through the same cal-dim
+        # setters as the 2D viewer drags.
+        self.widget.cal_roi_panel.signal_edited.connect(
+            self.cal_signal_roi_dragged)
+        self.widget.cal_roi_panel.bg_edited.connect(
             self.cal_bg_roi_dragged)
 
         # mouse moved signals
@@ -308,6 +409,18 @@ class TemperatureController(QtCore.QObject):
         self.connect_click_function(self.widget.clear_us_dark_btn, self.clear_us_dark_file)
         self.widget.ds_dark_scale_sb.valueChanged.connect(self._ds_dark_scale_changed)
         self.widget.us_dark_scale_sb.valueChanged.connect(self._us_dark_scale_changed)
+
+        # Photron-only decoupled cal-bg controls
+        cal_gb = self.widget.cal_background_subtraction_gb
+        cal_gb.mode_combo.currentIndexChanged.connect(self._cal_background_mode_changed)
+        self.connect_click_function(cal_gb.load_ds_dark_btn, self.load_ds_cal_dark_file)
+        self.connect_click_function(cal_gb.load_us_dark_btn, self.load_us_cal_dark_file)
+        self.connect_click_function(cal_gb.clear_ds_dark_btn, self.clear_ds_cal_dark_file)
+        self.connect_click_function(cal_gb.clear_us_dark_btn, self.clear_us_cal_dark_file)
+        cal_gb.ds_dark_scale_sb.valueChanged.connect(
+            lambda v: self._cal_bg_scale_changed('ds', v))
+        cal_gb.us_dark_scale_sb.valueChanged.connect(
+            lambda v: self._cal_bg_scale_changed('us', v))
 
         self.widget.two_color_btn.clicked.connect(self.two_color_display_toggle_callback)
 
@@ -371,10 +484,6 @@ class TemperatureController(QtCore.QObject):
 
     def connect_click_function(self, emitter, function):
         emitter.clicked.connect(function)
-        
-    def close_log(self):
-        for conf in self.model.configurations:
-            conf.close_log()
 
     # ---- Background subtraction handlers -------------------------------------
     _BG_MODES_BY_INDEX = ('insitu', 'prerecorded', 'hybrid', 'kinetics_trend', 'off')
@@ -426,15 +535,17 @@ class TemperatureController(QtCore.QObject):
         self._load_dark_file('us', filename)
 
     def _load_dark_file(self, side, filename):
+        purpose = f'dark_{side}'
         if filename is None or filename is False:
             filename = open_file_dialog(
                 self.widget,
                 caption=f"Load {side.upper()} dark frame",
-                directory=self._exp_working_dir,
+                directory=self._last_dir_for(purpose),
                 filter="Frames (*.spe *.SPE *.h5 *.tif *.tiff);;All files (*)",
             )
         if not filename:
             return
+        self._remember_dir(purpose, filename)
         cfg = self.model.current_configuration
         # DEBUG: try/except removed so failures raise with full traceback.
         if side == 'ds':
@@ -494,6 +605,108 @@ class TemperatureController(QtCore.QObject):
         gb.us_dark_filename_lbl.setStyleSheet('' if cfg.us_dark_frame_img is not None else 'color: gray;')
         gb.us_dark_scale_sb.blockSignals(True)
         gb.us_dark_scale_sb.setValue(cfg.us_dark_frame_scale)
+        gb.us_dark_scale_sb.blockSignals(False)
+
+    # ---- Photron-only decoupled cal-bg handlers ------------------------------
+    # Index 0 in the cal-bg combo means "shared with data" (cal_background_mode
+    # = None). Indices 1..4 map to the same modes as the data-bg combo minus
+    # 'kinetics_trend' (calibration is single-frame).
+    _CAL_BG_MODES_BY_INDEX = (None, 'insitu', 'prerecorded', 'hybrid', 'off')
+
+    def _cal_background_mode_changed(self, index):
+        if not (0 <= index < len(self._CAL_BG_MODES_BY_INDEX)):
+            return
+        mode = self._CAL_BG_MODES_BY_INDEX[index]
+        cfg = self.model.current_configuration
+        if cfg is None:
+            return
+        cfg.set_cal_background_mode(mode)
+        gb = self.widget.cal_background_subtraction_gb
+        uses_dark = mode in ('prerecorded', 'hybrid')
+        gb._set_dark_rows_visible(uses_dark)
+        gb.set_scale_spinboxes_enabled(mode == 'prerecorded')
+        if getattr(cfg, 'mode', 'dual') == 'single':
+            gb.set_us_row_visible(False)
+
+    def _cal_bg_scale_changed(self, side, value):
+        cfg = self.model.current_configuration
+        if cfg is None:
+            return
+        if side == 'ds':
+            cfg.set_ds_cal_dark_frame_scale(value)
+        else:
+            cfg.set_us_cal_dark_frame_scale(value)
+
+    def load_ds_cal_dark_file(self, filename=None):
+        self._load_cal_dark_file('ds', filename)
+
+    def load_us_cal_dark_file(self, filename=None):
+        self._load_cal_dark_file('us', filename)
+
+    def _load_cal_dark_file(self, side, filename):
+        purpose = f'cal_dark_{side}'
+        if filename is None or filename is False:
+            filename = open_file_dialog(
+                self.widget,
+                caption=f"Load {side.upper()} cal dark frame",
+                directory=self._last_dir_for(purpose),
+                filter="Frames (*.spe *.SPE *.h5 *.tif *.tiff);;All files (*)",
+            )
+        if not filename:
+            return
+        self._remember_dir(purpose, filename)
+        cfg = self.model.current_configuration
+        if side == 'ds':
+            cfg.load_ds_cal_dark_frame(filename)
+        else:
+            cfg.load_us_cal_dark_frame(filename)
+        self._sync_cal_background_widgets()
+
+    def clear_ds_cal_dark_file(self):
+        self.model.current_configuration.clear_ds_cal_dark_frame()
+        self._sync_cal_background_widgets()
+
+    def clear_us_cal_dark_file(self):
+        self.model.current_configuration.clear_us_cal_dark_frame()
+        self._sync_cal_background_widgets()
+
+    def _sync_cal_background_widgets(self):
+        """Sync cal-bg mode combo, filenames, scales, and visibility."""
+        cfg = self.model.current_configuration
+        gb = self.widget.cal_background_subtraction_gb
+        # Whole group visible only in Photron centered-window mode.
+        show = (getattr(cfg, 'photron_mode', 'off') == 'centered'
+                if cfg is not None else False)
+        gb.setVisible(show)
+        if cfg is None:
+            return
+        mode = getattr(cfg, 'cal_background_mode', None)
+        try:
+            idx = self._CAL_BG_MODES_BY_INDEX.index(mode)
+        except ValueError:
+            idx = 0
+        gb.mode_combo.blockSignals(True)
+        gb.mode_combo.setCurrentIndex(idx)
+        gb.mode_combo.blockSignals(False)
+        gb._set_dark_rows_visible(mode in ('prerecorded', 'hybrid'))
+        gb.set_scale_spinboxes_enabled(mode == 'prerecorded')
+        if getattr(cfg, 'mode', 'dual') == 'single':
+            gb.set_us_row_visible(False)
+        ds_name = (os.path.basename(cfg.ds_cal_dark_frame_filename)
+                   if cfg.ds_cal_dark_frame_filename else 'None')
+        gb.ds_dark_filename_lbl.setText(ds_name)
+        gb.ds_dark_filename_lbl.setStyleSheet(
+            '' if cfg.ds_cal_dark_frame_img is not None else 'color: gray;')
+        gb.ds_dark_scale_sb.blockSignals(True)
+        gb.ds_dark_scale_sb.setValue(cfg.ds_cal_dark_frame_scale)
+        gb.ds_dark_scale_sb.blockSignals(False)
+        us_name = (os.path.basename(cfg.us_cal_dark_frame_filename)
+                   if cfg.us_cal_dark_frame_filename else 'None')
+        gb.us_dark_filename_lbl.setText(us_name)
+        gb.us_dark_filename_lbl.setStyleSheet(
+            '' if cfg.us_cal_dark_frame_img is not None else 'color: gray;')
+        gb.us_dark_scale_sb.blockSignals(True)
+        gb.us_dark_scale_sb.setValue(cfg.us_cal_dark_frame_scale)
         gb.us_dark_scale_sb.blockSignals(False)
 
 
@@ -591,13 +804,14 @@ class TemperatureController(QtCore.QObject):
             filenames = [filenames]
         if filenames is None or filenames is False:
             filenames = open_files_dialog(self.widget, caption="Load Experiment SPE",
-                                          directory=self._exp_working_dir,
+                                          directory=self._last_dir_for('data'),
                                           filter="Spectra (*.spe *.SPE *.h5 *.tif *.tiff);;All files (*)")
 
         for filename in filenames:
             if filename != '':
                 if os.path.isfile(filename):
                     self._exp_working_dir = os.path.dirname(str(filename))
+                    self._remember_dir('data', filename)
                     self._auto_switch_configuration_by_detector(filename)
                     self.model.current_configuration.load_data_image(str(filename))
                     self._directory_watcher.path = self._exp_working_dir
@@ -687,11 +901,11 @@ class TemperatureController(QtCore.QObject):
     def load_ds_calibration_file(self, filename=None):
         if filename is None or filename is False:
             filename = open_file_dialog(self.widget, caption="Load Downstream Calibration SPE",
-                                        directory=self._exp_working_dir,
+                                        directory=self._last_dir_for('ds_cal'),
                                         filter="Spectra (*.spe *.SPE *.h5 *.tif *.tiff);;All files (*)")
 
         if filename != '':
-            self._exp_working_dir = os.path.dirname(filename)
+            self._remember_dir('ds_cal', filename)
             ds_start_frame = int(self.widget.ds_calibration_start_frame.text())
             ds_end_frame = int(self.widget.ds_calibration_end_frame.text())
             self.model.current_configuration.ds_temperature_model.calibration_frames = [ds_start_frame,ds_end_frame]
@@ -700,11 +914,11 @@ class TemperatureController(QtCore.QObject):
     def load_us_calibration_file(self, filename=None):
         if filename is None or filename is False:
             filename = open_file_dialog(self.widget, caption="Load Upstream Calibration SPE",
-                                        directory=self._exp_working_dir,
+                                        directory=self._last_dir_for('us_cal'),
                                         filter="Spectra (*.spe *.SPE *.h5 *.tif *.tiff);;All files (*)")
 
         if filename != '':
-            self._exp_working_dir = os.path.dirname(filename)
+            self._remember_dir('us_cal', filename)
 
             us_start_frame = int(self.widget.us_calibration_start_frame.text())
             us_end_frame = int(self.widget.us_calibration_end_frame.text())
@@ -723,11 +937,12 @@ class TemperatureController(QtCore.QObject):
             filename = open_file_dialog(
                 self.widget,
                 caption="Load Wavelength Calibration (calibration.json)",
-                directory=self._exp_working_dir,
+                directory=self._last_dir_for('wavelength_cal'),
                 filter="Calibration JSON (*.json);;All files (*)",
             )
         if not filename:
             return
+        self._remember_dir('wavelength_cal', filename)
         cfg = self.model.current_configuration
         # DEBUG: try/except removed so failures raise with full traceback.
         cfg.load_photron_wavelength_calibration(filename)
@@ -807,6 +1022,15 @@ class TemperatureController(QtCore.QObject):
             function_type = 'wien'
         self.model.current_configuration.set_temperature_fit_function(function_type)
 
+    def error_limit_changed(self, value):
+        cfg = self.model.current_configuration
+        if cfg is None:
+            return
+        cfg.set_error_limit(value)
+        # set_error_limit emits data_changed_signal → spectrum widget refresh.
+        # Time-lapse plot uses the same limit; force a redraw so it re-selects.
+        self.redraw_time_lapse()
+
     def filter_setting_callback(self):
         self.model.current_configuration.ds_filter_oscillation = \
             self.widget.ds_interference_filter_cb.isChecked()
@@ -840,37 +1064,37 @@ class TemperatureController(QtCore.QObject):
     def load_ds_standard_file(self, filename=None):
         if filename is None or filename is False:
             filename = open_file_dialog(self.widget, caption="Load Downstream Standard Spectrum",
-                                        directory=self._exp_working_dir)
+                                        directory=self._last_dir_for('ds_standard'))
 
         if filename != '':
-            self._exp_working_dir = os.path.dirname(filename)
+            self._remember_dir('ds_standard', filename)
             self.model.current_configuration.load_ds_standard_spectrum(filename)
 
     def load_us_standard_file(self, filename=None):
         if filename is None or filename is False:
             filename = open_file_dialog(self.widget, caption="Load Upstream Standard Spectrum",
-                                        directory=self._exp_working_dir)
+                                        directory=self._last_dir_for('us_standard'))
 
         if filename != '':
-            self._exp_working_dir = os.path.dirname(filename)
+            self._remember_dir('us_standard', filename)
             self.model.current_configuration.load_us_standard_spectrum(filename)
 
     def save_ds_standard_file(self, filename=None):
         if filename is None or filename is False:
             filename = save_file_dialog(self.widget, caption="Save Downstream Standard Spectrum",
-                                        directory=self._exp_working_dir)
+                                        directory=self._last_dir_for('ds_standard'))
 
         if filename != '':
-            self._exp_working_dir = os.path.dirname(filename)
+            self._remember_dir('ds_standard', filename)
             self.model.current_configuration.save_ds_standard_spectrum(filename)
 
     def save_us_standard_file(self, filename=None):
         if filename is None or filename is False:
             filename = save_file_dialog(self.widget, caption="Save Upstream Standard Spectrum",
-                                        directory=self._exp_working_dir)
+                                        directory=self._last_dir_for('us_standard'))
 
         if filename != '':
-            self._exp_working_dir = os.path.dirname(filename)
+            self._remember_dir('us_standard', filename)
             self.model.current_configuration.save_us_standard_spectrum(filename)
 
     def save_setting_file(self, filename=None):
@@ -901,6 +1125,7 @@ class TemperatureController(QtCore.QObject):
             # load_setting mutates cfg.background_mode but does not touch widgets;
             # without this the combo can lag the actual model state.
             self._sync_background_widgets()
+            self._sync_cal_background_widgets()
             self._refresh_roi_panels()
             # Re-fit multi-frame data. New ROIs / cal / bg mode invalidate the
             # cached ds_temperatures / us_temperatures, so history plots would
@@ -959,24 +1184,29 @@ class TemperatureController(QtCore.QObject):
 
     def save_data_btn_clicked(self, filename=None):
         if filename is None or filename is False:
+            base = os.path.basename(
+                '.'.join(self.model.current_configuration.data_img_file.filename.split(".")[:-1]) + ".txt")
             filename = save_file_dialog(
                 self.widget,
                 caption="Save data in tabulated text format",
-                directory=os.path.join(self._exp_working_dir,
-                                       '.'.join(self.model.current_configuration.data_img_file.filename.split(".")[:-1]) + ".txt")
+                directory=os.path.join(self._last_dir_for('save_data'), base)
             )
         if filename != '':
+            self._remember_dir('save_data', filename)
             self.model.current_configuration.save_txt(filename)
 
     def save_graph_btn_clicked(self, filename=None):
         if filename is None or filename is False:
+            base = os.path.basename(
+                '.'.join(self.model.current_configuration.data_img_file.filename.split(".")[:-1]) + ".svg")
             filename = save_file_dialog(
                 self.widget,
                 caption="Save displayed graph as vector graphics or image",
-                directory=os.path.join(self._exp_working_dir,
-                                       '.'.join(self.model.current_configuration.data_img_file.filename.split(".")[:-1]) + ".svg"),
+                directory=os.path.join(self._last_dir_for('save_graph'), base),
                 filter='Vector Graphics (*.svg);; Image (*.png)'
             )
+        if filename:
+            self._remember_dir('save_graph', filename)
         filename = str(filename)
         base_filename, extension = get_file_and_extension(filename)
         ds_filename = base_filename + "_ds." + extension
@@ -1024,6 +1254,7 @@ class TemperatureController(QtCore.QObject):
     def use_background_update(self):
         """Sync all background-subtraction widgets to the current config's state."""
         self._sync_background_widgets()
+        self._sync_cal_background_widgets()
 
 
     def data_changed_signal_callback(self):
@@ -1106,14 +1337,31 @@ class TemperatureController(QtCore.QObject):
         q_us = cfg._q_side('us')
         koverride = getattr(cfg, 'kinetics_mode_override', None)
         self.widget.kinetics_gb.apply_kinetics_state(kmode, kinfo, q_ds, q_us, koverride)
+        # Sync CameraModeGB combo to cfg without re-triggering the wire, and
+        # apply Photron styling so kinetics-only groups collapse in Photron mode.
+        pmode = getattr(cfg, 'photron_mode', 'off')
+        cam_items = self.widget.camera_mode_gb.MODE_ITEMS
+        cam_idx = next((i for i, (_, m) in enumerate(cam_items) if m == pmode), 0)
+        self.widget.camera_mode_gb.mode_combo.blockSignals(True)
+        self.widget.camera_mode_gb.mode_combo.setCurrentIndex(cam_idx)
+        self.widget.camera_mode_gb.mode_combo.blockSignals(False)
+        self._apply_photron_styling(pmode == 'centered')
         # Apply the (possibly config-switched) measurement mode so the UI matches.
         mode = getattr(self.model.current_configuration, 'mode', 'dual')
         self.widget.apply_measurement_mode(mode)
         if hasattr(self.data_history_widget, 'set_mode'):
             self.data_history_widget.set_mode(mode)
 
+        # Sync the fit-error-limit spinbox to the (possibly config-switched)
+        # cfg value without re-triggering the setter's data_changed emit.
+        el_sb = self.widget.t_function_type_section.error_limit_sb
+        el_sb.blockSignals(True)
+        el_sb.setValue(float(cfg.error_limit))
+        el_sb.blockSignals(False)
+
         self.ds_calculations_changed()
         self.us_calculations_changed()
+        self._refresh_cal_roi_panel()
 
     def _refresh_configuration_buttons(self):
         """Sync the config-button labels (e.g. unsaved-changes asterisk) to model state."""
@@ -1331,7 +1579,13 @@ class TemperatureController(QtCore.QObject):
                 ds_temp_pv = eps.epics_settings['ds_last_temp']
                 if ds_temp_pv is not None and not ds_temp_pv == '' and not ds_temp_pv == 'None':
                     caput(ds_temp_pv, self.model.current_configuration.ds_temperature)
-                
+
+        # Re-normalize Y range after ds_mx / ds_fit_mx were updated by the
+        # plot_* calls above. The earlier normalize_range in
+        # _refresh_configuration_buttons ran with stale mx values (1-tick
+        # behind), which was fine for Princeton data but pins Photron
+        # spectra to the floor when a stale huge mx sticks around.
+        self.widget.temperature_spectrum_widget.normalize_range()
 
     def us_calculations_changed(self):
         self._refresh_configuration_buttons()
@@ -1407,7 +1661,10 @@ class TemperatureController(QtCore.QObject):
                 us_temp_pv = eps.epics_settings['us_last_temp']
                 if us_temp_pv is not None and not us_temp_pv =='' and not us_temp_pv == 'None':
                     caput(us_temp_pv, self.model.current_configuration.us_temperature)
-                
+
+        # See ds_calculations_changed — re-normalize after plot_us_* set
+        # the new us_mx / us_fit_mx so the Y range reflects this refresh.
+        self.widget.temperature_spectrum_widget.normalize_range()
 
     def _kinetics_mode_combo_changed(self, idx):
         """User picked a new kinetics mode from the KineticsGB combo.
@@ -1423,6 +1680,45 @@ class TemperatureController(QtCore.QObject):
             return
         _, override = items[idx]
         cfg.set_kinetics_mode(override)
+
+    def _camera_mode_changed(self, index):
+        """User picked a new camera type in CameraModeGB. Index 0 → Default
+        ('off'), index 1 → Photron ('centered'). Drives photron_mode on the
+        current configuration and reshuffles which UI groups are visible.
+        """
+        items = self.widget.camera_mode_gb.MODE_ITEMS
+        if not (0 <= index < len(items)):
+            return
+        _, mode = items[index]
+        cfg = self.model.current_configuration
+        if cfg is None:
+            self._apply_photron_styling(mode == 'centered')
+            return
+        cfg.set_photron_mode(mode)
+        self._apply_photron_styling(mode == 'centered')
+        self._sync_cal_background_widgets()
+
+    def _apply_photron_styling(self, photron_active: bool):
+        """Show/hide UI groups based on whether the configuration is in
+        Photron mode. Groups hidden in Photron mode: KineticsGB, the
+        kinetics-strip ROI panel. Groups shown only in Photron mode: the
+        decoupled cal-background subtraction group (managed separately by
+        _sync_cal_background_widgets; kept here for symmetry).
+        """
+        self.widget.kinetics_gb.setVisible(not photron_active)
+        self.widget.roi_kin_gb.setVisible(not photron_active)
+        # Retitle data-side groups so their scope is unambiguous when the
+        # decoupled cal-bg controls are visible alongside them.
+        if photron_active:
+            self.widget.background_subtraction_gb.setTitle(
+                'Data background subtraction')
+            self.widget.roi_gb.setTitle('Data ROIs (full-chip)')
+        else:
+            self.widget.background_subtraction_gb.setTitle(
+                'Background subtraction')
+            self.widget.roi_gb.setTitle('ROI (full-chip)')
+        # Cal-bg GB visibility is authoritative-set by
+        # _sync_cal_background_widgets (it re-checks cfg.photron_mode).
 
     def lab_time_btn_toggled(self, checked):
         prev = self._history_x_mode
@@ -1623,6 +1919,11 @@ class TemperatureController(QtCore.QObject):
             # bg-ROI move changes the diagnostic BG Trend view (crop shifts).
             self._refresh_bg_stack()
             self._refresh_roi_panels()
+            # Data-viewer drags (or cal-viewer drags mirrored back in non
+            # cross-mode) can change the same-dim ROI values shown in the
+            # cal-ROI panel; refresh it here since drag paths do not fire
+            # data_changed_signal.
+            self._refresh_cal_roi_panel()
 
     def _refresh_roi_panels(self):
         """Sync the ROI widget's kinetics-projection context to the current
@@ -1710,6 +2011,7 @@ class TemperatureController(QtCore.QObject):
         rois = cfg.get_roi_data_list()
         cfg.set_rois(rois)
         self.widget.roi_widget.set_rois(rois)
+        self._refresh_cal_roi_panel()
 
     def cal_bg_roi_dragged(self, side, cal_dim_limits):
         """User dragged the bg ROI on a cal 2D viewer in cross-mode. The
@@ -1721,6 +2023,46 @@ class TemperatureController(QtCore.QObject):
         if cfg is None:
             return
         cfg.set_cal_dim_bg_roi(side, cal_dim_limits)
+        self._refresh_cal_roi_panel()
+
+    def _pull_data_dim_limits(self, cfg, side):
+        """Return {'signal':[x0,x1,y0,y1], 'bg':[...]} at data_dim for
+        `side`. Used by the cal-ROI panel in NON cross-mode, where the
+        cal extraction shares the data ROIs. Returns None if data_img
+        is not loaded."""
+        if cfg.data_img_file is None:
+            return None
+        try:
+            data_dim = cfg.data_img_file.get_dimension()
+        except Exception:
+            return None
+        sig_idx = 0 if side == 'ds' else 1
+        bg_idx = 2 if side == 'ds' else 3
+        sig = cfg.roi_data_manager.get_roi(sig_idx, data_dim)
+        bg = cfg.roi_data_manager.get_roi(bg_idx, data_dim)
+        return {
+            'signal': [int(sig.x_min), int(sig.x_max),
+                       int(sig.y_min), int(sig.y_max)],
+            'bg': [int(bg.x_min), int(bg.x_max),
+                   int(bg.y_min), int(bg.y_max)],
+        }
+
+    def _refresh_cal_roi_panel(self):
+        """Push cal-dim (cross-mode) or data-dim (same-dim) ROI limits
+        into the numeric cal-ROI panel. Called from data_changed."""
+        cfg = self.model.current_configuration
+        panel = self.widget.cal_roi_panel
+        if cfg is None:
+            panel.apply_state(None, None, None, None, False, False)
+            return
+        ds_present = cfg.ds_calibration_img_file is not None
+        us_present = cfg.us_calibration_img_file is not None
+        ds_cross = cfg.cross_mode_cal_info('ds') if ds_present else None
+        us_cross = cfg.cross_mode_cal_info('us') if us_present else None
+        ds_data = self._pull_data_dim_limits(cfg, 'ds') if ds_present else None
+        us_data = self._pull_data_dim_limits(cfg, 'us') if us_present else None
+        panel.apply_state(ds_cross, us_cross, ds_data, us_data,
+                          ds_present, us_present)
 
 
     def widget_wl_range_changed_callback(self, wl_range):
@@ -1790,6 +2132,17 @@ class TemperatureController(QtCore.QObject):
         settings.set("zmq_publish_temperatures",
                      self.widget.epicslogger_gb.publish_temperatures_cb.isChecked())
 
+        # Persist the last-used experiment folder so file browse dialogs
+        # (data / cal / dark / standard) open where the user last was,
+        # not the OS default, on next launch.
+        settings.set("temperature exp_working_dir", self._exp_working_dir or "")
+
+        # Per-purpose last-used directories. Each file-picker keeps its own
+        # slot so loading a wavelength calibration doesn't clobber the
+        # data-file dir (see _last_dirs docstring).
+        settings.set("temperature last_dirs",
+                     json.dumps(self._last_dirs or {}))
+
         settings.dump()
 
     def load_conf_settings(self, conf):
@@ -1811,6 +2164,26 @@ class TemperatureController(QtCore.QObject):
     def load_settings(self, settings):
         settings : AppSettings
         settings.dump()
+
+        # Restore the last-used experiment folder before loading configs,
+        # so any early dialog (or a config restore that doesn't itself
+        # touch a data file) still has a sensible starting point.
+        saved_wd = str(settings.get("temperature exp_working_dir", "") or "")
+        if saved_wd and os.path.isdir(saved_wd):
+            self._exp_working_dir = saved_wd
+
+        # Restore per-purpose last-used directories.
+        saved_last_dirs = str(settings.get("temperature last_dirs", "") or "")
+        if saved_last_dirs:
+            try:
+                parsed = json.loads(saved_last_dirs)
+                if isinstance(parsed, dict):
+                    self._last_dirs = {
+                        str(k): str(v) for k, v in parsed.items()
+                        if isinstance(v, str) and v
+                    }
+            except (ValueError, TypeError):
+                pass
 
         # Load
         conf_list = json.loads(settings.get("temperature configurations", "[]"))
@@ -1929,6 +2302,10 @@ class TemperatureController(QtCore.QObject):
         if self.epics_available:
             self._exp_working_dir = caget(eps.epics_settings['T_folder'], as_string=True)
             self._directory_watcher.path = self._exp_working_dir
+            # Route the folder change through the model's single funnel so
+            # the T-log switches over immediately — even before the first
+            # file in the new folder is auto-loaded.
+            self.model.current_configuration.set_data_folder(self._exp_working_dir)
         if self.widget.monitor_folder_cb.isChecked():
             folder_path = caget(eps.epics_settings['T_folder'], as_string=True) or ''
             self.widget.monitor_folder_path_lbl.setText(folder_path)

@@ -27,6 +27,7 @@ Result message format (sent back to coordinator)::
 """
 
 import json
+import os
 
 from PyQt6 import QtCore
 
@@ -231,10 +232,12 @@ class ZmqWorkerController(QtCore.QObject):
 
     def load_config_clicked(self):
         from ..widget.Widgets import open_file_dialog
+        last_path = self._config.get("_path", "") if isinstance(self._config, dict) else ""
+        start_dir = os.path.dirname(last_path) if last_path else ""
         path = open_file_dialog(
             self.widget,
             caption="Load worker config",
-            directory="",
+            directory=start_dir,
             filter="YAML files (*.yaml *.yml);;All files (*)",
         )
         if path:

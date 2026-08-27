@@ -28,7 +28,7 @@ from ..model.TemperatureModel import TemperatureModel
 from ..widget.MainWidget import MainWidget
 from .TemperatureController import TemperatureController
 from .. widget.DataHistoryWidget import dataHistoryWidget
-from .DataLogController import DataLogController
+from .TLogController import TLogController
 from .ConfigurationController import ConfigurationController
 from ..model.helper.AppSettings import AppSettings
 from .. import style_path
@@ -54,7 +54,7 @@ class MainController(object):
             temperature_model=self.temperature_model,
             controllers=[
                 self.temperature_controller,
-                self.datalog_controller
+                self.tlog_controller
             ],
         )
 
@@ -74,7 +74,7 @@ class MainController(object):
 
     def create_sub_controller(self):
 
-        self.datalog_controller = DataLogController(self.temperature_model, self.data_history_widget)
+        self.tlog_controller = TLogController(self.temperature_model, self.data_history_widget)
         self.temperature_controller = TemperatureController(self.main_widget.temperature_widget, self.temperature_model, self.data_history_widget)
         
         #self.ruby_controller = RubyController(self.ruby_model, self.main_widget.ruby_widget)
@@ -148,7 +148,7 @@ class MainController(object):
         self.temperature_controller.cleanup()
         self.main_widget.close()
         self.data_history_widget.close()
-        self.temperature_controller.close_log()
+        self.tlog_controller.shutdown()
         event.accept()
 
     def _prompt_save_dirty_configs(self, event):

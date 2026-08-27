@@ -48,8 +48,8 @@ from .helper.filter_oscillation import filter_oscillatory_component
 from .temperature_pipeline import pipeline, Stage
 
 
-T_LOG_FILE = 'T_log'
-LOG_HEADER = '# File\tFrame\tPath\tT_DS\tT_US\tT_DS_error\tT_US_error\tDetector\tExposure Time [sec]\tGain\tscaling_DS\tscaling_US\tcounts_DS\tcounts_US\n'
+# T-log file layout (basename + on-disk header) lives with the writer in
+# pyradiant.model.tlog.writer / pyradiant.model.tlog.record.
 
 
 @dataclass
@@ -80,13 +80,24 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.ds_calculations_changed = Signal()
         self.us_calculations_changed = Signal()
 
-        self.log_file_loaded_signal = Signal()
+        # T-log v2: single funnel for 'data folder changed' events. Fires
+        # with the new folder path — or None if the folder becomes unset —
+        # whenever the data folder actually changes. All callers go through
+        # set_data_folder() so user file selection, EPICS folder-monitor
+        # updates, and AD-source switches all produce the same event.
+        self.data_folder_changed = Signal(str)
+        self._data_folder: str | None = None
+        # Fires a TLogRecord after every recompute (frame nav, ROI drag,
+        # dark frame change, filter, bg mode, load, ...). Coalesced within
+        # one Qt tick so a DS+US pair doesn't produce two records.
+        self.tlog_record_ready = Signal()
+        self._tlog_emit_pending = False
+        self._tlog_pending_frame = 0
 
         self.filename = None
         self.mtime = None
         self.data_img_file = None
         self._data_img = None
-        self.log_file = None
         self.setting_filename = None
         self._setting_working_dir = ''
 
@@ -118,6 +129,20 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.us_dark_frame_filename = None
         self.ds_dark_frame_scale = 1.0
         self.us_dark_frame_scale = 1.0
+
+        # Photron-only decoupled cal-bg subtraction. When photron_mode ==
+        # 'centered' AND cal_background_mode is not None, the calibration
+        # spectrum uses these cal-specific settings instead of the shared
+        # background_mode / dark_frame_img / dark_frame_scale. All other
+        # code paths (SPE / H5 / non-centered TIF) are untouched.
+        # cal_background_mode == None sentinel means "fall back to shared".
+        self.cal_background_mode = None
+        self.ds_cal_dark_frame_img = None
+        self.us_cal_dark_frame_img = None
+        self.ds_cal_dark_frame_filename = None
+        self.us_cal_dark_frame_filename = None
+        self.ds_cal_dark_frame_scale = 1.0
+        self.us_cal_dark_frame_scale = 1.0
 
         self.x_calibration = None
 
@@ -172,6 +197,15 @@ class TemperatureModelConfiguration(QtCore.QObject):
         # (Off / Kinetics / Kinetics-interleaved) that flips this override; the
         # extraction/UI is already threaded through cfg.kinetics_mode.
         self.kinetics_mode_override = None
+
+        # Photron centered-window cross-mode. When 'centered', TIF cal +
+        # TIF data with same xdim but different ydim are projected onto
+        # each other via a fixed offset (cal_ydim - data_ydim) // 2 —
+        # Photron FASTCAM writes windowed frames centered on-chip and
+        # records neither the offset in TIFF tags nor in the .cih sidecar,
+        # so this toggle asserts that convention explicitly. 'off'
+        # disables the projection (default). Persists in .trs.
+        self.photron_mode = 'off'
 
         # Per-side mask-slot offsets (frame-slot units). When set, these take
         # precedence over the value derived from cross_mode_cal_info in
@@ -236,6 +270,9 @@ class TemperatureModelConfiguration(QtCore.QObject):
 
         # Display-time gates. Kept on the configuration so both the spectrum
         # window and the history plot apply the same filter policy.
+        # error_limit is user-editable via TemperatureFitSettings (spinbox);
+        # Wien σ_T scales as T² / c₂ · σ_m, so the default 200 K excludes
+        # legitimate high-T fits above ~5500 K unless raised.
         self.error_limit = 200
         self.min_allowed_T = 0.0
         self.max_allowed_T = 1.0e6
@@ -248,41 +285,69 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.ds_temperatures = []
         self.ds_temperatures_errors = []
 
-        self.log_callback = None
 
+    # -------- T-log v2 ------------------------------------------------------
+    def set_data_folder(self, new_folder):
+        """Single funnel for 'data folder changed' events.
 
-    def set_log_callback(self, callback_method):
-        self.log_callback = callback_method
+        Callers (any code path that changes which folder we're viewing):
+          * _load_raw_data — user file selection or directory-watcher auto-load.
+          * TemperatureController.temperature_folder_changed_emitted —
+            EPICS T_folder PV monitor.
+
+        Normalizes empty string / None to None. Emits data_folder_changed
+        ONLY when the folder actually changes, so repeated file loads in the
+        same directory don't produce spurious log-switch events.
+        """
+        norm = new_folder if new_folder else None
+        if norm == self._data_folder:
+            return
+        self._data_folder = norm
+        self.data_folder_changed.emit(norm)
+
+    def get_data_folder(self):
+        return self._data_folder
+
+    def build_tlog_record(self, frame):
+        """Snapshot the current per-frame temperature state as a TLogRecord.
+        Pure — reads the model, returns a frozen record."""
+        from .tlog import TLogRecord
+        return TLogRecord.from_configuration(self, frame)
+
+    def _schedule_tlog_emit(self, frame):
+        """Coalesce multiple recompute emits within one Qt tick into a
+        single tlog_record_ready signal. Called from every compute site."""
+        self._tlog_pending_frame = int(frame) if frame is not None else 0
+        if self._tlog_emit_pending:
+            return
+        self._tlog_emit_pending = True
+        QtCore.QTimer.singleShot(0, self._flush_tlog_emit)
+
+    def _flush_tlog_emit(self):
+        self._tlog_emit_pending = False
+        # Nothing to log until a file has been loaded and a data image exists.
+        if self.data_img_file is None or not self.filename:
+            return
+        # Never let record building throw into the Qt event loop — the T Log
+        # is a viewer, not part of the fit pipeline.
+        try:
+            record = self.build_tlog_record(self._tlog_pending_frame)
+        except Exception as exc:
+            print(f"TLog: build_tlog_record failed: {exc}")
+            return
+        self.tlog_record_ready.emit(record)
 
     def data_changed_emit(self, frame):
-        self.write_to_log(frame)
         self.data_changed_signal.emit()
+        self._schedule_tlog_emit(frame)
 
     def ds_calculations_changed_emit(self):
         self.ds_calculations_changed.emit()
+        self._schedule_tlog_emit(self.current_frame)
 
     def us_calculations_changed_emit(self):
         self.us_calculations_changed.emit()
-
-    def write_to_log(self, frame):
-        if self.log_file is not None:
-            self.write_to_log_file(frame)
-            
-
-    def clear_log(self):
-        if self.log_file is not None:
-            self.log_file.truncate(0)
-            self.log_file.seek(0)
-            self.log_file.write(LOG_HEADER)
-            #self.data_changed_emit(self.current_frame)
-
-    def get_log_file_path(self):
-        if self.log_file is not None:
-
-            log_file_path = self.log_file.name
-            return log_file_path
-        else:
-            return None
+        self._schedule_tlog_emit(self.current_frame)
 
     def load_data_image_ad(self, area_detector):
         self.load_data_image(area_detector.record_name, area_detector=area_detector)
@@ -294,7 +359,14 @@ class TemperatureModelConfiguration(QtCore.QObject):
         Float → np.inf (detection disabled — summed/float data has no
         physically-meaningful full-scale limit).
         Mirror of SingleTemperatureModel.saturation_limit for use at the
-        top-level cfg (e.g. from the controller for the intensity gauge)."""
+        top-level cfg (e.g. from the controller for the intensity gauge).
+        A source file may override via `saturation_count` (Photron TIF
+        caps at the 12-bit sensor ceiling even though data_img is float64)."""
+        src = getattr(self, 'data_img_file', None)
+        if src is not None:
+            override = getattr(src, 'saturation_count', None)
+            if override is not None:
+                return override
         if array is None:
             array = getattr(self, 'data_img', None)
         if array is None:
@@ -352,10 +424,11 @@ class TemperatureModelConfiguration(QtCore.QObject):
         also directly by load_data_image() for the area-detector path.
         """
         if area_detector is None:
-            if not self.filename or not os.path.dirname(self.filename) == os.path.dirname(filename):
-                lf = self.create_log_file(os.path.dirname(filename))
-                if lf is not None:
-                    self.log_file_loaded_signal.emit()
+            # Notify the T-log controller before setting self.filename so the
+            # folder-switch handler observes a coherent "old folder → new
+            # folder" transition. set_data_folder is a no-op when the folder
+            # is unchanged, so repeated loads in the same directory stay quiet.
+            self.set_data_folder(os.path.dirname(filename))
             self.filename = filename
             _, file_extension = os.path.splitext(filename)
             if file_extension == '.spe' or file_extension == '.SPE':
@@ -451,6 +524,30 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.dirty = True
         self.data_changed_emit(self.current_frame)
 
+    def set_photron_mode(self, mode):
+        """Toggle Photron centered-window cross-mode projection.
+
+        Valid values: 'off', 'centered'. When 'centered' AND both files
+        are TIF with same xdim / different ydim, ROIs project between the
+        two dims via a fixed offset (cal_ydim - data_ydim) // 2 — signal
+        AND background both (unlike kinetics where bg is per-dim, the
+        Photron window is a single contiguous readout, so bg subtraction
+        maps directly). No effect if same-dim or files not loaded."""
+        if mode not in ('off', 'centered'):
+            raise ValueError(
+                f"photron_mode must be 'off' | 'centered', got {mode!r}")
+        if mode == self.photron_mode:
+            return
+        self.photron_mode = mode
+        if self.data_img_file is not None:
+            self._sync_cross_mode_rois()
+        # Cal-bg activation depends on photron_mode — repush so the child
+        # models flip use_cal_specific_bg on/off correctly.
+        self._propagate_dark_to_models()
+        pipeline.run(self, Stage.CALIB_SPEC)
+        self.dirty = True
+        self.data_changed_emit(self.current_frame)
+
     def load_data_image(self, filename, area_detector=None):
         """Load a data file and run the full calculation pipeline.
 
@@ -521,89 +618,6 @@ class TemperatureModelConfiguration(QtCore.QObject):
         # This avoids characters like ":" which are not allowed on Windows.
         return datetime.datetime.now().strftime("%Y%m%d_%H-%M-%S")
 
-    def create_log_file(self, file_path):
-        if len(file_path):
-            if self.log_file is not None:
-                if hasattr(self.log_file, 'closed'):
-                    if not self.log_file.closed:
-                        self.log_file.close()
-            norm_file_path = os.path.normpath(file_path)
-            if os.access(norm_file_path, os.W_OK):
-                fname = T_LOG_FILE + '.txt'
-                log_file_path = os.path.normpath(os.path.join(file_path, fname))
-                try: 
-                    self.log_file = open(log_file_path, 'a')
-                    self.log_file.write(LOG_HEADER)
-                    return self.log_file
-                except PermissionError:
-                    self.log_file =  None
-                    return None
-        return None
-        
-    def close_log(self):
-        if self.log_file != None:
-            self.log_file. close()
-
-  
-
-    def write_to_log_file(self, frame):
-        if not math.isnan(self.ds_temperature):
-            ds_temp = str(int(self.ds_temperature))
-        else:
-            ds_temp = '0'
-        if not math.isnan(self.us_temperature):
-            us_temp = str(int(self.us_temperature))
-        else:
-            us_temp = '0'
-
-        if not math.isnan(self.ds_temperature_error):
-            ds_temperature_error = str(int(self.ds_temperature_error))
-            if self.ds_temperature_error > self.error_limit:
-                ds_temp= '0'
-                ds_temperature_error = '0'
-        else:
-            ds_temperature_error = '0'
-        if not math.isnan(self.us_temperature_error):
-            us_temperature_error = str(int(self.us_temperature_error))
-            if self.us_temperature_error > self.error_limit:
-                us_temp= '0'
-                us_temperature_error = '0'
-        else:
-            us_temperature_error = '0'
-
-        if not math.isnan(self.ds_scaling):
-            ds_scaling = format(self.ds_scaling, ".3e")
-        else:
-            ds_scaling = '0'
-        if not math.isnan(self.us_scaling):
-            us_scaling = format(self.us_scaling, ".3e")
-        else:
-            us_scaling = '0'
-        us_counts_str = format(self.us_data_spectrum.counts, ".3e")
-        # In single-sided mode the us column set is meaningless; blank it out so
-        # downstream log consumers see the fixed schema but with 0s for us.
-        if self.mode == 'single':
-            us_temp = '0'
-            us_temperature_error = '0'
-            us_scaling = '0'
-            us_counts_str = '0'
-        frame_s = str(frame + 1)
-        log_data = (os.path.basename(self.filename), frame_s, os.path.dirname(self.filename), ds_temp, us_temp,
-                    ds_temperature_error, us_temperature_error,
-                    self.data_img_file.detector, str(self.data_img_file.exposure_time),str(self.data_img_file.gain),
-                    ds_scaling, us_scaling,
-                    format(self.ds_data_spectrum.counts, ".3e"), us_counts_str)
-        
-        self.log_file.write('\t'.join(log_data) + '\n')
-        self.log_file.flush()
-        # Create a dictionary by zipping keys and values together
-        keys = LOG_HEADER[:-1].split('\t')
-        log_dict = dict(zip(keys, log_data))
-        if self.log_callback is not None:
-            self.log_callback(log_dict)
-        time.sleep(0.01) # may help with not missing writes when batch processing
-        
-
     def set_temperature_fit_function(self, function_type):
         if function_type == 'wien' or function_type == 'plank':
             self.temperature_fit_function_str = function_type
@@ -652,13 +666,27 @@ class TemperatureModelConfiguration(QtCore.QObject):
     _VALID_BACKGROUND_MODES = ('insitu', 'prerecorded', 'hybrid', 'kinetics_trend', 'off')
 
     def _propagate_dark_to_models(self):
-        """Push the current mode + per-side dark image + scale to both single models."""
-        for side, img, scale in (('ds', self.ds_dark_frame_img, self.ds_dark_frame_scale),
-                                  ('us', self.us_dark_frame_img, self.us_dark_frame_scale)):
+        """Push the current mode + per-side dark image + scale to both single models.
+
+        Also pushes the Photron-only decoupled cal-bg settings — active on the
+        model only when photron_mode == 'centered' AND cal_background_mode is
+        not None; otherwise the model falls back to the shared bg path.
+        """
+        cal_active = (self.photron_mode == 'centered'
+                      and self.cal_background_mode is not None)
+        for side, img, scale, cal_img, cal_scale in (
+                ('ds', self.ds_dark_frame_img, self.ds_dark_frame_scale,
+                 self.ds_cal_dark_frame_img, self.ds_cal_dark_frame_scale),
+                ('us', self.us_dark_frame_img, self.us_dark_frame_scale,
+                 self.us_cal_dark_frame_img, self.us_cal_dark_frame_scale)):
             model = self.ds_temperature_model if side == 'ds' else self.us_temperature_model
             model.background_mode = self.background_mode
             model.dark_frame_img = img
             model.dark_frame_scale = float(scale)
+            model.use_cal_specific_bg = cal_active
+            model.cal_background_mode = self.cal_background_mode if cal_active else None
+            model.cal_dark_frame_img = cal_img
+            model.cal_dark_frame_scale = float(cal_scale)
 
     def set_background_mode(self, mode):
         if mode not in self._VALID_BACKGROUND_MODES:
@@ -895,6 +923,80 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.dirty = True
         self.us_calculations_changed_emit()
 
+    # -------- Photron-only decoupled cal-bg subtraction -----------------------
+    # These setters are always available but only take effect when
+    # photron_mode == 'centered'. In every other mode _propagate_dark_to_models
+    # forces use_cal_specific_bg=False on the child models, so the shared
+    # background_mode / dark_frame path is used verbatim.
+    def set_cal_background_mode(self, mode):
+        if mode is not None and mode not in self._VALID_BACKGROUND_MODES:
+            raise ValueError(
+                f"cal background mode must be None or one of "
+                f"{self._VALID_BACKGROUND_MODES}, got {mode!r}")
+        if mode == self.cal_background_mode:
+            return
+        self.cal_background_mode = mode
+        self._propagate_dark_to_models()
+        pipeline.run(self, Stage.CALIB_SPEC)
+        self.dirty = True
+        self.data_changed_emit(self.current_frame)
+
+    def load_ds_cal_dark_frame(self, filename):
+        self.ds_cal_dark_frame_img = self._load_dark_frame_file(filename)
+        self.ds_cal_dark_frame_filename = filename
+        self._propagate_dark_to_models()
+        pipeline.run_ds(self, Stage.DATA_SPEC)
+        self.dirty = True
+        self.ds_calculations_changed_emit()
+
+    def load_us_cal_dark_frame(self, filename):
+        self.us_cal_dark_frame_img = self._load_dark_frame_file(filename)
+        self.us_cal_dark_frame_filename = filename
+        self._propagate_dark_to_models()
+        pipeline.run_us(self, Stage.DATA_SPEC)
+        self.dirty = True
+        self.us_calculations_changed_emit()
+
+    def clear_ds_cal_dark_frame(self):
+        if self.ds_cal_dark_frame_img is None and self.ds_cal_dark_frame_filename is None:
+            return
+        self.ds_cal_dark_frame_img = None
+        self.ds_cal_dark_frame_filename = None
+        self._propagate_dark_to_models()
+        pipeline.run_ds(self, Stage.DATA_SPEC)
+        self.dirty = True
+        self.ds_calculations_changed_emit()
+
+    def clear_us_cal_dark_frame(self):
+        if self.us_cal_dark_frame_img is None and self.us_cal_dark_frame_filename is None:
+            return
+        self.us_cal_dark_frame_img = None
+        self.us_cal_dark_frame_filename = None
+        self._propagate_dark_to_models()
+        pipeline.run_us(self, Stage.DATA_SPEC)
+        self.dirty = True
+        self.us_calculations_changed_emit()
+
+    def set_ds_cal_dark_frame_scale(self, scale):
+        scale = float(scale)
+        if scale == self.ds_cal_dark_frame_scale:
+            return
+        self.ds_cal_dark_frame_scale = scale
+        self.ds_temperature_model.cal_dark_frame_scale = scale
+        pipeline.run_ds(self, Stage.DATA_SPEC)
+        self.dirty = True
+        self.ds_calculations_changed_emit()
+
+    def set_us_cal_dark_frame_scale(self, scale):
+        scale = float(scale)
+        if scale == self.us_cal_dark_frame_scale:
+            return
+        self.us_cal_dark_frame_scale = scale
+        self.us_temperature_model.cal_dark_frame_scale = scale
+        pipeline.run_us(self, Stage.DATA_SPEC)
+        self.dirty = True
+        self.us_calculations_changed_emit()
+
     def _update_temperature_models_data(self):
 
         self.ds_temperature_model.set_temperature_fit_function(self.temperature_fit_function_str)
@@ -1074,6 +1176,11 @@ class TemperatureModelConfiguration(QtCore.QObject):
         # Absent when None so legacy readers don't stumble on the attr.
         if self.kinetics_mode_override is not None:
             f.attrs['kinetics_mode_override'] = self.kinetics_mode_override
+        # Photron centered-window cross-mode toggle (default 'off').
+        f.attrs['photron_mode'] = self.photron_mode
+        # Fit-error display gate (K). Persisted so a re-opened workspace
+        # keeps the user's threshold instead of snapping back to 200 K.
+        f.attrs['error_limit'] = float(self.error_limit)
         if self.kinetics_info:
             kg = f.create_group('kinetics_info')
             for k, v in self.kinetics_info.items():
@@ -1126,6 +1233,20 @@ class TemperatureModelConfiguration(QtCore.QObject):
             f['us_dark_frame'] = np.asarray(self.us_dark_frame_img)
             f['us_dark_frame'].attrs['filename'] = str(self.us_dark_frame_filename or '')
             f['us_dark_frame'].attrs['scale'] = float(self.us_dark_frame_scale)
+
+        # Photron-only decoupled cal-bg (only meaningful when photron_mode ==
+        # 'centered'). Always saved when set so a reload restores the
+        # user's cal-bg selection. cal_background_mode == None means "fall
+        # back to shared" and is written as an empty attr for round-trip.
+        f.attrs['cal_background_mode'] = str(self.cal_background_mode or '')
+        if self.ds_cal_dark_frame_img is not None:
+            f['ds_cal_dark_frame'] = np.asarray(self.ds_cal_dark_frame_img)
+            f['ds_cal_dark_frame'].attrs['filename'] = str(self.ds_cal_dark_frame_filename or '')
+            f['ds_cal_dark_frame'].attrs['scale'] = float(self.ds_cal_dark_frame_scale)
+        if self.us_cal_dark_frame_img is not None:
+            f['us_cal_dark_frame'] = np.asarray(self.us_cal_dark_frame_img)
+            f['us_cal_dark_frame'].attrs['filename'] = str(self.us_cal_dark_frame_filename or '')
+            f['us_cal_dark_frame'].attrs['scale'] = float(self.us_cal_dark_frame_scale)
 
         f.create_group('downstream_calibration')
         ds_group = f['downstream_calibration']
@@ -1348,6 +1469,28 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.us_dark_frame_img = None
             self.us_dark_frame_filename = None
             self.us_dark_frame_scale = 1.0
+        # Photron-only cal-bg (absent in legacy .trs → shared fallback).
+        cbg = str(f.attrs.get('cal_background_mode', ''))
+        if cbg and cbg in self._VALID_BACKGROUND_MODES:
+            self.cal_background_mode = cbg
+        else:
+            self.cal_background_mode = None
+        if 'ds_cal_dark_frame' in f:
+            self.ds_cal_dark_frame_img = f['ds_cal_dark_frame'][...]
+            self.ds_cal_dark_frame_filename = str(f['ds_cal_dark_frame'].attrs.get('filename', ''))
+            self.ds_cal_dark_frame_scale = float(f['ds_cal_dark_frame'].attrs.get('scale', 1.0))
+        else:
+            self.ds_cal_dark_frame_img = None
+            self.ds_cal_dark_frame_filename = None
+            self.ds_cal_dark_frame_scale = 1.0
+        if 'us_cal_dark_frame' in f:
+            self.us_cal_dark_frame_img = f['us_cal_dark_frame'][...]
+            self.us_cal_dark_frame_filename = str(f['us_cal_dark_frame'].attrs.get('filename', ''))
+            self.us_cal_dark_frame_scale = float(f['us_cal_dark_frame'].attrs.get('scale', 1.0))
+        else:
+            self.us_cal_dark_frame_img = None
+            self.us_cal_dark_frame_filename = None
+            self.us_cal_dark_frame_scale = 1.0
         # Kinetics readout state (backward compat: absent → 'off', empty info;
         # legacy 'interleaved' string → 'kinetics-interleaved').
         self.kinetics_mode = str(f.attrs.get('kinetics_mode', 'off'))
@@ -1359,6 +1502,18 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.kinetics_mode_override = str(f.attrs['kinetics_mode_override'])
         else:
             self.kinetics_mode_override = None
+        # Photron centered-window cross-mode (backward compat: absent → 'off').
+        pm = str(f.attrs.get('photron_mode', 'off'))
+        self.photron_mode = pm if pm in ('off', 'centered') else 'off'
+        # Fit-error display gate (K). Legacy .trs without this attr keeps
+        # the 200 K default set in __init__.
+        if 'error_limit' in f.attrs:
+            try:
+                el = float(f.attrs['error_limit'])
+                if el >= 0:
+                    self.error_limit = el
+            except (TypeError, ValueError):
+                pass
         if 'kinetics_info' in f:
             self.kinetics_info = {k: (v.item() if hasattr(v, 'item') else v)
                                   for k, v in f['kinetics_info'].attrs.items()}
@@ -1707,14 +1862,20 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.ds_calculations_changed_emit()'''
 
     def cross_mode_cal_info(self, side):
-        """If `side` ('ds' or 'us') is in cross-mode (full-chip 2D cal +
-        kinetics data of different dim), return dict with cal image shape,
-        cal-dim signal ROI limits, and kinetics window params. Else None.
+        """If `side` ('ds' or 'us') is in cross-mode (cal image and data
+        image live on different dims), return dict with cal image shape,
+        cal-dim ROIs, and the projection params. Else None.
 
-        Applies to both 'kinetics-interleaved' and 'kinetics' (non-interleaved)
-        — in both cases the kinetics data lives on a smaller per-frame canvas
-        than a full-chip cal image, and the cal-dim ROI needs its own storage."""
-        if self.kinetics_mode not in ('kinetics-interleaved', 'kinetics'):
+        Two mutually-exclusive modes fire this:
+          * Kinetics ('kinetics-interleaved' or 'kinetics'): full-chip cal
+            + kinetics data; signal projects modularly via charge-shift.
+          * Photron centered ('centered'): TIF cal + TIF data with same
+            xdim, different ydim; signal AND bg project via fixed offset
+            (cal_ydim - data_ydim) // 2 (centered-window convention).
+        """
+        kinetics = self.kinetics_mode in ('kinetics-interleaved', 'kinetics')
+        photron = (self.photron_mode == 'centered')
+        if not (kinetics or photron):
             return None
         if self.data_img_file is None:
             return None
@@ -1732,10 +1893,23 @@ class TemperatureModelConfiguration(QtCore.QObject):
             return None
         if cal_dim == data_dim:
             return None
+        # Photron additionally requires matching xdim (centered projection
+        # only makes physical sense along Y; a wavelength-axis mismatch is
+        # a different problem).
+        if photron and not kinetics and cal_dim[0] != data_dim[0]:
+            return None
         idx = 0 if side == 'ds' else 1
         bg_idx = 2 if side == 'ds' else 3
         cal_roi = self.roi_data_manager.get_roi(idx, cal_dim)
         cal_bg = self.roi_data_manager.get_roi(bg_idx, cal_dim)
+        if kinetics:
+            win_y = int(self.kinetics_info.get('window_y', 0) or 0)
+            window_height = int(self.kinetics_info.get('window_height', 0) or 0)
+            mode = 'kinetics'
+        else:
+            win_y = (int(cal_shape[0]) - int(data_dim[1])) // 2
+            window_height = int(data_dim[1])
+            mode = 'photron'
         return {
             'cal_shape': cal_shape,
             'cal_dim': cal_dim,
@@ -1745,8 +1919,9 @@ class TemperatureModelConfiguration(QtCore.QObject):
             'bg_idx': bg_idx,
             'bg_roi_limits': [int(cal_bg.x_min), int(cal_bg.x_max),
                               int(cal_bg.y_min), int(cal_bg.y_max)],
-            'win_y': int(self.kinetics_info.get('window_y', 0) or 0),
-            'window_height': int(self.kinetics_info.get('window_height', 0) or 0),
+            'win_y': win_y,
+            'window_height': window_height,
+            'mode': mode,
         }
 
     def set_cal_dim_signal_roi(self, side, limits):
@@ -1788,20 +1963,22 @@ class TemperatureModelConfiguration(QtCore.QObject):
                                       [x_min, x_max, y_min, y_max])
 
     def _sync_cross_mode_rois(self):
-        """Derive kinetics-dim ROIs from full-chip cal-dim ROIs using the
-        modular geometry of PI-MAX4 kinetics readout: charge shifts up by
-        h = window_height rows per frame, so a DS/US band at physical cal
-        row Y appears at row ((Y - win_y) mod h) of every kinetics frame.
-        Idempotent. Applies to both interleaved and non-interleaved kinetics
-        (for non-interleaved with h=1 the modular result collapses to 0,
-        which is the sole strip row — still correct)."""
-        if self.kinetics_mode not in ('kinetics-interleaved', 'kinetics'):
+        """Derive data-dim ROIs from cal-dim ROIs. Idempotent.
+
+        Kinetics (PI-MAX4 charge-shift): signal ROI at cal row Y appears at
+        row ((Y - win_y) mod h) of every kinetics frame. Only signal (idx
+        0/1) projects — bg is chosen for local darkness and a dark full-
+        chip row isn't necessarily dark in the shifted stack.
+
+        Photron centered: single contiguous window; signal AND bg both
+        project via straight offset (data_y = cal_y - win_y), clamped to
+        the data-dim window. Bg subtraction maps directly since the
+        recorded rows are literally the middle of the cal image."""
+        kinetics = self.kinetics_mode in ('kinetics-interleaved', 'kinetics')
+        photron = (self.photron_mode == 'centered')
+        if not (kinetics or photron):
             return
         if self.data_img_file is None:
-            return
-        win_y = int(self.kinetics_info.get('window_y', 0) or 0)
-        h = int(self.kinetics_info.get('window_height', 0) or 0)
-        if h <= 0:
             return
         try:
             data_dim = self.data_img_file.get_dimension()
@@ -1817,12 +1994,36 @@ class TemperatureModelConfiguration(QtCore.QObject):
             cal_dim = (cal_shape[1], cal_shape[0])
             if cal_dim == data_dim:
                 continue
-            # Only signal ROIs (idx 0=DS, 1=US) get the modular mapping —
-            # their positions are fixed by a permanent physical mask on the
-            # CCD, so the geometry carries over. Background ROIs (idx 2, 3)
-            # are chosen for local darkness; a "dark" full-chip row is not
-            # necessarily dark in the shifted/interleaved kinetics stack.
-            # Backgrounds stay per-dim independent.
+            if photron and not kinetics:
+                # Photron centered: same xdim required; straight-offset
+                # signal + bg projection.
+                if cal_dim[0] != data_dim[0]:
+                    continue
+                win_y = (int(cal_shape[0]) - int(data_dim[1])) // 2
+                h = int(data_dim[1])
+                if h <= 0:
+                    continue
+                for idx in (0, 1, 2, 3):
+                    if side == 'ds' and idx in (1, 3):
+                        continue
+                    if side == 'us' and idx in (0, 2):
+                        continue
+                    cal_roi = self.roi_data_manager.get_roi(idx, cal_dim)
+                    y_min = int(cal_roi.y_min) - win_y
+                    y_max = int(cal_roi.y_max) - win_y
+                    y_min = max(0, min(h - 1, y_min))
+                    y_max = max(0, min(h - 1, y_max))
+                    if y_min > y_max:
+                        continue
+                    self.roi_data_manager.set_roi(idx, data_dim,
+                        [int(cal_roi.x_min), int(cal_roi.x_max),
+                         y_min, y_max])
+                continue
+            # Kinetics: modular signal projection only.
+            win_y = int(self.kinetics_info.get('window_y', 0) or 0)
+            h = int(self.kinetics_info.get('window_height', 0) or 0)
+            if h <= 0:
+                continue
             idx = 0 if side == 'ds' else 1
             cal_roi = self.roi_data_manager.get_roi(idx, cal_dim)
             y_min_shifted = int(cal_roi.y_min) - win_y
@@ -1838,23 +2039,27 @@ class TemperatureModelConfiguration(QtCore.QObject):
                  new_y_min, new_y_max])
 
     def _mirror_roi_to_cal_dim(self, idx, data_dim, limits):
-        """When the user drags a signal ROI in the kinetics view, update
-        the cal-dim ROI to reflect the same physical sensor row. The user
-        changes the row-within-frame; the frame-index quotient
-        (Y_cal - win_y) // h is preserved from the pre-drag cal-dim ROI
-        so the physical DS/US band position stays consistent.
+        """When the user drags a ROI in the data view, update the cal-dim
+        ROI to reflect the same physical sensor rows.
 
-        Background ROIs (idx 2, 3) are not mirrored — dark regions are
-        chosen independently for each readout mode."""
-        if self.kinetics_mode not in ('kinetics-interleaved', 'kinetics'):
+        Kinetics: only signal (idx 0/1) is mirrored (bg is per-dim); the
+        frame-index quotient (Y_cal - win_y) // h is preserved from the
+        pre-drag cal-dim ROI so the physical DS/US band position stays
+        consistent, and the user's row-within-frame edit slots into it.
+
+        Photron centered: signal AND bg (idx 0/1/2/3) mirror via straight
+        offset (cal_y = data_y + win_y), clamped to cal ydim."""
+        kinetics = self.kinetics_mode in ('kinetics-interleaved', 'kinetics')
+        photron = (self.photron_mode == 'centered')
+        if not (kinetics or photron):
             return
-        if idx not in (0, 1):
+        # Photron mirrors all four; kinetics mirrors only signal.
+        if kinetics and not photron and idx not in (0, 1):
             return
-        win_y = int(self.kinetics_info.get('window_y', 0) or 0)
-        h = int(self.kinetics_info.get('window_height', 0) or 0)
-        if h <= 0:
+        if idx not in (0, 1, 2, 3):
             return
-        cal_file = self.ds_calibration_img_file if idx == 0 \
+        # Pick the cal file based on side (idx 0/2 → ds, idx 1/3 → us).
+        cal_file = self.ds_calibration_img_file if idx in (0, 2) \
             else self.us_calibration_img_file
         if cal_file is None or getattr(cal_file, 'img', None) is None:
             return
@@ -1865,12 +2070,30 @@ class TemperatureModelConfiguration(QtCore.QObject):
         if cal_dim == data_dim:
             return
         x_min, x_max, ky_min, ky_max = (int(v) for v in limits)
+        cal_h = cal_shape[0]
+        if photron and not kinetics:
+            if cal_dim[0] != data_dim[0]:
+                return
+            win_y = (int(cal_shape[0]) - int(data_dim[1])) // 2
+            new_cal_y_min = ky_min + win_y
+            new_cal_y_max = ky_max + win_y
+            new_cal_y_min = max(0, min(cal_h - 1, new_cal_y_min))
+            new_cal_y_max = max(0, min(cal_h - 1, new_cal_y_max))
+            if new_cal_y_min > new_cal_y_max:
+                return
+            self.roi_data_manager.set_roi(idx, cal_dim,
+                [x_min, x_max, new_cal_y_min, new_cal_y_max])
+            return
+        # Kinetics signal-only mirror (unchanged behavior).
+        win_y = int(self.kinetics_info.get('window_y', 0) or 0)
+        h = int(self.kinetics_info.get('window_height', 0) or 0)
+        if h <= 0:
+            return
         prev = self.roi_data_manager.get_roi(idx, cal_dim)
         q_min = (int(prev.y_min) - win_y) // h
         q_max = (int(prev.y_max) - win_y) // h
         new_cal_y_min = q_min * h + win_y + ky_min
         new_cal_y_max = q_max * h + win_y + ky_max
-        cal_h = cal_shape[0]
         new_cal_y_min = max(0, min(cal_h - 1, new_cal_y_min))
         new_cal_y_max = max(0, min(cal_h - 1, new_cal_y_max))
         if new_cal_y_min > new_cal_y_max:
@@ -2650,6 +2873,26 @@ class TemperatureModelConfiguration(QtCore.QObject):
                 return False
         return True
 
+    def set_error_limit(self, value):
+        """Update the display-gate σ_T ceiling (K). Refreshes both the
+        spectrum-widget fit line/text and the time-lapse plot without
+        re-running any fits — the underlying T / T_err records are
+        unchanged, only the gate reads the new limit."""
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return
+        if v < 0:
+            v = 0.0
+        if v == self.error_limit:
+            return
+        self.error_limit = v
+        self.dirty = True
+        # Bypass data_changed_emit (which writes to the datalog) — nothing
+        # about the underlying data changed. Direct signal emit refreshes
+        # every consumer of the display gate.
+        self.data_changed_signal.emit()
+
     def frame_display_T(self, side, f):
         """(T, T_err) for the display path — or (NaN, NaN) if gated off.
 
@@ -2724,6 +2967,16 @@ class SingleTemperatureModel(QtCore.QObject):
         self.background_mode = 'insitu'
         self.dark_frame_img = None       # np.ndarray or None
         self.dark_frame_scale = 1.0
+
+        # Photron-only decoupled cal-bg. Populated by
+        # TemperatureModelConfiguration._propagate_dark_to_models. When
+        # use_cal_specific_bg is True, _update_calibration_spectrum uses the
+        # cal_* fields; otherwise it uses the shared background_mode /
+        # dark_frame_img / dark_frame_scale as before.
+        self.use_cal_specific_bg = False
+        self.cal_background_mode = None
+        self.cal_dark_frame_img = None
+        self.cal_dark_frame_scale = 1.0
 
         self.filter_oscillation = False
         self.filter_freq_min = 0.0005  # cm — lower bound for fringe peak search
@@ -2975,7 +3228,18 @@ class SingleTemperatureModel(QtCore.QObject):
                 roi.x_max = w - 1
             if roi.y_max >= h:
                 roi.y_max = h - 1
-            mode = getattr(self, 'background_mode', 'insitu')
+            # Photron-only cal-bg override. When use_cal_specific_bg is True,
+            # source the mode / dark image / scale from the cal_* fields
+            # instead of the shared data-bg fields. Every other file type
+            # keeps the historical shared behaviour.
+            if getattr(self, 'use_cal_specific_bg', False):
+                mode = self.cal_background_mode or 'insitu'
+                dark_img = self.cal_dark_frame_img
+                dark_scale = float(self.cal_dark_frame_scale)
+            else:
+                mode = getattr(self, 'background_mode', 'insitu')
+                dark_img = self.dark_frame_img
+                dark_scale = float(self.dark_frame_scale)
             # Calibration is single-frame; 'kinetics_trend' has no meaning
             # here — treat it as 'insitu'.
             if mode == 'kinetics_trend':
@@ -2991,13 +3255,13 @@ class SingleTemperatureModel(QtCore.QObject):
             if mode == 'insitu':
                 calibration_bg = get_roi_sum(self._calibration_img, roi_bg)
                 calibration_y = calibration_y - calibration_bg
-            elif mode == 'prerecorded' and self.dark_frame_img is not None:
-                dark = np.asarray(self.dark_frame_img)
+            elif mode == 'prerecorded' and dark_img is not None:
+                dark = np.asarray(dark_img)
                 cal_arr = np.asarray(self._calibration_img)
                 if dark.shape == cal_arr.shape:
-                    calibration_y = calibration_y - get_roi_sum(dark, roi) * float(self.dark_frame_scale)
-            elif mode == 'hybrid' and self.dark_frame_img is not None:
-                dark = np.asarray(self.dark_frame_img)
+                    calibration_y = calibration_y - get_roi_sum(dark, roi) * dark_scale
+            elif mode == 'hybrid' and dark_img is not None:
+                dark = np.asarray(dark_img)
                 cal_arr = np.asarray(self._calibration_img)
                 if dark.shape == cal_arr.shape:
                     roi_bg = self.roi_data_manager.get_roi(self.ind+2, self._calibration_img_dimension)

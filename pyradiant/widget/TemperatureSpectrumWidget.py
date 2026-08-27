@@ -115,6 +115,17 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
 
         self.ds_mx = 2
         self.us_mx = 2
+        # Cache of the last data (x, masked y) plotted per side, plus the
+        # X-range of the last fit. Y scaling in normalize_range uses the
+        # data max — but constrained to the fit's X range when a fit is
+        # present. The corrected spectrum can spike wildly outside the
+        # fit range (Photron cal-division blow-up at ROI edges); clipping
+        # to the fit range keeps the real signal visible without cutting
+        # off the useful data.
+        self._ds_last_data = None  # tuple (x, y) or None
+        self._us_last_data = None
+        self._ds_fit_x_range = None  # (xmin, xmax) or None
+        self._us_fit_x_range = None
         
         self.plots_widget = QtWidgets.QWidget()
         self._plots_widget_layout = QtWidgets.QGridLayout(self.plots_widget)
@@ -283,45 +294,93 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         #self._time_lapse_plot.mouse_moved.connect(self.mouse_moved)
 
     def plot_ds_data(self, x, y, mask=None):
-      
-        if len(x)>0:
-            mx = np.amax(y)*1.1
+
+        if mask is not None:
+            y[~mask] = np.nan
+
+        # Cache for normalize_range; ds_mx is a full-range fallback used
+        # when no fit range is available.
+        if len(x) > 0:
+            self._ds_last_data = (np.asarray(x), np.asarray(y))
+            finite = y[np.isfinite(y)]
+            mx = float(np.max(finite)) * 1.1 if finite.size else 1.1
         else:
+            self._ds_last_data = None
             mx = 1.1
         if mx < 2:
             mx = 2
         self.ds_mx = mx
 
-        if mask is not None:
-            #x[~mask] = np.nan
-            y[~mask] = np.nan
-        
         if len(x) > 0 and not np.all(np.isnan(y)):
             self._ds_data_item.setData(x, y)
         else:
             self._ds_data_item.setData([], [])
 
     def plot_us_data(self, x, y, mask=None):
-    
-        if len(x)>0:
-            mx = np.amax(y)*1.1
+
+        if mask is not None:
+            y[~mask] = np.nan
+
+        if len(x) > 0:
+            self._us_last_data = (np.asarray(x), np.asarray(y))
+            finite = y[np.isfinite(y)]
+            mx = float(np.max(finite)) * 1.1 if finite.size else 1.1
         else:
+            self._us_last_data = None
             mx = 1.1
         if mx < 2:
             mx = 2
         self.us_mx = mx
-        if mask is not None:
-            #x[~mask] = np.nan
-            y[~mask] = np.nan
+
         if len(x) > 0 and not np.all(np.isnan(y)):
             self._us_data_item.setData(x, y)
         else:
             self._us_data_item.setData([], [])
 
     def normalize_range(self):
-        mx = max(self.ds_mx,self.us_mx)
-        self._us_view_box.setYRange(-1,mx)
-        self._ds_view_box.setYRange(-1,mx)
+        # Y max is driven by the data (never clips the curve). To avoid
+        # cal-division junk at ROI edges dominating (Photron mode), the
+        # max is computed inside a useful X window:
+        #   - the fit's X range when a fit is present, else
+        #   - the inner 60% of the data X range as a heuristic (edges
+        #     are where the junk lives; inner middle is where real
+        #     signal lives).
+        def _mx_in_range(cache, xr):
+            if cache is None:
+                return None
+            x, y = cache
+            if xr is None and x.size:
+                # No fit range known — fall back to inner 60% of x span.
+                x_lo = float(np.min(x))
+                x_hi = float(np.max(x))
+                span = x_hi - x_lo
+                xr = (x_lo + 0.2 * span, x_lo + 0.8 * span)
+            if xr is not None:
+                sel = (x >= xr[0]) & (x <= xr[1])
+                y = y[sel]
+            finite = y[np.isfinite(y)]
+            if not finite.size:
+                return None
+            # 98th percentile — drops the top ~2% so a few residual
+            # spikes inside the window don't leave a big empty gap
+            # above the real signal.
+            return float(np.percentile(finite, 98)) * 1.1
+
+        candidates = []
+        ds_windowed = _mx_in_range(self._ds_last_data, self._ds_fit_x_range)
+        us_windowed = _mx_in_range(self._us_last_data, self._us_fit_x_range)
+        if ds_windowed is not None:
+            candidates.append(ds_windowed)
+        if us_windowed is not None:
+            candidates.append(us_windowed)
+        if candidates:
+            mx = max(candidates)
+        else:
+            mx = max(self.ds_mx, self.us_mx)
+        if mx < 2:
+            mx = 2
+        self._us_view_box.setYRange(-1, mx)
+        self._ds_view_box.setYRange(-1, mx)
 
     def plot_ds_masked_data(self, x, y, mask=None):
        
@@ -346,18 +405,24 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
             self._us_masked_data_item.setData([], [])
 
     def plot_ds_fit(self, x, y):
-        
+
         if len(x) > 0 and not np.all(np.isnan(y)):
             self._ds_fit_item.setData(x, y)
+            x_arr = np.asarray(x)
+            self._ds_fit_x_range = (float(np.min(x_arr)), float(np.max(x_arr)))
         else:
             self._ds_fit_item.setData([], [])
+            self._ds_fit_x_range = None
 
     def plot_us_fit(self, x, y):
-        
+
         if len(x) > 0 and not np.all(np.isnan(y)):
             self._us_fit_item.setData(x, y)
+            x_arr = np.asarray(x)
+            self._us_fit_x_range = (float(np.min(x_arr)), float(np.max(x_arr)))
         else:
             self._us_fit_item.setData([], [])
+            self._us_fit_x_range = None
 
     def plot_ds_time_lapse(self, x, y):
         if len(x) > 0 and not np.all(np.isnan(y)):

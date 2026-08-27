@@ -153,11 +153,13 @@ class ZmqPublisherController(QtCore.QObject):
     # ------------------------------------------------------------------
 
     def load_config_clicked(self):
+        import os as _os
         from ..widget.Widgets import open_file_dialog
+        start_dir = _os.path.dirname(self._config_path) if self._config_path else ""
         path = open_file_dialog(
             self.widget,
             caption="Load worker config",
-            directory="",
+            directory=start_dir,
             filter="YAML files (*.yaml *.yml);;All files (*)",
         )
         if path:

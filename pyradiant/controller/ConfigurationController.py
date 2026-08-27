@@ -22,7 +22,6 @@ import os
 from ..widget.ConfigurationWidget import ConfigurationWidget
 from ..model.TemperatureModel import TemperatureModel
 from ..model.TemperatureModelConfiguration import TemperatureModelConfiguration
-from .DataLogController import DataLogController
 from .TemperatureController import TemperatureController
 
 class ConfigurationController(object):
@@ -63,15 +62,11 @@ class ConfigurationController(object):
 
     def configuration_selected(self):
         self.update_configuration_widget()
-        datalog_controller: DataLogController
-        datalog_controller = self.controllers[1]
-        datalog_controller.disconnect_models()
-        datalog_controller.clear_log_display()
-        datalog_controller.connect_models()
-        datalog_controller.load_log_from_file()
+        # TLogController subscribes to model.configuration_selected itself
+        # and rebinds to the new current configuration — no glue needed here.
         temperature_controller: TemperatureController
         temperature_controller = self.controllers[0]
-        configuration : TemperatureModelConfiguration
+        configuration: TemperatureModelConfiguration
         configuration = self.model.configurations[self.model.configuration_ind]
         filename = configuration.filename
         if filename:
