@@ -17,6 +17,8 @@ __version__
 spe_xml.xml
 dist/
 build/
+*_pack/
+*_pack_*.zip
 
 
 # Build results
