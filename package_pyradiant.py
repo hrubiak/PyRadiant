@@ -1,12 +1,22 @@
-"""Pack the minimal files needed to run run_pyradiant.py into a folder and zip it."""
+"""Pack the minimal files needed to run run_pyradiant.py into a folder and zip it.
+
+Optionally SCPs the resulting zip to a remote server. Configure via SCP_DESTINATION
+below; set to '' to skip the transfer.
+"""
 import shutil
+import subprocess
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 OUT_NAME = "PyRadiant_pack"
 OUT_DIR = ROOT / OUT_NAME
-ZIP_PATH = ROOT / f"{OUT_NAME}.zip"
+TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
+ZIP_PATH = ROOT / f"{OUT_NAME}_{TIMESTAMP}.zip"
+
+# SCP destination — "user@host:/remote/path/". Set to '' to skip.
+SCP_DESTINATION = "s16idbuser@veneno:/net/pantera/data/16idb/software/python_installation"
 
 TOP_LEVEL_FILES = [
     "run_pyradiant.py",
@@ -48,8 +58,6 @@ def copy_tree(src: Path, dst: Path) -> int:
 def main() -> None:
     if OUT_DIR.exists():
         shutil.rmtree(OUT_DIR)
-    if ZIP_PATH.exists():
-        ZIP_PATH.unlink()
     OUT_DIR.mkdir()
 
     total = 0
@@ -74,6 +82,16 @@ def main() -> None:
 
     size_mb = ZIP_PATH.stat().st_size / (1024 * 1024)
     print(f"Wrote {ZIP_PATH} ({size_mb:.2f} MB)")
+
+    if SCP_DESTINATION:
+        print(f"Copying to {SCP_DESTINATION} ...")
+        result = subprocess.run(["scp", str(ZIP_PATH), SCP_DESTINATION], check=False)
+        if result.returncode == 0:
+            print("Transfer complete.")
+        else:
+            print(f"[warning] scp exited with code {result.returncode}")
+    else:
+        print("SCP_DESTINATION not set - skipping transfer.")
 
 
 if __name__ == "__main__":

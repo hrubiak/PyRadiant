@@ -274,6 +274,12 @@ class ZmqWorkerController(QtCore.QObject):
         self._output_dir   = get_worker_output_directory(worker_name, self._config) if worker_name else None
 
         self.widget.zmq_gb.config_lbl.setText(os.path.basename(path))
+        self.widget.zmq_gb.config_lbl.setToolTip(
+            f"{path}\n"
+            f"worker={self._worker_name}  port={self._recv_port}  "
+            f"results_port={self._results_port}  health_port={self._health_port}\n"
+            f"input_dir={self._input_dir or '—'}"
+        )
         self.widget.zmq_gb.worker_name_lbl.setText(self._worker_name)
         self.widget.zmq_gb.port_lbl.setText(str(self._recv_port) if self._recv_port else "—")
         self.widget.zmq_gb.results_port_lbl.setText(

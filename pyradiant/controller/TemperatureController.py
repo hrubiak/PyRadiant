@@ -31,6 +31,7 @@ from ..model import epics_settings as eps
 from .NewFileInDirectoryWatcher import NewFileInDirectoryWatcher
 from ..model.data_models.ADWatcher import ADWatcher
 from ..model.data_models.SpeFile import SpeFile
+from ..model.data_models.H5File import H5File
 import numpy as np
 from ..model.helper.HelperModule import get_partial_index , get_partial_value
 from .. widget.DataHistoryWidget import dataHistoryWidget
@@ -423,6 +424,21 @@ class TemperatureController(QtCore.QObject):
             lambda v: self._cal_bg_scale_changed('us', v))
 
         self.widget.two_color_btn.clicked.connect(self.two_color_display_toggle_callback)
+
+        # Multi-frame output panel — mode combobox drives range-row visibility
+        # and error-metric enablement; both are shared by ZMQ, EPICS, and the
+        # time-lapse plot labels. Any change should refresh the history label
+        # so what the user sees on the plot matches what would be published.
+        mf_gb = self.widget.multiframe_output_gb
+        mf_gb.mode_cb.currentIndexChanged.connect(self._on_multiframe_mode_changed)
+        mf_gb.mode_cb.currentIndexChanged.connect(lambda _i: self.redraw_time_lapse())
+        mf_gb.error_metric_cb.currentIndexChanged.connect(lambda _i: self.redraw_time_lapse())
+        mf_gb.range_start_sb.valueChanged.connect(lambda _v: self.redraw_time_lapse())
+        mf_gb.range_end_sb.valueChanged.connect(lambda _v: self.redraw_time_lapse())
+        # epicsLogger publisher — Trigger-now button (publish checkbox, load_config,
+        # connect_btn are wired in ZmqPublisherController).
+        self.widget.epicslogger_gb.trigger_now_btn.clicked.connect(
+            lambda: self._send_temperature_trigger(force=True))
 
 
     def load_next_img_frame_callback(self):
@@ -817,6 +833,8 @@ class TemperatureController(QtCore.QObject):
                     self._directory_watcher.path = self._exp_working_dir
                     # hack, refactor later:
                     self.process_multiframe()
+                    self._default_history_axis_for_kinetics()
+                    self._refresh_multiframe_ui()
                     # Ensure file system mode is active and badge reflects it
                     if not self.widget.file_system_rb.isChecked():
                         self.widget.file_system_rb.setChecked(True)
@@ -850,15 +868,348 @@ class TemperatureController(QtCore.QObject):
             self.widget.ad_last_update_lbl.setText("Last update: " + ts)
             self._send_temperature_trigger()
 
-    def _send_temperature_trigger(self):
-        """Build a data payload from the current fit and send to epicsLogger."""
-        if not self.widget.epicslogger_gb.publish_temperatures_cb.isChecked():
-            return
+    def _send_temperature_trigger(self, force=False):
+        """Publish the current fit to both output channels (ZMQ trigger + EPICS PVs).
+
+        Called on every SPE file load and by the Trigger-now button. The two
+        channels are gated independently:
+
+        - ZMQ trigger to epicsLogger fires when *force* is True (Trigger-now)
+          or when the 'Publish temperatures' checkbox in the epicsLogger panel
+          is on.
+        - EPICS PV publish fires when 'Publish temperatures to EPICS' is on
+          AND the multi-frame mode is an aggregate mode. In 'Current frame'
+          mode, EPICS is served live by ds/us_calculations_changed instead.
+        """
         cfg = self.model.current_configuration
+
+        # ZMQ path
+        if force or self.widget.epicslogger_gb.publish_temperatures_cb.isChecked():
+            data = self._build_trigger_payload(cfg)
+            self.zmq_publisher_controller.send_trigger(data)
+
+        # EPICS path — aggregate modes only (single mode uses the live path)
+        mode = self._current_multiframe_mode(cfg)
+        if mode != "single" and self.widget.connect_to_epics_cb.isChecked():
+            self._publish_epics_temperatures(cfg)
+
+    # Payload precision for the epicsLogger trigger. ndigits == 0 → int in the wire
+    # message (not 1234.0), which keeps the log columns readable.
+    _PAYLOAD_ROUND_NDIGITS = {
+        'ds_temperature':       0,
+        'us_temperature':       0,
+        'ds_temperature_error': 1,
+        'us_temperature_error': 1,
+        'ds_fringe_frequency':  4,
+        'us_fringe_frequency':  4,
+        'ds_fringe_nd_um':      3,
+        'us_fringe_nd_um':      3,
+        'exposure_time':        6,
+    }
+
+    def _current_multiframe_mode(self, cfg):
+        """Return the effective aggregation mode for *cfg*.
+
+        Single-frame files (or no file loaded) always collapse to 'single'
+        regardless of what the combobox says — the aggregate math is
+        undefined for a single or zero frames.
+        """
+        data_file = getattr(cfg, 'data_img_file', None)
+        frame_count = int(getattr(data_file, 'num_frames', 0) or 0)
+        mode = self.widget.multiframe_output_gb.mode_cb.currentData() or "single"
+        if frame_count <= 1:
+            mode = "single"
+        return mode
+
+    def _kinetics_sync_active(self, cfg):
+        """True when the history-axis is in per-side-synchronized units (k or lab-time)
+        AND the config has a valid coincident-frame range (kinetics setup).
+
+        In that state, the range spinboxes represent coincident-exposure k
+        (1-based), not readout-frame indices. Per-side readout ranges are
+        derived via cfg.coincident_to_readout(k). Outside this state the
+        range is a plain readout-frame index applied identically to DS and US.
+        """
+        if getattr(self, '_history_x_mode', 'frame') not in ('sync_frame', 'time'):
+            return False
+        rng = cfg.get_coincident_frame_range() if cfg is not None else None
+        return rng is not None
+
+    def _readout_range_for_side(self, cfg, side, ui_start, ui_end):
+        """Translate the range-spinbox values into (readout_start, readout_end)
+        for one side, honoring the current axis-mode interpretation.
+
+        - In kinetics-sync axis: ui_start/end are coincident-k (1-based). Map
+          each end through cfg.coincident_to_readout(k) → per-side readout f;
+          skip range endpoints that fall outside the side's [0, N-1] and clamp
+          to what remains.
+        - Otherwise: values are readout-frame indices (0-based) applied to both
+          sides identically.
+
+        Returns (f_start, f_end) or (None, None) if the range collapses to
+        nothing on that side (e.g. k range covers only frames the other side has).
+        """
+        n = int(getattr(getattr(cfg, 'data_img_file', None), 'num_frames', 0) or 0)
+        if n <= 0:
+            return None, None
+        if not self._kinetics_sync_active(cfg):
+            f_start = max(0, min(n - 1, int(ui_start)))
+            f_end   = max(f_start, min(n - 1, int(ui_end)))
+            return f_start, f_end
+        # kinetics-sync branch — walk k values in the requested range and
+        # collect the side's valid readout indices; the endpoints may be None.
+        ks = list(range(int(ui_start), int(ui_end) + 1))
+        readouts = []
+        for k in ks:
+            f_ds, f_us = cfg.coincident_to_readout(k)
+            f = f_ds if side == 'ds' else f_us
+            if f is not None:
+                readouts.append(int(f))
+        if not readouts:
+            return None, None
+        return min(readouts), max(readouts)
+
+    def _aggregate_temperature_series(self, cfg, temps, errs, op, err_metric,
+                                      start=None, end=None):
+        """Aggregate a per-frame T series into a (value, error) scalar pair.
+
+        Filters applied (all must pass for a frame to be included):
+          - finite (drops NaN/inf)
+          - not the 0.0 'no fit' sentinel used by fit_all_frames
+          - min_allowed_T < T < max_allowed_T (controller-level sanity bounds)
+          - per-frame fit error < cfg.error_limit (per-config quality gate)
+
+        Parameters
+        ----------
+        cfg      : the TemperatureModelConfiguration (for error_limit)
+        temps    : 1-D np array of per-frame temperatures
+        errs     : 1-D np array of per-frame fit errors (may be empty)
+        op       : "mean" or "median"
+        err_metric: "fit_avg" (mean of per-frame errors) or "std" (spread of Ts)
+        start,end: inclusive frame-index range to consider (defaults to full array)
+
+        Returns
+        -------
+        (value, error) as JSON-safe floats, or (None, None) if no valid frames.
+        """
+        sf = ZmqWorkerController._safe_float
+        temps = np.asarray(temps, dtype=float)
+        errs  = np.asarray(errs,  dtype=float)
+        if temps.size == 0:
+            return None, None
+
+        if start is None:
+            start = 0
+        if end is None:
+            end = temps.size - 1
+
+        sl = temps[start:end + 1]
+        el = errs[start:end + 1] if errs.size == temps.size else np.zeros_like(sl)
+
+        min_T = getattr(self, 'min_allowed_T', -np.inf)
+        max_T = getattr(self, 'max_allowed_T',  np.inf)
+        err_limit = getattr(cfg, 'error_limit', np.inf)
+
+        valid = np.isfinite(sl) & (sl != 0.0) & (sl > min_T) & (sl < max_T)
+        # Only apply error_limit if we have matching errors (else the filter
+        # would be vacuously true and never trim anything).
+        if el.size == sl.size:
+            valid &= (el < err_limit)
+        if not valid.any():
+            return None, None
+
+        sl_v = sl[valid]
+        el_v = el[valid] if el.size == sl.size else np.array([])
+        center = float(np.mean(sl_v)) if op == "mean" else float(np.median(sl_v))
+        if err_metric == "std":
+            err_out = float(np.std(sl_v, ddof=0)) if sl_v.size > 1 else 0.0
+        else:  # fit_avg
+            err_out = float(np.mean(el_v)) if el_v.size else None
+        return sf(center), sf(err_out)
+
+    def _compute_multiframe_output(self, cfg):
+        """Aggregate per-frame temperatures per the multi-frame mode setting.
+
+        Returns a dict with:
+          ds_temperature, us_temperature — chosen aggregate (or current-frame) T
+          ds_temperature_error, us_temperature_error — error metric per user setting
+          error_metric — one of 'fit' (single mode) / 'fit_avg' / 'std'
+          aggregation — mode string
+          frame_index — for single mode, the frame this represents; else None
+          frame_range_start, frame_range_end — for range_* modes; else None
+          frame_count — total frames in the file
+
+        Errors and temperatures are None if no data is available. Used by
+        both the ZMQ payload builder and the EPICS PV publisher.
+        """
+        gb = self.widget.multiframe_output_gb
+        mode = self._current_multiframe_mode(cfg)
+        dual = getattr(cfg, 'mode', 'dual') == 'dual'
+        sf = ZmqWorkerController._safe_float
+        data_file = getattr(cfg, 'data_img_file', None)
+        frame_count = int(getattr(data_file, 'num_frames', 0) or 0)
+
+        out = {
+            'frame_count':       frame_count,
+            'aggregation':       mode,
+            'frame_index':       None,
+            'frame_range_start': None,
+            'frame_range_end':   None,
+            'error_metric':      None,
+        }
+
+        if mode == "single":
+            out['ds_temperature']       = sf(getattr(cfg, 'ds_temperature', None))
+            out['ds_temperature_error'] = sf(getattr(cfg, 'ds_temperature_error', None))
+            out['us_temperature']       = sf(getattr(cfg, 'us_temperature', None))       if dual else None
+            out['us_temperature_error'] = sf(getattr(cfg, 'us_temperature_error', None)) if dual else None
+            out['frame_index']          = int(getattr(cfg, 'current_frame', 0) or 0)
+            out['error_metric']         = 'fit'
+            return out
+
+        # Aggregate branch — per-side readout ranges (they differ in kinetics-sync mode).
+        if mode in ("mean_range", "median_range"):
+            ui_start, ui_end = gb.range_start_sb.value(), gb.range_end_sb.value()
+            ds_range = self._readout_range_for_side(cfg, 'ds', ui_start, ui_end)
+            us_range = self._readout_range_for_side(cfg, 'us', ui_start, ui_end)
+            range_start_ui, range_end_ui = ui_start, ui_end
+        else:
+            ds_range = (0, frame_count - 1)
+            us_range = (0, frame_count - 1)
+            range_start_ui, range_end_ui = None, None
+
+        ds_arr = np.asarray(getattr(cfg, 'ds_temperatures', []) or [], dtype=float)
+        ds_err = np.asarray(getattr(cfg, 'ds_temperatures_errors', []) or [], dtype=float)
+        us_arr = np.asarray(getattr(cfg, 'us_temperatures', []) or [], dtype=float)
+        us_err = np.asarray(getattr(cfg, 'us_temperatures_errors', []) or [], dtype=float)
+
+        op = "mean" if mode.startswith("mean") else "median"
+        err_metric = gb.error_metric_cb.currentData() or "fit_avg"
+
+        ds_t, ds_e = (self._aggregate_temperature_series(cfg, ds_arr, ds_err, op, err_metric,
+                                                        ds_range[0], ds_range[1])
+                      if ds_range != (None, None) else (None, None))
+        us_t, us_e = ((self._aggregate_temperature_series(cfg, us_arr, us_err, op, err_metric,
+                                                        us_range[0], us_range[1])
+                      if us_range != (None, None) else (None, None))
+                      if dual else (None, None))
+
+        out['ds_temperature']       = ds_t
+        out['ds_temperature_error'] = ds_e
+        out['us_temperature']       = us_t
+        out['us_temperature_error'] = us_e
+        out['error_metric']         = err_metric
+        out['frame_range_start']    = range_start_ui
+        out['frame_range_end']      = range_end_ui
+        return out
+
+    def _publish_epics_temperatures(self, cfg):
+        """caput the aggregated DS/US temperatures to the configured EPICS PVs."""
+        if not self.epics_available or caput is None:
+            return
+        agg = self._compute_multiframe_output(cfg)
+        ds_pv = eps.epics_settings.get('ds_last_temp')
+        us_pv = eps.epics_settings.get('us_last_temp')
+        ds_t = agg.get('ds_temperature')
+        us_t = agg.get('us_temperature')
+        if ds_pv and ds_pv not in ('', 'None') and ds_t is not None:
+            caput(ds_pv, ds_t)
+        if us_pv and us_pv not in ('', 'None') and us_t is not None:
+            caput(us_pv, us_t)
+
+    def _build_trigger_payload(self, cfg):
+        """Assemble the trigger data dict, honoring the multi-frame log mode.
+
+        Returns None only when the payload has no meaningful content (no file
+        loaded and every scalar is None) — in that case the publisher still
+        sends a bare {"type":"trigger"}, which is a valid 'log a row' signal.
+        """
+        # Start from the scalar-metadata fields (fringe/exposure/gain/filename).
         data = ZmqWorkerController.collect_temperature_values(cfg)
+
         if cfg.filename:
             data['filename'] = os.path.basename(cfg.filename)
-        self.zmq_publisher_controller.send_trigger(data if any(v is not None for v in data.values()) else None)
+            data['filepath'] = cfg.filename
+        else:
+            data['filepath'] = None
+
+        # Overwrite T/error scalars with mode-aware aggregate + attach frame context.
+        agg = self._compute_multiframe_output(cfg)
+        for key in ('ds_temperature', 'ds_temperature_error',
+                    'us_temperature', 'us_temperature_error',
+                    'aggregation', 'error_metric', 'frame_count',
+                    'frame_index', 'frame_range_start', 'frame_range_end'):
+            data[key] = agg.get(key)
+
+        for _key, _nd in self._PAYLOAD_ROUND_NDIGITS.items():
+            _v = data.get(_key)
+            if _v is None:
+                continue
+            try:
+                _r = round(float(_v), _nd)
+                data[_key] = int(_r) if _nd == 0 else _r
+            except (TypeError, ValueError):
+                pass
+
+        return data if any(v is not None for v in data.values()) else None
+
+    def _refresh_multiframe_ui(self):
+        """Clamp the multi-frame range spinboxes to the current file's frame range,
+        with bounds and tooltips interpreted per the active history-axis mode.
+
+        - Kinetics-sync axis: spinboxes represent coincident-exposure k
+          (1-based). Bounds come from cfg.get_coincident_frame_range().
+        - Otherwise: spinboxes represent readout-frame index (0-based).
+          Bound = num_frames - 1.
+        """
+        cfg = self.model.current_configuration
+        data_file = getattr(cfg, 'data_img_file', None)
+        n = int(getattr(data_file, 'num_frames', 0) or 0)
+        gb = self.widget.multiframe_output_gb
+
+        if self._kinetics_sync_active(cfg):
+            k_min, k_max = cfg.get_coincident_frame_range()
+            lo, hi = int(k_min), int(k_max)
+            unit_hint = ("Coincident-exposure frame index k (1-based). "
+                         "DS and US may aggregate different readout frames for the same k range.")
+        else:
+            lo, hi = 0, max(0, n - 1)
+            unit_hint = "Readout-frame index (0-based). Applied identically to DS and US."
+
+        # Bounds first; setValue is ignored when out-of-range, so re-clamp values after.
+        for sb in (gb.range_start_sb, gb.range_end_sb):
+            sb.setMinimum(lo)
+            sb.setMaximum(hi)
+        if gb.range_start_sb.value() < lo:
+            gb.range_start_sb.setValue(lo)
+        if gb.range_start_sb.value() > hi:
+            gb.range_start_sb.setValue(hi)
+        if gb.range_end_sb.value() < lo:
+            gb.range_end_sb.setValue(lo)
+        if gb.range_end_sb.value() > hi:
+            gb.range_end_sb.setValue(hi)
+        if gb.range_end_sb.value() < gb.range_start_sb.value():
+            gb.range_end_sb.setValue(gb.range_start_sb.value())
+
+        gb.range_start_sb.setToolTip(f"First frame (inclusive). {unit_hint}")
+        gb.range_end_sb.setToolTip(f"Last frame (inclusive). {unit_hint}")
+
+        has_multi = n > 1
+        gb.mode_cb.setEnabled(has_multi)
+        gb.range_start_sb.setEnabled(has_multi)
+        gb.range_end_sb.setEnabled(has_multi)
+        # Error-metric only meaningful in aggregate modes; disable in 'single'.
+        mode = gb.mode_cb.currentData() or "single"
+        gb.error_metric_cb.setEnabled(has_multi and mode != "single")
+
+    def _on_multiframe_mode_changed(self, _index=None):
+        """Toggle the range-row visibility + enable/disable the error-metric combo."""
+        gb = self.widget.multiframe_output_gb
+        mode = gb.mode_cb.currentData() or "single"
+        is_range = mode in ("mean_range", "median_range")
+        gb.range_lbl.setVisible(is_range)
+        gb._range_row_widget.setVisible(is_range)
+        gb.error_metric_cb.setEnabled(mode != "single" and gb.mode_cb.isEnabled())
 
     def cleanup(self):
         """Stop all background threads cleanly (called on app exit)."""
@@ -1310,7 +1661,15 @@ class TemperatureController(QtCore.QObject):
                 self.widget.frame_widget.setVisible(False)
                 self.widget.temperature_spectrum_widget.show_time_lapse_plot(False)
            
-            self.set_frame_text(str(self.model.current_configuration.current_frame + 1))
+            # Frame-text unit depends on axis mode: in synced modes the box
+            # shows coincident-k (matches the plot's x-axis); in frame mode it
+            # shows the 1-based readout index. Reading the stale readout index
+            # here would clobber a k value that _load_coincident_k just set
+            # right before this callback fires (via set_img_frame_numbers).
+            if self._history_x_mode in ('time', 'sync_frame'):
+                self.set_frame_text(str(int(self._current_coincident_k)))
+            else:
+                self.set_frame_text(str(self.model.current_configuration.current_frame + 1))
        
             
             self.widget.graph_info_lbl.setText(self.model.current_configuration.file_info)
@@ -1345,6 +1704,12 @@ class TemperatureController(QtCore.QObject):
         self.widget.camera_mode_gb.mode_combo.blockSignals(True)
         self.widget.camera_mode_gb.mode_combo.setCurrentIndex(cam_idx)
         self.widget.camera_mode_gb.mode_combo.blockSignals(False)
+        # Hide the Camera selector for standard PI files (SPE/H5) — Photron
+        # mode only applies to TIF. Leave visible for TIF and when no file is
+        # loaded (so the user can still pick before loading).
+        reader = getattr(cfg, 'data_img_file', None)
+        is_pi_native = isinstance(reader, (SpeFile, H5File))
+        self.widget.camera_mode_gb.setVisible(not is_pi_native)
         self._apply_photron_styling(pmode == 'centered')
         # Apply the (possibly config-switched) measurement mode so the UI matches.
         mode = getattr(self.model.current_configuration, 'mode', 'dual')
@@ -1574,7 +1939,11 @@ class TemperatureController(QtCore.QObject):
         self.widget.filter_section.ds_fringe_lbl.setText(f'{f:.4f}' if f is not None else '—')
         self.widget.filter_section.ds_nd_lbl.setText(f'{nd:.1f}' if nd is not None else '—')
 
-        if self.widget.connect_to_epics_cb.isChecked():
+        # Live EPICS publish only in 'Current frame' mode — aggregate modes
+        # publish once per file load via _send_temperature_trigger to avoid
+        # flicker as the user browses frames.
+        if (self.widget.connect_to_epics_cb.isChecked()
+                and self._current_multiframe_mode(self.model.current_configuration) == "single"):
             if self.epics_available:
                 ds_temp_pv = eps.epics_settings['ds_last_temp']
                 if ds_temp_pv is not None and not ds_temp_pv == '' and not ds_temp_pv == 'None':
@@ -1656,7 +2025,9 @@ class TemperatureController(QtCore.QObject):
         self.widget.filter_section.us_fringe_lbl.setText(f'{f:.4f}' if f is not None else '—')
         self.widget.filter_section.us_nd_lbl.setText(f'{nd:.1f}' if nd is not None else '—')
 
-        if self.widget.connect_to_epics_cb.isChecked():
+        # Live EPICS publish only in 'Current frame' mode — see ds_calculations_changed.
+        if (self.widget.connect_to_epics_cb.isChecked()
+                and self._current_multiframe_mode(self.model.current_configuration) == "single"):
             if self.epics_available:
                 us_temp_pv = eps.epics_settings['us_last_temp']
                 if us_temp_pv is not None and not us_temp_pv =='' and not us_temp_pv == 'None':
@@ -1665,6 +2036,27 @@ class TemperatureController(QtCore.QObject):
         # See ds_calculations_changed — re-normalize after plot_us_* set
         # the new us_mx / us_fit_mx so the Y range reflects this refresh.
         self.widget.temperature_spectrum_widget.normalize_range()
+
+    def _default_history_axis_for_kinetics(self):
+        """After a file load, if the newly-loaded file is a kinetics dataset AND
+        the history axis is still the initial 'frame' default, switch to
+        'sync_frame' so DS and US are aligned by physical exposure out of the box.
+
+        Only bumps the mode when it's on 'frame' — this is a first-time default,
+        not a policy override. Once the user has explicitly picked lab-time or
+        stayed on frame mode by clicking away from sync, the choice sticks
+        across subsequent file loads.
+        """
+        cfg = self.model.current_configuration
+        if cfg is None or cfg.data_img_file is None:
+            return
+        if getattr(cfg, 'kinetics_mode', 'off') not in ('kinetics-interleaved', 'kinetics'):
+            return
+        if self._history_x_mode != 'frame':
+            return
+        # Route through the button toggle so all downstream wiring runs
+        # (badge, _on_history_mode_changed, _refresh_multiframe_ui, redraw).
+        self.widget.sync_frame_btn.setChecked(True)
 
     def _kinetics_mode_combo_changed(self, idx):
         """User picked a new kinetics mode from the KineticsGB combo.
@@ -1704,9 +2096,15 @@ class TemperatureController(QtCore.QObject):
         kinetics-strip ROI panel. Groups shown only in Photron mode: the
         decoupled cal-background subtraction group (managed separately by
         _sync_cal_background_widgets; kept here for symmetry).
+
+        When photron is inactive, kinetics_gb and roi_kin_gb visibility is
+        governed by kinetics_mode (apply_kinetics_state and _refresh_roi_panels),
+        not by this method — force-showing here would override the kinetics-off
+        hide and leave the panels visible for non-kinetics files (e.g. PIXIS).
         """
-        self.widget.kinetics_gb.setVisible(not photron_active)
-        self.widget.roi_kin_gb.setVisible(not photron_active)
+        if photron_active:
+            self.widget.kinetics_gb.setVisible(False)
+            self.widget.roi_kin_gb.setVisible(False)
         # Retitle data-side groups so their scope is unambiguous when the
         # decoupled cal-bg controls are visible alongside them.
         if photron_active:
@@ -1717,6 +2115,11 @@ class TemperatureController(QtCore.QObject):
             self.widget.background_subtraction_gb.setTitle(
                 'Background subtraction')
             self.widget.roi_gb.setTitle('ROI (full-chip)')
+        # Wavelength calibration is Photron-only: TIFFs carry no wavelength
+        # metadata so the user loads a calibration.json to define the x-axis.
+        # PI SPE files already embed calibration and the panel would be a
+        # dead control.
+        self.widget.wavelength_calibration_gb.setVisible(photron_active)
         # Cal-bg GB visibility is authoritative-set by
         # _sync_cal_background_widgets (it re-checks cfg.photron_mode).
 
@@ -1731,6 +2134,9 @@ class TemperatureController(QtCore.QObject):
         elif self._history_x_mode == 'time':
             self._history_x_mode = 'frame'
         self._on_history_mode_changed(prev)
+        # Axis-mode switch changes what the multi-frame range spinboxes mean
+        # (readout index vs coincident-k). Refresh their bounds/tooltips.
+        self._refresh_multiframe_ui()
         self.redraw_time_lapse()
 
     def sync_frame_btn_toggled(self, checked):
@@ -1744,6 +2150,8 @@ class TemperatureController(QtCore.QObject):
         elif self._history_x_mode == 'sync_frame':
             self._history_x_mode = 'frame'
         self._on_history_mode_changed(prev)
+        # Axis-mode switch changes what the multi-frame range spinboxes mean.
+        self._refresh_multiframe_ui()
         self.redraw_time_lapse()
 
     def _on_history_mode_changed(self, prev_mode):
@@ -1810,6 +2218,32 @@ class TemperatureController(QtCore.QObject):
             ds_x = us_x = float(f + 1)
         self.widget.temperature_spectrum_widget.set_time_lapse_frame_marker(ds_x, us_x)
 
+    def _history_axis_range_positions(self, cfg, ui_start, ui_end):
+        """Convert the range-spinbox values into (x_lo, x_hi) on the
+        history-plot x-axis, placed *between* points so the visible band
+        strictly contains the aggregated frames.
+
+        Interpretation follows the current axis mode:
+          - 'frame' mode: ui values are readout-frame indices (0-based). Plot
+            x for frame f is (f+1), so range [a, b] occupies x in [a+1, b+1];
+            markers at a+0.5 and b+1.5.
+          - 'sync_frame' mode: ui values are coincident k (1-based); plot x
+            equals k. Markers at k_lo - 0.5 and k_hi + 0.5.
+          - 'time' mode: ui values are k, plot x is lab-time seconds
+            = (k - 1) * t_exp. Markers translated accordingly.
+        """
+        mode_axis = getattr(self, '_history_x_mode', 'frame')
+        if mode_axis == 'sync_frame':
+            return float(ui_start) - 0.5, float(ui_end) + 0.5
+        if mode_axis == 'time':
+            data_file = getattr(cfg, 'data_img_file', None)
+            t_exp = float(getattr(data_file, 'exposure_time', 0) or 0.0)
+            if t_exp <= 0:
+                return None, None
+            return (float(ui_start) - 1.5) * t_exp, (float(ui_end) - 0.5) * t_exp
+        # 'frame' axis
+        return float(ui_start) + 0.5, float(ui_end) + 1.5
+
     def _time_lapse_x_axis_side(self, side, y):
         """Return (x, y, label) for one side's history-plot data.
 
@@ -1859,45 +2293,163 @@ class TemperatureController(QtCore.QObject):
 
     def _render_time_lapse(self, ds_temperature, ds_temperature_error,
                            us_temperature, us_temperature_error):
-        ds_t = np.array([])
-        us_t = np.array([])
+        """Draw the time-lapse traces and the DS/US/Combined aggregate labels.
 
-        out = np.nan, np.nan
+        The plot trace always shows every frame (with invalid frames zeroed for
+        clarity). The label values respect the shared 'Multi-frame output' mode:
+        in 'single' mode the labels fall back to mean+std over all valid frames
+        (a scalar 'current frame' doesn't summarize the plot); in aggregate
+        modes the labels report the same value that would be published to ZMQ
+        and EPICS (per the mode + range + error-metric settings).
+        """
+        cfg = self.model.current_configuration
+        mode = self._current_multiframe_mode(cfg)
+
+        # Range for the label aggregate. In aggregate range_* modes the
+        # spinbox values need per-side readout translation (kinetics-sync mode)
+        # because DS and US may map to different readout frames for the same
+        # coincident-k range. The plot trace itself always shows every frame.
+        gb = self.widget.multiframe_output_gb
+        if mode in ("mean_range", "median_range"):
+            # (None, None) here means 'no valid frames on this side in the
+            # requested k range' (only reachable in kinetics-sync mode).
+            ui_start, ui_end = gb.range_start_sb.value(), gb.range_end_sb.value()
+            ds_range = self._readout_range_for_side(cfg, 'ds', ui_start, ui_end)
+            us_range = self._readout_range_for_side(cfg, 'us', ui_start, ui_end)
+        elif mode in ("mean_all", "median_all"):
+            # Full-array aggregate — set explicit endpoints so the combined
+            # slicer includes every frame. (None, None) here would be read as
+            # 'empty' and collapse the concatenation to nothing.
+            ds_range = (0, len(ds_temperature) - 1) if len(ds_temperature) else (None, None)
+            us_range = (0, len(us_temperature) - 1) if len(us_temperature) else (None, None)
+        else:
+            ds_range = (None, None)
+            us_range = (None, None)
+        agg_op = "mean" if mode.startswith("mean") else "median"
+        err_metric = gb.error_metric_cb.currentData() or "fit_avg"
+
+        def side_label(temps, errs, side_range):
+            """Return (value, error) for the label above the plot on one side."""
+            if not len(temps):
+                return np.nan, np.nan
+            if mode == "single":
+                # Fallback: keep the informative "mean over all valid frames"
+                # summary regardless of what 'current frame' would print.
+                ds_arr = np.array(temps)
+                ds_err_arr = np.array(errs)
+                select = (
+                    (ds_arr > self.min_allowed_T) & (ds_arr < self.max_allowed_T)
+                    & (ds_err_arr < cfg.error_limit)
+                )
+                ds_v = ds_arr[select]
+                if len(ds_v):
+                    return float(np.mean(ds_v)), float(np.std(ds_v))
+                return np.nan, np.nan
+            if side_range == (None, None) and mode in ("mean_range", "median_range"):
+                # k range didn't cover any readout frames on this side.
+                return np.nan, np.nan
+            start, end = side_range if side_range[0] is not None else (None, None)
+            v, e = self._aggregate_temperature_series(cfg, temps, errs, agg_op, err_metric,
+                                                     start=start, end=end)
+            return (v if v is not None else np.nan,
+                    e if e is not None else np.nan)
+
+        # ---- DS trace + label ----
         if len(ds_temperature):
             ds_temperature_arr = np.array(ds_temperature)
             ds_temperature_error_arr = np.array(ds_temperature_error)
-            select_ds  = (ds_temperature_arr > self.min_allowed_T) & (ds_temperature_arr < self.max_allowed_T) & (ds_temperature_error_arr < self.model.current_configuration.error_limit)
-            ds_t = ds_temperature_arr[select_ds]
-            if len(ds_t):
-                out = np.mean(ds_t), np.std(ds_t)
+            select_ds  = (ds_temperature_arr > self.min_allowed_T) & (ds_temperature_arr < self.max_allowed_T) & (ds_temperature_error_arr < cfg.error_limit)
             ds_temperature_plot_data = ds_temperature_arr[:]
             ds_temperature_plot_data[~select_ds] = 0
             ds_x, ds_y, x_label = self._time_lapse_x_axis_side('ds', ds_temperature_plot_data)
             self.widget.temperature_spectrum_widget.plot_ds_time_lapse(ds_x, ds_y)
             self.widget.temperature_spectrum_widget.set_time_lapse_x_axis_label(x_label)
-        self.widget.temperature_spectrum_widget.update_time_lapse_ds_temperature_txt(*out)
+        self.widget.temperature_spectrum_widget.update_time_lapse_ds_temperature_txt(
+            *side_label(ds_temperature, ds_temperature_error, ds_range))
 
-        out = np.nan, np.nan
+        # ---- US trace + label ----
         if len(us_temperature):
             us_temperature_arr = np.array(us_temperature)
             us_temperature_error_arr = np.array(us_temperature_error)
-            select_us  = (us_temperature_arr > self.min_allowed_T) & (us_temperature_arr < self.max_allowed_T) & (us_temperature_error_arr < self.model.current_configuration.error_limit)
-            us_t = us_temperature_arr[select_us]
-            if len(us_t):
-                out = np.mean(us_t), np.std(us_t)
+            select_us  = (us_temperature_arr > self.min_allowed_T) & (us_temperature_arr < self.max_allowed_T) & (us_temperature_error_arr < cfg.error_limit)
             us_temperature_plot_data = us_temperature_arr[:]
             us_temperature_plot_data[~select_us] = 0
             us_x, us_y, _ = self._time_lapse_x_axis_side('us', us_temperature_plot_data)
             self.widget.temperature_spectrum_widget.plot_us_time_lapse(us_x, us_y)
-        self.widget.temperature_spectrum_widget.update_time_lapse_us_temperature_txt(*out)
+        self.widget.temperature_spectrum_widget.update_time_lapse_us_temperature_txt(
+            *side_label(us_temperature, us_temperature_error, us_range))
 
-        if len(ds_t) or len(us_t):
-            conc = np.concatenate((ds_t, us_t))
-            conc = conc[~np.isnan(conc).all()]
-            out = np.mean(conc), np.std(conc)
+        # ---- Combined DS+US label ----
+        if mode == "single":
+            # Concatenate the display-filtered sides and take mean+std (today's semantics).
+            ds_v = us_v = np.array([])
+            if len(ds_temperature):
+                ds_arr = np.array(ds_temperature); ds_err_arr = np.array(ds_temperature_error)
+                sel = ((ds_arr > self.min_allowed_T) & (ds_arr < self.max_allowed_T)
+                       & (ds_err_arr < cfg.error_limit))
+                ds_v = ds_arr[sel]
+            if len(us_temperature):
+                us_arr = np.array(us_temperature); us_err_arr = np.array(us_temperature_error)
+                sel = ((us_arr > self.min_allowed_T) & (us_arr < self.max_allowed_T)
+                       & (us_err_arr < cfg.error_limit))
+                us_v = us_arr[sel]
+            if len(ds_v) or len(us_v):
+                conc = np.concatenate((ds_v, us_v))
+                combined_out = float(np.mean(conc)), float(np.std(conc))
+            else:
+                combined_out = np.nan, np.nan
         else:
-            out = np.nan, np.nan
-        self.widget.temperature_spectrum_widget.update_time_lapse_combined_temperature_txt(*out )
+            # Aggregate modes: slice each side by its own per-side readout range
+            # first (so kinetics offsets are respected), then concatenate and
+            # reduce. Passing start=None/end=None to the helper means "use
+            # everything" — that's what we want for mean_all/median_all.
+            def _sliced(temps, side_range):
+                a = np.asarray(temps, dtype=float)
+                if a.size == 0 or side_range == (None, None):
+                    return np.array([], dtype=float)
+                s, e = side_range
+                if s is None:
+                    return a
+                return a[s:e + 1]
+            ds_slice_t = _sliced(ds_temperature,       ds_range)
+            ds_slice_e = _sliced(ds_temperature_error, ds_range)
+            us_slice_t = _sliced(us_temperature,       us_range)
+            us_slice_e = _sliced(us_temperature_error, us_range)
+            combined_temps = np.concatenate((ds_slice_t, us_slice_t))
+            combined_errs  = np.concatenate((ds_slice_e, us_slice_e))
+            v, e = self._aggregate_temperature_series(cfg, combined_temps, combined_errs,
+                                                     agg_op, err_metric)
+            combined_out = (v if v is not None else np.nan,
+                            e if e is not None else np.nan)
+
+        # Annotation string under the big combined value — tells the user what
+        # was reduced. Uses the same unit the user sees in the mode panel
+        # (readout-frame index vs coincident-k, per the active history axis).
+        if mode == "single":
+            annotation = "mean · all valid frames"
+        else:
+            op_label = "mean" if agg_op == "mean" else "median"
+            unit = "synced frames" if self._kinetics_sync_active(cfg) else "frames"
+            if mode in ("mean_range", "median_range"):
+                ui_start, ui_end = gb.range_start_sb.value(), gb.range_end_sb.value()
+                span = f"{unit} {ui_start}–{ui_end}"
+            else:
+                span = f"all {unit}"
+            err_label = "fit err" if err_metric == "fit_avg" else "std"
+            annotation = f"{op_label} · {span} · {err_label}"
+
+        self.widget.temperature_spectrum_widget.update_time_lapse_combined_temperature_txt(
+            *combined_out, annotation=annotation)
+
+        # Range-overlay markers: visible only in range_* modes. Placed between
+        # points so the visible band strictly contains the aggregated frames.
+        if mode in ("mean_range", "median_range"):
+            ui_start, ui_end = gb.range_start_sb.value(), gb.range_end_sb.value()
+            x_lo, x_hi = self._history_axis_range_positions(cfg, ui_start, ui_end)
+            self.widget.temperature_spectrum_widget.set_time_lapse_range_markers(x_lo, x_hi)
+        else:
+            self.widget.temperature_spectrum_widget.set_time_lapse_range_markers(None, None)
+
         self._update_time_lapse_frame_marker()
 
     def data_history_btn_callback(self):
@@ -2127,10 +2679,20 @@ class TemperatureController(QtCore.QObject):
 
         zmq_config_path = self.zmq_worker_controller._config.get("_path", "")
         settings.set("zmq_config_path", zmq_config_path)
+        settings.set("zmq_worker_listening",
+                     self.zmq_worker_controller._thread is not None
+                     and self.zmq_worker_controller._thread.isRunning())
 
         settings.set("zmq_publisher_config_path", self.zmq_publisher_controller._config_path)
+        settings.set("zmq_publisher_connected",
+                     self.zmq_publisher_controller._push_socket is not None)
         settings.set("zmq_publish_temperatures",
                      self.widget.epicslogger_gb.publish_temperatures_cb.isChecked())
+        mf_gb = self.widget.multiframe_output_gb
+        settings.set("multiframe_output_mode",         mf_gb.mode_cb.currentData() or "single")
+        settings.set("multiframe_output_range_start",  mf_gb.range_start_sb.value())
+        settings.set("multiframe_output_range_end",    mf_gb.range_end_sb.value())
+        settings.set("multiframe_output_error_metric", mf_gb.error_metric_cb.currentData() or "fit_avg")
 
         # Persist the last-used experiment folder so file browse dialogs
         # (data / cal / dark / standard) open where the user last was,
@@ -2224,13 +2786,42 @@ class TemperatureController(QtCore.QObject):
         zmq_config_path = settings.get("zmq_config_path", "")
         if zmq_config_path and os.path.exists(zmq_config_path):
             self.zmq_worker_controller.load_config(zmq_config_path)
+            if str.lower(str(settings.get("zmq_worker_listening", "false"))) == "true" \
+                    and self.widget.zmq_gb.listen_btn.isEnabled():
+                self.zmq_worker_controller._start_listening()
 
         zmq_publisher_config_path = settings.get("zmq_publisher_config_path", "")
         if zmq_publisher_config_path and os.path.exists(zmq_publisher_config_path):
             self.zmq_publisher_controller.load_config(zmq_publisher_config_path)
+            # Auto-connect BEFORE restoring the publish checkbox so that
+            # _publish_toggled(True) sees a live socket and activates the indicator.
+            if str.lower(str(settings.get("zmq_publisher_connected", "false"))) == "true" \
+                    and self.widget.epicslogger_gb.connect_btn.isEnabled():
+                self.zmq_publisher_controller._connect()
 
         zmq_publish = str.lower(str(settings.get("zmq_publish_temperatures", "false"))) == "true"
         self.widget.epicslogger_gb.publish_temperatures_cb.setChecked(zmq_publish)
+
+        # Multi-frame output panel (mode / range / error metric) — shared by
+        # the ZMQ publisher and the EPICS PV publish path.
+        mf_gb = self.widget.multiframe_output_gb
+        mode_key = str(settings.get("multiframe_output_mode", "single") or "single")
+        for i in range(mf_gb.mode_cb.count()):
+            if mf_gb.mode_cb.itemData(i) == mode_key:
+                mf_gb.mode_cb.setCurrentIndex(i)
+                break
+        try:
+            mf_gb.range_start_sb.setValue(int(settings.get("multiframe_output_range_start", 0) or 0))
+            mf_gb.range_end_sb.setValue(int(settings.get("multiframe_output_range_end", 0) or 0))
+        except (TypeError, ValueError):
+            pass
+        err_key = str(settings.get("multiframe_output_error_metric", "fit_avg") or "fit_avg")
+        for i in range(mf_gb.error_metric_cb.count()):
+            if mf_gb.error_metric_cb.itemData(i) == err_key:
+                mf_gb.error_metric_cb.setCurrentIndex(i)
+                break
+        # Fire once to reflect the restored mode in range-row + error-metric enablement.
+        self._on_multiframe_mode_changed()
 
     def auto_process_cb_toggled(self):
 

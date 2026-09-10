@@ -734,6 +734,118 @@ class RoiGroupBox(QtWidgets.QGroupBox):
             self.y_n_txt.setText('N/A')
 
 
+class CalRoiPanel(QtWidgets.QGroupBox):
+    """Numeric readout of the ROIs used to extract signal + background
+    from the *calibration* image. 2x2 layout mirrors the data ROI panel
+    (0=DS sig, 1=US sig, 2=DS bg, 3=US bg). Editable only when the side
+    is in cross-mode (cal dim differs from data dim). Read-only in
+    same-dim mode (cal shares the data ROIs). Cells for sides whose cal
+    file is not loaded are greyed out."""
+
+    signal_edited = QtCore.pyqtSignal(str, list)  # (side, [x0,x1,y0,y1])
+    bg_edited = QtCore.pyqtSignal(str, list)
+
+    _TITLES = ('Downstream (cal)', 'Upstream (cal)',
+               'Background DS (cal)', 'Background US (cal)')
+    _COLORS = ((255, 215, 0), (255, 111, 97),
+               (151, 135, 50), (157, 60, 50))
+    _SIDES = ('ds', 'us', 'ds', 'us')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__('Cal ROIs')
+        self._layout = QtWidgets.QVBoxLayout()
+        self._grid = QtWidgets.QGridLayout()
+        self._grid.setSpacing(2)
+        self.gbs = []
+        for ind in range(4):
+            gb = RoiGroupBox(self._TITLES[ind], self._COLORS[ind])
+            row, col = ind % 2, ind // 2
+            self._grid.addWidget(gb, row, col)
+            self.gbs.append(gb)
+            side = self._SIDES[ind]
+            if ind in (0, 1):
+                gb.roi_txt_changed.connect(
+                    partial(self._on_edit, ind, side, is_bg=False))
+            else:
+                gb.roi_txt_changed.connect(
+                    partial(self._on_edit, ind, side, is_bg=True))
+        self._layout.addLayout(self._grid)
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+        # Per-cell editable flag; guards signal emission when we're only
+        # displaying (non-cross-mode or absent cal).
+        self._editable = [False] * 4
+        self.setVisible(False)
+
+    def _on_edit(self, ind, side, limits, is_bg=False):
+        if not self._editable[ind]:
+            return
+        if is_bg:
+            self.bg_edited.emit(side, [int(v) for v in limits])
+        else:
+            self.signal_edited.emit(side, [int(v) for v in limits])
+
+    def _write_cell(self, ind, limits, editable):
+        gb = self.gbs[ind]
+        gb.blockSignals(True)
+        try:
+            if limits is None:
+                gb.x_min_txt.setValue(0)
+                gb.x_max_txt.setValue(0)
+                gb.y_min_txt.setValue(0)
+                gb.y_max_txt.setValue(0)
+                gb.y_n_txt.setText('—')
+            else:
+                gb.update_roi_txt(limits)
+            for w in (gb.x_min_txt, gb.x_max_txt,
+                      gb.y_min_txt, gb.y_max_txt):
+                w.setReadOnly(not editable)
+                w.setEnabled(limits is not None)
+            gb.y_n_txt.setEnabled(limits is not None)
+        finally:
+            gb.blockSignals(False)
+        self._editable[ind] = bool(editable) and limits is not None
+
+    def apply_state(self, ds_cross, us_cross,
+                    ds_data_limits, us_data_limits,
+                    ds_present, us_present):
+        """Refresh the panel from the model.
+
+        ds_cross / us_cross: dict from cfg.cross_mode_cal_info(side) or None.
+        ds_data_limits / us_data_limits: {'signal':[...], 'bg':[...]}
+            pulled from roi_data_manager at data_dim (used when NOT
+            cross-mode), or None if not present.
+        ds_present / us_present: whether the respective cal file is loaded.
+        """
+        for ind in (0, 1):
+            side = self._SIDES[ind]
+            present = ds_present if side == 'ds' else us_present
+            cross = ds_cross if side == 'ds' else us_cross
+            data_lim = ds_data_limits if side == 'ds' else us_data_limits
+            if not present:
+                self._write_cell(ind, None, False)
+            elif cross is not None:
+                self._write_cell(ind, cross['signal_roi_limits'], True)
+            elif data_lim is not None and data_lim.get('signal') is not None:
+                self._write_cell(ind, data_lim['signal'], False)
+            else:
+                self._write_cell(ind, None, False)
+        for ind in (2, 3):
+            side = self._SIDES[ind]
+            present = ds_present if side == 'ds' else us_present
+            cross = ds_cross if side == 'ds' else us_cross
+            data_lim = ds_data_limits if side == 'ds' else us_data_limits
+            if not present:
+                self._write_cell(ind, None, False)
+            elif cross is not None:
+                self._write_cell(ind, cross['bg_roi_limits'], True)
+            elif data_lim is not None and data_lim.get('bg') is not None:
+                self._write_cell(ind, data_lim['bg'], False)
+            else:
+                self._write_cell(ind, None, False)
+        self.setVisible(bool(ds_present or us_present))
+
+
 class CenteredQLabel(QtWidgets.QLabel):
     def __init__(self, *args, **kwargs):
         super(CenteredQLabel, self).__init__(*args, **kwargs)

@@ -269,6 +269,23 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
         self._time_lapse_plot.addItem(self._time_lapse_us_marker,
                                       ignoreBounds=True)
 
+        # Range-overlay markers: two thin vertical lines placed *between*
+        # points to unambiguously bracket the frames included in the current
+        # aggregate window (mean/median over range). Hidden when the mode is
+        # single or full-array.
+        _range_pen = pg.mkPen(QColor('#888888'), width=1,
+                              style=QtCore.Qt.PenStyle.DashLine)
+        self._time_lapse_range_lo_marker = pg.InfiniteLine(
+            angle=90, movable=False, pen=_range_pen)
+        self._time_lapse_range_hi_marker = pg.InfiniteLine(
+            angle=90, movable=False, pen=_range_pen)
+        self._time_lapse_range_lo_marker.hide()
+        self._time_lapse_range_hi_marker.hide()
+        self._time_lapse_plot.addItem(self._time_lapse_range_lo_marker,
+                                      ignoreBounds=True)
+        self._time_lapse_plot.addItem(self._time_lapse_range_hi_marker,
+                                      ignoreBounds=True)
+
         # Right-click resets the view (auto-range) instead of showing the
         # default ViewBox context menu.
         _tl_vb = self._time_lapse_plot.getViewBox()
@@ -453,6 +470,21 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
             self._time_lapse_us_marker.setPos(float(us_x))
             self._time_lapse_us_marker.show()
 
+    def set_time_lapse_range_markers(self, x_lo, x_hi):
+        """Position the range-overlay markers on the history plot. Pass
+        None for both to hide (full-range or single-frame mode). Otherwise
+        both must be provided; they are drawn *between* points, so the
+        frames strictly inside [x_lo, x_hi] on the plot's x-axis are the
+        ones being aggregated."""
+        if x_lo is None or x_hi is None:
+            self._time_lapse_range_lo_marker.hide()
+            self._time_lapse_range_hi_marker.hide()
+            return
+        self._time_lapse_range_lo_marker.setPos(float(x_lo))
+        self._time_lapse_range_hi_marker.setPos(float(x_hi))
+        self._time_lapse_range_lo_marker.show()
+        self._time_lapse_range_hi_marker.show()
+
     def update_us_temperature_txt(self, temperature, temperature_error):
         self._us_temperature_txt_item.setText('{0:.0f} K &plusmn; {1:.0f}'.format(temperature,
                                                                                   temperature_error),
@@ -510,11 +542,18 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
                                                     color=colors['upstream'],
                                                     justify='right')
 
-    def update_time_lapse_combined_temperature_txt(self, temperature, temperature_error):
-        self._time_lapse_combined_temperature_txt.setText('{0:.0f} K &plusmn; {1:.0f}'.format(temperature,
-                                                                                              temperature_error),
-                                                          size='30pt',
-                                                          color=colors['combined'])
+    def update_time_lapse_combined_temperature_txt(self, temperature, temperature_error,
+                                                   annotation=""):
+        # Build the main value ourselves as HTML so the annotation can render
+        # on a second line in a smaller, dimmer font. Explicit inline styles
+        # override pg.LabelItem's outer <span> defaults.
+        main = ('<span style="font-size: 30pt; color: {c};">'
+                '{t:.0f} K &plusmn; {e:.0f}</span>').format(
+                    c=colors['combined'], t=temperature, e=temperature_error)
+        if annotation:
+            main += ('<br><span style="font-size: 10pt; color: #999999;">{a}</span>'
+                     ).format(a=annotation)
+        self._time_lapse_combined_temperature_txt.setText(main)
 
     def set_mode(self, mode):
         """Show/hide the us-side subplot and retitle the ds subplot for single-sided mode."""
@@ -529,10 +568,12 @@ class TemperatureSpectrumWidget(QtWidgets.QWidget):
             self._ds_plot.setTitle("Downstream", color=QColor(colors['downstream']), size='20pt')
         else:
             self._ds_plot.setTitle("Temperature", color=QColor(colors['downstream']), size='20pt')
-        # Time-lapse labels: hide the us column in single mode.
-        if dual:
-            self._time_lapse_us_temperature_txt.setText('', size='16pt')
-        else:
+        # Time-lapse labels: only wipe the US aggregate in single-sided mode
+        # (no US data to summarize). In dual mode leave it alone — set_mode is
+        # called from the data-changed callback on every frame navigation, and
+        # blanking the label here nukes the aggregate that _render_time_lapse
+        # (called only on file load / redraw) wrote earlier.
+        if not dual:
             self._time_lapse_us_temperature_txt.setText('', size='16pt')
 
     def save_graph(self, ds_filename, us_filename):

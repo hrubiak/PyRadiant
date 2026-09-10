@@ -1,30 +1,36 @@
-# config.yaml
+# workers.yaml — T-view coordinator/worker port map
+# Loaded by the "ZMQ Worker" panel in PyRadiant.
+# Also used by adCoordinator and any other worker in the ecosystem.
+
 ports:
   coordinator_results: 5554
 
 workers:
   xrd:
+    enabled: true
     port: 5555
     health_port: 5556
     script: xrd_worker.py
     input_directory: /data/raw/xrd
     output_directory: /data/processed/xrd
   xrf:
+    enabled: true
     port: 5557
     health_port: 5558
     script: xrf_worker.py
     input_directory: /data/raw/xrf
     output_directory: /data/processed/xrf
   imaging:
+    enabled: true
     port: 5559
     health_port: 5560
     script: imaging_worker.py
     input_directory: /data/raw/imaging
     output_directory: /data/processed/imaging
   spectroradiometry:
+    enabled: true
     port: 5561
     health_port: 5562
     script: run_pyradiant.py
     input_directory: /data/raw/spectroradiometry
     output_directory: /data/processed/spectroradiometry
-

@@ -48,6 +48,21 @@ class TifFile(DataModel):
             raise ValueError(
                 f"TifFile expects a single-frame 2D TIFF; got shape {img.shape}"
             )
+        # Capture original dtype before float64 cast so we can preserve
+        # the sensor saturation ceiling. Photron is a 12-bit sensor; a
+        # fresh single frame is stored as uint16 but only ever reaches
+        # ~4095 counts. Cap at 4094 (one-count headroom, matching the
+        # historic uint16=65534 convention) so saturated columns get
+        # excluded from Planck fits. Summed TIFs (uint32 / float32 from
+        # photron_sum_batches.py) exceed the 12-bit range, so fall back
+        # to dtype-based inference — the sensor cap no longer applies.
+        raw_dtype = img.dtype
+        if raw_dtype == np.uint16:
+            self.saturation_count = 4094
+        elif np.issubdtype(raw_dtype, np.integer):
+            self.saturation_count = int(np.iinfo(raw_dtype).max) - 1
+        else:
+            self.saturation_count = np.inf
         img = img.astype(np.float64)
         if dispersion_axis == 'vertical':
             img = img.T

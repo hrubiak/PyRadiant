@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import QStyle
 from PyQt6.QtGui import QIcon
 import os
 from .TemperatureSpectrumWidget import TemperatureSpectrumWidget
-from .RoiWidget import RoiWidget, IntegerTextField
+from .RoiWidget import RoiWidget, IntegerTextField, CalRoiPanel
 from .Widgets import FileGroupBox
 from .Widgets import OutputGroupBox, StatusBar
 from .CustomWidgets import HorizontalSpacerItem, VerticalSpacerItem
@@ -101,13 +101,24 @@ class TemperatureWidget(QtWidgets.QWidget):
         self._side_bar_close_btn_widget_layout.addWidget(self.side_bar_close_btn)
         self._side_bar_close_btn_widget_layout.addSpacerItem(HorizontalSpacerItem())
         
+        self.camera_mode_gb = CameraModeGB()
         self.measurement_mode_gb = MeasurementModeGB()
 
         self.wavelength_calibration_gb = WavelengthCalibrationGB()
 
         self.background_subtraction_gb = BackgroundSubtractionGB()
+        self.cal_background_subtraction_gb = CalBackgroundSubtractionGB()
+        self.cal_background_subtraction_gb.setVisible(False)
 
         self.calibration_section = TemperatureCalibrationSection()
+        # All cal-related controls live inside the Intensity calibration
+        # section — visible only in Photron mode (managed by the controller).
+        self.calibration_section.attach_cal_background_gb(
+            self.cal_background_subtraction_gb)
+        # Numeric readout/editor of the ROIs used to extract from the cal
+        # image. Visibility + editability are driven by the controller.
+        self.cal_roi_panel = CalRoiPanel()
+        self.calibration_section.attach_cal_roi_panel(self.cal_roi_panel)
         
         self.t_function_type_section = TemperatureFitSettings()
 
@@ -118,6 +129,7 @@ class TemperatureWidget(QtWidgets.QWidget):
         self.epics_gb = EPICSGroupBox()
         self.zmq_gb = ZmqWorkerGroupBox()
         self.epicslogger_gb = EpicsLoggerGroupBox()
+        self.multiframe_output_gb = MultiFrameOutputGroupBox()
         
         self.roi_gb = self.roi_widget.roi_gb
         self.roi_kin_gb = self.roi_widget.roi_kin_gb
@@ -126,9 +138,11 @@ class TemperatureWidget(QtWidgets.QWidget):
 
         self._other_settings_widget_layout.addWidget(self.side_bar_close_btn_widget)
         self._other_settings_widget_layout.addWidget(self.config_widget)
-        self._other_settings_widget_layout.addWidget(self.measurement_mode_gb)
         self._other_settings_widget_layout.addWidget(self.settings_gb)
+        self._other_settings_widget_layout.addWidget(self.camera_mode_gb)
+        self._other_settings_widget_layout.addWidget(self.measurement_mode_gb)
         self._other_settings_widget_layout.addWidget(self.kinetics_gb)
+        self._other_settings_widget_layout.addWidget(self.multiframe_output_gb)
         self._other_settings_widget_layout.addWidget(self.wl_range_widget)
         self._other_settings_widget_layout.addWidget(self.roi_gb)
         self._other_settings_widget_layout.addWidget(self.roi_kin_gb)
@@ -209,6 +223,7 @@ class TemperatureWidget(QtWidgets.QWidget):
             self.two_color_btn.setToolTip('')
         # Background subtraction: hide the US dark row in single mode.
         self.background_subtraction_gb.set_us_row_visible(dual)
+        self.cal_background_subtraction_gb.set_us_row_visible(dual)
 
     def style_widgets(self):
         pass
@@ -473,15 +488,23 @@ class EPICSGroupBox(QtWidgets.QGroupBox):
 class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
     def __init__(self, *args, **kwargs):
         super().__init__('ZMQ Worker')
+        # (No groupbox-level tooltip — Qt propagates it to every child that
+        # lacks its own, which turns per-control hover help into panel spam.)
         self._layout = QtWidgets.QGridLayout()
         self._layout.setHorizontalSpacing(6)
         self._layout.setVerticalSpacing(4)
 
         # Row 0 — config file
-        self.load_config_btn = QtWidgets.QPushButton("Load config.yaml")
+        self.load_config_btn = QtWidgets.QPushButton("Load workers.yaml…")
+        self.load_config_btn.setToolTip(
+            "Load the shared coordinator config (typically 'workers.yaml').\n"
+            "Reads the 'workers:' section (this worker's port + health port) and\n"
+            "'ports.coordinator_results' for the return channel."
+        )
         self._layout.addWidget(self.load_config_btn, 0, 0, 1, 2)
         self.config_lbl = QtWidgets.QLabel("—")
         self.config_lbl.setStyleSheet("color: #888888;")
+        self.config_lbl.setToolTip("Loaded config file — hover after loading to see the full path and parsed connection info.")
         small = self.config_lbl.font()
         small.setPointSize(small.pointSize() - 1)
         self.config_lbl.setFont(small)
@@ -491,25 +514,37 @@ class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
         # Row 2 — worker name / port / results port / health port / directories
         self._layout.addWidget(QtWidgets.QLabel("Worker:"), 2, 0)
         self.worker_name_lbl = QtWidgets.QLabel("—")
+        self.worker_name_lbl.setToolTip("This worker's canonical name in the coordinator config — typically 'spectroradiometry'.")
         self._layout.addWidget(self.worker_name_lbl, 2, 1)
 
         self._layout.addWidget(QtWidgets.QLabel("Port:"), 3, 0)
         self.port_lbl = QtWidgets.QLabel("—")
+        self.port_lbl.setToolTip("Coordinator's PUSH port this worker PULLs job messages from.")
         self._layout.addWidget(self.port_lbl, 3, 1)
 
         self._layout.addWidget(QtWidgets.QLabel("Results port:"), 4, 0)
         self.results_port_lbl = QtWidgets.QLabel("—")
+        self.results_port_lbl.setToolTip("Coordinator's PULL port this worker PUSHes result messages back to.")
         self._layout.addWidget(self.results_port_lbl, 4, 1)
 
         self._layout.addWidget(QtWidgets.QLabel("Health port:"), 5, 0)
         self.health_port_lbl = QtWidgets.QLabel("—")
+        self.health_port_lbl.setToolTip("This worker's REP port that the coordinator can ping for health checks and schema queries.")
         self._layout.addWidget(self.health_port_lbl, 5, 1)
 
         # Row 6 — listen toggle + status indicator
         self.listen_btn = QtWidgets.QPushButton("Start Listening")
         self.listen_btn.setEnabled(False)
+        self.listen_btn.setToolTip("Start/stop the background thread that polls the PULL socket for incoming jobs.")
         self.status_indicator = StatusIndicator()
+        self.status_indicator.setToolTip(
+            "Listener status:\n"
+            "  grey   — not listening\n"
+            "  green  — listening (background thread running)\n"
+            "  red    — error (e.g. pyzmq missing or port bind failed)"
+        )
         self.status_lbl = QtWidgets.QLabel("Idle")
+        self.status_lbl.setToolTip("Human-readable current state of the listener thread.")
         status_row = QtWidgets.QWidget()
         status_row_layout = QtWidgets.QHBoxLayout(status_row)
         status_row_layout.setContentsMargins(0, 0, 0, 0)
@@ -529,6 +564,7 @@ class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
         self.last_job_txt.setStyleSheet(
             "color: #cccccc; background-color: #2a2a2a; border: 1px solid #444;"
         )
+        self.last_job_txt.setToolTip("Raw JSON of the most recent job message received from the coordinator.")
         self._layout.addWidget(self.last_job_txt, 8, 0, 1, 2)
 
         # Row 9/10 — last dispatched result (read-only text area showing raw JSON)
@@ -541,6 +577,7 @@ class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
         self.last_result_txt.setStyleSheet(
             "color: #cccccc; background-color: #2a2a2a; border: 1px solid #444;"
         )
+        self.last_result_txt.setToolTip("Raw JSON of the most recent result message dispatched back to the coordinator.")
         self._layout.addWidget(self.last_result_txt, 10, 0, 1, 2)
 
         self.setLayout(self._layout)
@@ -550,15 +587,22 @@ class ZmqWorkerGroupBox(QtWidgets.QGroupBox):
 class EpicsLoggerGroupBox(QtWidgets.QGroupBox):
     def __init__(self, *args, **kwargs):
         super().__init__('epicsLogger Publisher')
+        # (No groupbox-level tooltip — Qt propagates it to every child that
+        # lacks its own, which turns per-control hover help into panel spam.)
         self._layout = QtWidgets.QGridLayout()
         self._layout.setHorizontalSpacing(6)
         self._layout.setVerticalSpacing(4)
 
         # Row 0 — config file
-        self.load_config_btn = QtWidgets.QPushButton("Load config.yaml")
+        self.load_config_btn = QtWidgets.QPushButton("Load epicsLogger.yaml…")
+        self.load_config_btn.setToolTip(
+            "Load the epicsLogger listener config (typically 'epicsLogger.yaml').\n"
+            "Reads the 'zmq_listeners.spectroradiometry' section for host, port, and health port."
+        )
         self._layout.addWidget(self.load_config_btn, 0, 0, 1, 2)
         self.config_lbl = QtWidgets.QLabel("—")
         self.config_lbl.setStyleSheet("color: #888888;")
+        self.config_lbl.setToolTip("Loaded config file — hover after loading to see the full path and parsed connection info.")
         small = self.config_lbl.font()
         small.setPointSize(small.pointSize() - 1)
         self.config_lbl.setFont(small)
@@ -568,21 +612,33 @@ class EpicsLoggerGroupBox(QtWidgets.QGroupBox):
         # Row 2 — host / port / health port
         self._layout.addWidget(QtWidgets.QLabel("Host:"), 2, 0)
         self.host_lbl = QtWidgets.QLabel("—")
+        self.host_lbl.setToolTip("Hostname or IP where the epicsLogger PULL socket is bound.")
         self._layout.addWidget(self.host_lbl, 2, 1)
 
         self._layout.addWidget(QtWidgets.QLabel("Port:"), 3, 0)
         self.port_lbl = QtWidgets.QLabel("—")
+        self.port_lbl.setToolTip("epicsLogger's PULL port — PyRadiant PUSHes trigger messages here.")
         self._layout.addWidget(self.port_lbl, 3, 1)
 
         self._layout.addWidget(QtWidgets.QLabel("Health port:"), 4, 0)
         self.health_port_lbl = QtWidgets.QLabel("—")
+        self.health_port_lbl.setToolTip("PyRadiant's REP port that epicsLogger can ping for health checks and field-schema queries.")
         self._layout.addWidget(self.health_port_lbl, 4, 1)
 
         # Row 5 — connect toggle + status indicator
         self.connect_btn = QtWidgets.QPushButton("Connect")
         self.connect_btn.setEnabled(False)
+        self.connect_btn.setToolTip("Open the PUSH socket to epicsLogger and start the health REP server. Click again to disconnect.")
         self.status_indicator = StatusIndicator()
+        self.status_indicator.setToolTip(
+            "Connection status:\n"
+            "  grey   — disconnected (no socket)\n"
+            "  yellow — socket up, no confirmation yet\n"
+            "  green  — at least one send or health-ping succeeded\n"
+            "  red    — error (e.g. pyzmq missing)"
+        )
         self.status_lbl = QtWidgets.QLabel("Idle")
+        self.status_lbl.setToolTip("Human-readable current status of the publisher socket.")
         status_row = QtWidgets.QWidget()
         status_row_layout = QtWidgets.QHBoxLayout(status_row)
         status_row_layout.setContentsMargins(0, 0, 0, 0)
@@ -594,16 +650,119 @@ class EpicsLoggerGroupBox(QtWidgets.QGroupBox):
 
         # Row 6 — publish temperatures checkbox + indicator
         self.publish_temperatures_cb = QtWidgets.QCheckBox("Publish temperatures to ZMQ")
+        self.publish_temperatures_cb.setToolTip(
+            "When on, an SPE file load automatically fires one trigger to epicsLogger.\n"
+            "When off, only the 'Trigger now' button sends anything."
+        )
         self.publish_indicator = StatusIndicator()
+        self.publish_indicator.setToolTip("Green when publishing is armed and at least one trigger has succeeded on the current connection.")
         self._layout.addWidget(self.publish_temperatures_cb, 6, 0)
         self._layout.addWidget(self.publish_indicator, 6, 1)
 
-        # Row 7 — last trigger timestamp
-        self._layout.addWidget(QtWidgets.QLabel("Last trigger:"), 7, 0)
+        # Row 7 — Trigger now button
+        self.trigger_now_btn = QtWidgets.QPushButton("Trigger now")
+        self.trigger_now_btn.setToolTip(
+            "Send one trigger to epicsLogger with the currently loaded file's data.\n"
+            "Bypasses the 'Publish temperatures' checkbox — useful for testing\n"
+            "or logging a single row on demand."
+        )
+        self._layout.addWidget(self.trigger_now_btn, 7, 0, 1, 2)
+
+        # Row 8 — last trigger timestamp
+        self._layout.addWidget(QtWidgets.QLabel("Last trigger:"), 8, 0)
         self.last_trigger_lbl = QtWidgets.QLabel("—")
         self.last_trigger_lbl.setFont(small)
         self.last_trigger_lbl.setStyleSheet("color: #888888;")
-        self._layout.addWidget(self.last_trigger_lbl, 7, 1)
+        self.last_trigger_lbl.setToolTip("Wall-clock time of the most recent trigger sent to epicsLogger.")
+        self._layout.addWidget(self.last_trigger_lbl, 8, 1)
+
+        # Row 9/10 — last sent payload (read-only text area showing raw JSON).
+        # Useful for debugging what epicsLogger receives.
+        self._layout.addWidget(QtWidgets.QLabel("Last payload:"), 9, 0, 1, 2)
+        self.last_payload_txt = QtWidgets.QPlainTextEdit()
+        self.last_payload_txt.setReadOnly(True)
+        self.last_payload_txt.setPlaceholderText("No trigger sent yet")
+        self.last_payload_txt.setFont(small)
+        self.last_payload_txt.setMaximumHeight(110)
+        self.last_payload_txt.setStyleSheet(
+            "color: #cccccc; background-color: #2a2a2a; border: 1px solid #444;"
+        )
+        self.last_payload_txt.setToolTip("Raw JSON of the most recent trigger. Handy for debugging what epicsLogger received.")
+        self._layout.addWidget(self.last_payload_txt, 10, 0, 1, 2)
+
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+
+
+class MultiFrameOutputGroupBox(QtWidgets.QGroupBox):
+    """Shared multi-frame aggregation policy.
+
+    Reads by both the ZMQ trigger (epicsLogger publisher) and the EPICS PV
+    publish path. In 'Current frame' mode the EPICS PVs update live on each
+    calculation change; in aggregate modes they update only on file load
+    or Trigger-now (same cadence as the ZMQ trigger).
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__('Multi-frame output')
+        self._layout = QtWidgets.QGridLayout()
+        self._layout.setHorizontalSpacing(6)
+        self._layout.setVerticalSpacing(4)
+
+        # Row 0 — aggregation mode
+        self._layout.addWidget(QtWidgets.QLabel("Mode:"), 0, 0)
+        self.mode_cb = QtWidgets.QComboBox()
+        self.mode_cb.addItem("Current frame",           "single")
+        self.mode_cb.addItem("Mean over all frames",    "mean_all")
+        self.mode_cb.addItem("Median over all frames",  "median_all")
+        self.mode_cb.addItem("Mean over range",         "mean_range")
+        self.mode_cb.addItem("Median over range",       "median_range")
+        self.mode_cb.setToolTip(
+            "How to reduce a multi-frame SPE to one output value:\n"
+            "  Current frame  — the frame currently shown in the UI (live EPICS updates)\n"
+            "  Mean/Median over all frames — aggregate across all N frames\n"
+            "  Mean/Median over range — aggregate across frames [start, end] inclusive\n"
+            "Aggregate modes publish to EPICS only on file load / Trigger-now, not on frame browsing.\n"
+            "Single-frame files always behave as 'Current frame' regardless of this setting."
+        )
+        self._layout.addWidget(self.mode_cb, 0, 1)
+
+        # Row 1 — range spinboxes (visible only for range_* modes)
+        self.range_lbl = QtWidgets.QLabel("Range:")
+        self.range_start_sb = QtWidgets.QSpinBox()
+        self.range_start_sb.setMinimum(0)
+        self.range_start_sb.setMaximum(0)
+        self.range_start_sb.setToolTip("First frame index (0-based, inclusive).")
+        self.range_end_sb = QtWidgets.QSpinBox()
+        self.range_end_sb.setMinimum(0)
+        self.range_end_sb.setMaximum(0)
+        self.range_end_sb.setToolTip("Last frame index (0-based, inclusive).")
+        range_row = QtWidgets.QWidget()
+        range_row_layout = QtWidgets.QHBoxLayout(range_row)
+        range_row_layout.setContentsMargins(0, 0, 0, 0)
+        range_row_layout.setSpacing(4)
+        range_row_layout.addWidget(self.range_start_sb)
+        range_row_layout.addWidget(QtWidgets.QLabel("–"))
+        range_row_layout.addWidget(self.range_end_sb)
+        range_row_layout.addStretch()
+        self._layout.addWidget(self.range_lbl, 1, 0)
+        self._layout.addWidget(range_row, 1, 1)
+        self.range_lbl.setVisible(False)
+        range_row.setVisible(False)
+        self._range_row_widget = range_row
+
+        # Row 2 — error-metric selector (only meaningful for aggregate modes)
+        self._layout.addWidget(QtWidgets.QLabel("Error:"), 2, 0)
+        self.error_metric_cb = QtWidgets.QComboBox()
+        self.error_metric_cb.addItem("Avg per-frame fit error", "fit_avg")
+        self.error_metric_cb.addItem("Std deviation of T",       "std")
+        self.error_metric_cb.setToolTip(
+            "Which uncertainty to report as the temperature error in aggregate modes:\n"
+            "  Avg per-frame fit error — mean of the individual frame fit uncertainties\n"
+            "  Std deviation of T     — spread of the per-frame temperatures\n"
+            "In 'Current frame' mode this setting is ignored (the per-frame fit error is used)."
+        )
+        self._layout.addWidget(self.error_metric_cb, 2, 1)
 
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
@@ -829,6 +988,38 @@ class WavelengthCalibrationGB(QtWidgets.QGroupBox):
         self.setMaximumWidth(300)
 
 
+class CameraModeGB(QtWidgets.QGroupBox):
+    """Global camera-type selector for the current configuration.
+
+    Two modes:
+      * Default — SPE / H5 / non-centered TIF workflow. Kinetics + cross-mode
+        controls remain accessible.
+      * Photron — the loaded data + intensity calibration are TIF frames from
+        a Photron FASTCAM. Centered-window cross-mode projection is enabled
+        (no separate checkbox); the UI hides kinetics-specific groups and
+        exposes the decoupled cal-background subtraction group.
+    """
+    MODE_ITEMS = (('Default', 'off'), ('Photron', 'centered'))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__('Camera')
+        self._layout = QtWidgets.QHBoxLayout()
+        self._layout.setContentsMargins(6, 4, 6, 4)
+        self._layout.setSpacing(4)
+        self.mode_combo = QtWidgets.QComboBox()
+        self.mode_combo.addItems([label for label, _ in self.MODE_ITEMS])
+        self.mode_combo.setToolTip(
+            'Select the source instrument for this configuration.\n'
+            '  Default: SPE / H5 / non-centered TIF workflow.\n'
+            '  Photron: TIF frames from a Photron FASTCAM. Enables '
+            'centered-window cross-mode projection, exposes the decoupled '
+            'cal-background subtraction group, and hides kinetics-specific '
+            'controls.')
+        self._layout.addWidget(self.mode_combo)
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+
+
 class BackgroundSubtractionGB(QtWidgets.QGroupBox):
     """Per-configuration background subtraction mode with optional prerecorded dark.
 
@@ -922,6 +1113,88 @@ class BackgroundSubtractionGB(QtWidgets.QGroupBox):
             w.setVisible(visible)
 
 
+class CalBackgroundSubtractionGB(QtWidgets.QGroupBox):
+    """Photron-only decoupled cal-image background subtraction.
+
+    Mirrors BackgroundSubtractionGB but drives the *calibration* spectrum's
+    background handling independently of the data spectrum. Visible only when
+    the user has enabled Photron centered-window cross-mode. The additional
+    'Shared with data' mode makes the cal-bg follow the data-bg settings
+    (legacy behaviour) — this is the default.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__('Cal background subtraction (Photron)')
+        self._layout = QtWidgets.QGridLayout()
+        self._layout.setContentsMargins(6, 4, 6, 4)
+        self._layout.setHorizontalSpacing(6)
+        self._layout.setVerticalSpacing(4)
+
+        self._layout.addWidget(QtWidgets.QLabel('Mode:'), 0, 0)
+        self.mode_combo = QtWidgets.QComboBox()
+        self.mode_combo.addItems(['Shared with data', 'In-situ ROI',
+                                   'Prerecorded dark',
+                                   'Hybrid (auto-scaled dark)', 'Off'])
+        self._layout.addWidget(self.mode_combo, 0, 1, 1, 4)
+
+        self._ds_label = QtWidgets.QLabel('DS:')
+        self.load_ds_dark_btn = QtWidgets.QPushButton('Load…')
+        self.clear_ds_dark_btn = QtWidgets.QPushButton('Clear')
+        self.ds_dark_filename_lbl = QtWidgets.QLabel('None')
+        self.ds_dark_filename_lbl.setStyleSheet('color: gray;')
+        self.ds_dark_scale_sb = QtWidgets.QDoubleSpinBox()
+        self.ds_dark_scale_sb.setDecimals(3)
+        self.ds_dark_scale_sb.setRange(0.0, 1e6)
+        self.ds_dark_scale_sb.setSingleStep(0.1)
+        self.ds_dark_scale_sb.setValue(1.0)
+        self.ds_dark_scale_sb.setPrefix('× ')
+        self.ds_dark_scale_sb.setMaximumWidth(90)
+        self._layout.addWidget(self._ds_label,           1, 0)
+        self._layout.addWidget(self.load_ds_dark_btn,    1, 1)
+        self._layout.addWidget(self.clear_ds_dark_btn,   1, 2)
+        self._layout.addWidget(self.ds_dark_filename_lbl,1, 3)
+        self._layout.addWidget(self.ds_dark_scale_sb,    1, 4)
+
+        self._us_label = QtWidgets.QLabel('US:')
+        self.load_us_dark_btn = QtWidgets.QPushButton('Load…')
+        self.clear_us_dark_btn = QtWidgets.QPushButton('Clear')
+        self.us_dark_filename_lbl = QtWidgets.QLabel('None')
+        self.us_dark_filename_lbl.setStyleSheet('color: gray;')
+        self.us_dark_scale_sb = QtWidgets.QDoubleSpinBox()
+        self.us_dark_scale_sb.setDecimals(3)
+        self.us_dark_scale_sb.setRange(0.0, 1e6)
+        self.us_dark_scale_sb.setSingleStep(0.1)
+        self.us_dark_scale_sb.setValue(1.0)
+        self.us_dark_scale_sb.setPrefix('× ')
+        self.us_dark_scale_sb.setMaximumWidth(90)
+        self._layout.addWidget(self._us_label,           2, 0)
+        self._layout.addWidget(self.load_us_dark_btn,    2, 1)
+        self._layout.addWidget(self.clear_us_dark_btn,   2, 2)
+        self._layout.addWidget(self.us_dark_filename_lbl,2, 3)
+        self._layout.addWidget(self.us_dark_scale_sb,    2, 4)
+
+        self.setLayout(self._layout)
+        self.setMaximumWidth(300)
+        self._set_dark_rows_visible(False)
+
+    def _set_dark_rows_visible(self, visible):
+        for w in (self._ds_label, self.load_ds_dark_btn, self.clear_ds_dark_btn,
+                  self.ds_dark_filename_lbl, self.ds_dark_scale_sb,
+                  self._us_label, self.load_us_dark_btn, self.clear_us_dark_btn,
+                  self.us_dark_filename_lbl, self.us_dark_scale_sb):
+            w.setVisible(visible)
+
+    def set_scale_spinboxes_enabled(self, enabled):
+        tip = '' if enabled else 'Auto-scaled from bg-ROI in hybrid mode'
+        for sb in (self.ds_dark_scale_sb, self.us_dark_scale_sb):
+            sb.setEnabled(enabled)
+            sb.setToolTip(tip)
+
+    def set_us_row_visible(self, visible):
+        for w in (self._us_label, self.load_us_dark_btn, self.clear_us_dark_btn,
+                  self.us_dark_filename_lbl, self.us_dark_scale_sb):
+            w.setVisible(visible)
+
+
 class TemperatureCalibrationSection(QtWidgets.QGroupBox):
     def __init__(self, *args, **kwargs):
         super().__init__('Intensity calibration')
@@ -932,25 +1205,53 @@ class TemperatureCalibrationSection(QtWidgets.QGroupBox):
 
         self._layout.addWidget(self.downstream_gb)
         self._layout.addWidget(self.upstream_gb)
+        # Slot for the Photron-only cal-bg group. Populated after construction
+        # by TemperatureWidget so all cal-related controls live under one
+        # visible parent when Photron mode is on.
+        self.cal_background_slot_index = self._layout.count()
+        # Slot for the numeric cal-ROI panel (also populated after construction).
+        # Sits below the cal-bg group so the reader flows: file → bg → ROIs.
+        self.cal_roi_slot_index = self._layout.count()
 
         #self._layout.addSpacerItem(VerticalSpacerItem())
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
 
+    def attach_cal_background_gb(self, gb):
+        """Insert the cal-bg group into this section's layout (Photron mode)."""
+        self._layout.insertWidget(self.cal_background_slot_index, gb)
+        self.cal_roi_slot_index += 1
+
+    def attach_cal_roi_panel(self, gb):
+        """Insert the numeric cal-ROI panel into this section's layout."""
+        self._layout.insertWidget(self.cal_roi_slot_index, gb)
+
 class TemperatureFitSettings(QtWidgets.QGroupBox):
     def __init__(self, *args, **kwargs):
         super().__init__('Temperature fit function')
-        self._layout = QtWidgets.QHBoxLayout()
+        self._layout = QtWidgets.QGridLayout()
+        self._layout.setHorizontalSpacing(8)
+        self._layout.setVerticalSpacing(4)
 
         self.plank_btn = QtWidgets.QRadioButton("Plank")
         self.wien_btn = QtWidgets.QRadioButton("Wien")
-        
 
-        self._layout.addWidget(self.plank_btn)
-        self._layout.addWidget(self.wien_btn)
+        self._layout.addWidget(self.plank_btn, 0, 0)
+        self._layout.addWidget(self.wien_btn, 0, 1)
         self.plank_btn.setChecked(True)
 
-        #self._layout.addSpacerItem(VerticalSpacerItem())
+        # Max fit error (K) — hides fit line + T text when T_err exceeds it.
+        # Wien σ_T scales as T² / c₂ · σ_m, so the same-quality fit at 7000 K
+        # has ~5× the σ_T of one at 3000 K. Making this user-adjustable lets
+        # legitimate high-T fits (e.g. laser-heated DAC above 5000 K) render.
+        self._layout.addWidget(QtWidgets.QLabel('Max fit error (K)'), 1, 0)
+        self.error_limit_sb = QtWidgets.QDoubleSpinBox()
+        self.error_limit_sb.setDecimals(0)
+        self.error_limit_sb.setRange(0.0, 100000.0)
+        self.error_limit_sb.setSingleStep(50.0)
+        self.error_limit_sb.setValue(200.0)
+        self._layout.addWidget(self.error_limit_sb, 1, 1)
+
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
 

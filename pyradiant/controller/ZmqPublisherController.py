@@ -42,6 +42,7 @@ CAPABILITIES_FIELDS = [
     {"key": "ds_temperature_error", "label": "DS Temperature Error (K)",  "type": "float"},
     {"key": "us_temperature",       "label": "US Temperature (K)",        "type": "float"},
     {"key": "us_temperature_error", "label": "US Temperature Error (K)",  "type": "float"},
+    {"key": "error_metric",         "label": "T Error Metric",             "type": "str"},
     {"key": "ds_fringe_frequency",  "label": "DS Fringe Frequency (cm)",  "type": "float"},
     {"key": "ds_fringe_nd_um",      "label": "DS n·d (μm)",               "type": "float"},
     {"key": "us_fringe_frequency",  "label": "US Fringe Frequency (cm)",  "type": "float"},
@@ -49,6 +50,12 @@ CAPABILITIES_FIELDS = [
     {"key": "exposure_time",        "label": "Exposure Time (s)",         "type": "float"},
     {"key": "gain",                 "label": "Gain",                      "type": "float"},
     {"key": "filename",             "label": "Spectroradiometry Filename", "type": "str"},
+    {"key": "filepath",             "label": "Spectroradiometry Path",    "type": "str"},
+    {"key": "frame_count",          "label": "Frame Count",               "type": "int"},
+    {"key": "frame_index",          "label": "Frame Index",               "type": "int"},
+    {"key": "frame_range_start",    "label": "Frame Range Start",         "type": "int"},
+    {"key": "frame_range_end",      "label": "Frame Range End",           "type": "int"},
+    {"key": "aggregation",          "label": "Aggregation",               "type": "str"},
 ]
 
 
@@ -187,6 +194,10 @@ class ZmqPublisherController(QtCore.QObject):
         self._health_port = info.get("health_port")
 
         gb.config_lbl.setText(os.path.basename(path))
+        gb.config_lbl.setToolTip(
+            f"{path}\n"
+            f"host={self._host}  port={self._port}  health_port={self._health_port}"
+        )
         gb.host_lbl.setText(self._host)
         gb.port_lbl.setText(str(self._port) if self._port else "—")
         gb.health_port_lbl.setText(str(self._health_port) if self._health_port else "—")
@@ -270,7 +281,22 @@ class ZmqPublisherController(QtCore.QObject):
         try:
             self._push_socket.send_json(msg, zmq.NOBLOCK)
             ts = datetime.now().strftime('%H:%M:%S')
-            self.widget.epicslogger_gb.last_trigger_lbl.setText(ts)
+            gb = self.widget.epicslogger_gb
+            gb.last_trigger_lbl.setText(ts)
+            import json as _json
+            try:
+                gb.last_payload_txt.setPlainText(_json.dumps(msg, indent=2, default=str))
+            except Exception:
+                gb.last_payload_txt.setPlainText(repr(msg))
+            # A successful send is enough evidence to promote the status from
+            # "awaiting ping" to "connected" — health-ping is optional and
+            # user-initiated on the epicsLogger side, so we shouldn't force
+            # users to click Check Health just to see the indicator go green.
+            gb.status_lbl.setText("Connected")
+            gb.status_indicator.set_active()
+            if gb.publish_temperatures_cb.isChecked():
+                gb.publish_indicator.set_active()
+            self.status_changed.emit("connected")
             self.trigger_sent.emit(msg)
         except Exception:
             pass  # best-effort; logger may not be bound yet
