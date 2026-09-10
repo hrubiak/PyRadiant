@@ -244,13 +244,9 @@ class ZmqWorkerController(QtCore.QObject):
             self.load_config(path)
 
     def load_config(self, path):
-        import sys, os
-        _root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        if _root not in sys.path:
-            sys.path.insert(0, _root)
-        from config import (load_config, get_worker_port, get_results_port,
-                            get_worker_health_port, get_worker_input_directory,
-                            get_worker_output_directory)
+        from ..config import (load_config, get_worker_port, get_results_port,
+                              get_worker_health_port, get_worker_input_directory,
+                              get_worker_output_directory)
         self._config = load_config(path)
         self._config["_path"] = path
 

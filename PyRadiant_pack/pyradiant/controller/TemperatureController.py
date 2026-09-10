@@ -1220,7 +1220,7 @@ class TemperatureController(QtCore.QObject):
         self.load_data_file(filenames=files)
                 
     def load_next_data_image(self):
-        
+
         if self.widget.browse_by_name_rb.isChecked():
             mode = 'number'
         else:
@@ -1229,6 +1229,7 @@ class TemperatureController(QtCore.QObject):
 
         # hack, refactor later:
         self.process_multiframe()
+        self._send_temperature_trigger()
 
     def load_previous_data_image(self):
 
@@ -1240,6 +1241,7 @@ class TemperatureController(QtCore.QObject):
 
         # hack, refactor later:
         self.process_multiframe()
+        self._send_temperature_trigger()
         
     def toggle_browse_mode(self):
         

@@ -173,11 +173,8 @@ class ZmqPublisherController(QtCore.QObject):
             self.load_config(path)
 
     def load_config(self, path):
-        import sys, os
-        _root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        if _root not in sys.path:
-            sys.path.insert(0, _root)
-        from config import load_config, get_epicslogger_connection
+        import os
+        from ..config import load_config, get_epicslogger_connection
         config = load_config(path)
         info = get_epicslogger_connection(self._worker_name, config)
 

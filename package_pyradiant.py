@@ -25,6 +25,8 @@ TOP_LEVEL_FILES = [
     "requirements.txt",
     "license.txt",
     "README.md",
+    "workers.yaml",
+    "epicsLogger.yaml",
 ]
 
 EXCLUDE_DIRS = {"__pycache__", ".git", ".idea", ".vscode"}
