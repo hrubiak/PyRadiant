@@ -1633,8 +1633,15 @@ class TemperatureController(QtCore.QObject):
             self.widget.roi_widget.img_widget.set_wavelength_calibration((x,y,w,h))
             self.widget.roi_widget.ds_cal_img_widget.set_wavelength_calibration((x,y,w,h))
             self.widget.roi_widget.us_cal_img_widget.set_wavelength_calibration((x,y,w,h))
-        rois = self.model.current_configuration.get_roi_data_list()
-        self.widget.roi_widget.set_rois(self.model.current_configuration.get_roi_data_list())
+        # Coerce data-dim BG ROIs into the current data image height so
+        # kinetics strips (e.g. 64 rows) don't inherit unreachable BG Y
+        # from a previous full-chip file / .trs restore. Signal ROIs and
+        # cal-dim BGs are untouched. bg-roi setters emit
+        # calculations_changed (not data_changed), so no reentry.
+        rois = self._clamp_bgs_to_data_dim(
+            self.model.current_configuration,
+            self.model.current_configuration.get_roi_data_list())
+        self.widget.roi_widget.set_rois(rois)
         self.widget.roi_widget.set_wl_range(self.model.current_configuration.wl_range)
 
         # Cross-mode cal viewer setup: when data is kinetics but a side's
@@ -1838,8 +1845,13 @@ class TemperatureController(QtCore.QObject):
         if cal_file is None or getattr(cal_file, 'img', None) is None:
             return False
         # DEBUG: try/except removed so failures raise with full traceback.
-        shape = cal_file.img.shape
-        if len(shape) != 2:
+        raw_shape = cal_file.img.shape
+        # Accept 2D full-chip cal or 3D stack (N, H, W) — geometry is H×W.
+        if len(raw_shape) == 2:
+            shape = raw_shape
+        elif len(raw_shape) == 3:
+            shape = raw_shape[-2:]
+        else:
             return False
         if cfg.data_img_file is None:
             return False
@@ -1871,7 +1883,13 @@ class TemperatureController(QtCore.QObject):
                 and cfg.data_img_file is not None):
             cal_shape = cal_file.img.shape
             data_dim = cfg.data_img_file.get_dimension()
-            if len(cal_shape) == 2 and (cal_shape[1], cal_shape[0]) == data_dim:
+            if len(cal_shape) == 2:
+                hw = cal_shape
+            elif len(cal_shape) == 3:
+                hw = cal_shape[-2:]
+            else:
+                hw = None
+            if hw is not None and (hw[1], hw[0]) == data_dim:
                 return '(kinetics)'
         if self._is_cal_kinetics_adapted(cfg, side):
             return '(full-chip, auto-adapted)'
@@ -2481,6 +2499,62 @@ class TemperatureController(QtCore.QObject):
             # cal-ROI panel; refresh it here since drag paths do not fire
             # data_changed_signal.
             self._refresh_cal_roi_panel()
+
+    def _clamp_bgs_to_data_dim(self, cfg, rois_list):
+        """Return rois_list with BG (2,3) Y clamped/reseeded to fit within
+        the kinetics strip window on the data viewer.
+
+        The valid range is `[window_y, window_y + window_height]` — the
+        rows on the (possibly full-sensor) data image where the strip
+        content actually lives (SpeFile places the window at
+        `img_full[roi_y:roi_y+roi_height]`). Uses `kinetics_info`
+        NOT `data_img.shape[0]`: for interleaved-kinetics SPE files
+        the frame array can span the full sensor (e.g. 1024) even though
+        the light-bearing strip is only `window_height` (e.g. 64) rows.
+
+        If any BG is fully outside the window or degenerate, reseed to
+        the equal-strip layout `RoiData.get_rois` uses, offset by
+        `window_y` into the viewer's coord system. Persists via
+        `cfg.set_rois` so subsequent loads don't repeat the fix. Signal
+        ROIs (0,1) and cal-dim BGs are not touched — cal-dim BGs live
+        in a separate roi_data_manager entry (cross-mode)."""
+        if cfg is None:
+            return rois_list
+        if cfg.kinetics_mode not in ('kinetics-interleaved', 'kinetics'):
+            return rois_list
+        ki = cfg.kinetics_info or {}
+        wh = int(ki.get('window_height') or 0)
+        wy = int(ki.get('window_y') or 0)
+        if wh <= 0:
+            return rois_list
+        y_lo = wy
+        y_hi = wy + wh
+        out = [list(r) for r in rois_list]
+        n = len(out)
+        if n < 3:
+            return rois_list
+        part = wh / (2.0 * n + 1.0)
+        changed = False
+        for ind in (2, 3):
+            if ind >= n:
+                continue
+            lim = out[ind]
+            y0 = int(round(lim[2]))
+            y1 = int(round(lim[3]))
+            in_range = (y_lo <= y0 <= y_hi
+                        and y_lo <= y1 <= y_hi
+                        and y0 < y1)
+            if in_range:
+                continue
+            new_y0 = y_lo + int(round((2 * ind + 1) * part - 1))
+            new_y1 = y_lo + int(round((2 * ind + 2) * part - 1))
+            new_y0 = max(y_lo, min(y_hi - 1, new_y0))
+            new_y1 = max(new_y0 + 1, min(y_hi, new_y1))
+            out[ind] = [int(lim[0]), int(lim[1]), new_y0, new_y1]
+            changed = True
+        if changed:
+            cfg.set_rois(out)
+        return out
 
     def _refresh_roi_panels(self):
         """Sync the ROI widget's kinetics-projection context to the current

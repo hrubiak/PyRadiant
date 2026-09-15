@@ -72,7 +72,108 @@ class FrameRecord:
 
 
 class TemperatureModelConfiguration(QtCore.QObject):
-    
+    """Per-configuration state: data file, cal files, ROIs, calculations,
+    logging. See MODE MATRIX below for the operating modes and their
+    preconditions — every ROI setter, mirror, and sync function assumes a
+    specific mode; consult this before adding another guarded branch.
+
+    ==================================================================
+    MODE MATRIX
+    ==================================================================
+    The app's behavior is a function of THREE independent axes:
+
+      1. `kinetics_mode`  ∈ {'off', 'kinetics', 'kinetics-interleaved'}
+         Derived from `data_img_file.readout_mode` + `kinetics_mode_override`
+         via `_sync_kinetics_from_file`. 'off' when no kinetics readout.
+         'kinetics' = one strip per frame (single-sided). 'kinetics-
+         interleaved' = DS+US bands packed on the same strip (PI-MAX4 dual).
+
+      2. `photron_mode`   ∈ {'off', 'centered'}
+         User-picked in CameraModeGB. 'centered' = TIF from a Photron
+         FASTCAM with a centered readout window (cal ydim > data ydim).
+
+      3. `mode`           ∈ {'dual', 'single'}
+         User-picked in MeasurementModeGB. 'single' hides US widgets and
+         disables 2-color pyrometry.
+
+    Additionally, a *derived* fourth axis matters for ROI handling:
+
+      4. cross-mode = cal image and data image live on different dims
+         (cal is full-chip, data is a kinetics window OR a Photron
+         centered window). True iff `cross_mode_cal_info(side) is not
+         None` for that side. Requires:
+            * kinetics_mode != 'off' OR photron_mode == 'centered'
+            * cal file loaded, shape ∈ {2D (H,W), 3D (N,H,W)}
+            * cal H×W != data H×W
+
+    ------------------------------------------------------------------
+    LEGAL COMBINATIONS
+    ------------------------------------------------------------------
+    (kinetics_mode, photron_mode) — mutually exclusive by convention:
+
+      ('off',                 'off')      Normal full-chip SPE/H5/TIF.
+                                          No ROI mirroring, no projection.
+                                          Data and cal ROIs share one dim.
+      ('kinetics'|'k-i',     'off')       Kinetics data. Cross-mode fires
+                                          iff cal is full-chip (2D or 3D).
+      ('off',                'centered')  Photron centered-window TIF.
+                                          Cross-mode fires iff cal ydim >
+                                          data ydim (same xdim required).
+      ('kinetics'|'k-i',     'centered')  Not intended — Photron guards
+                                          try to skip when kinetics fires.
+
+    ------------------------------------------------------------------
+    CAL IMAGE SHAPES (a common gotcha)
+    ------------------------------------------------------------------
+    Cal image can be:
+      * 2D (H, W)     — single-frame cal.
+      * 3D (N, H, W)  — legacy PIMAX4 multi-frame cal. Averaged for the
+                        physics (see `TemperatureModel.set_calibration_data`)
+                        but `.img` keeps the raw 3D shape.
+      * dim matching data_dim → treated as a kinetics-mode cal (no
+                                cross-mode projection needed).
+
+    Every function that inspects `cal_file.img.shape` MUST accept both
+    2D and 3D by normalizing to the last two dims (H, W). Missing this
+    silently disables cross-mode. Currently normalized in:
+      * cross_mode_cal_info
+      * _sync_cross_mode_rois
+      * _mirror_roi_to_cal_dim
+      * _derive_slots_from_trs
+      * _cal_image_dim
+      * _roi_dimension_key
+      * TemperatureController._is_cal_kinetics_adapted
+      * TemperatureController._cal_mode_tag
+
+    ------------------------------------------------------------------
+    ROI STORAGE
+    ------------------------------------------------------------------
+    ROIs are keyed by dimension (RoiDataManager). Cross-mode implies
+    two live keys: one at cal H×W, one at data H×W. Setters must always
+    pass the correct dim:
+      * data-viewer edits → data_dim (via `ds_roi`/`us_roi` setters)
+      * cal-viewer edits  → cal_dim  (via `set_cal_dim_signal_roi` /
+                                       `set_cal_dim_bg_roi`)
+    Mirror direction:
+      * kinetics:  data-edit mirrors signal (0/1) back to cal-dim,
+                   preserving the pre-drag slot quotient. BG (2/3) is
+                   per-dim (each dim has its own dark region).
+      * photron:   data-edit mirrors signal AND bg (0/1/2/3) via a
+                   fixed offset (cal_y = data_y + win_y).
+
+    ------------------------------------------------------------------
+    WHEN ADDING NEW MODE-DEPENDENT CODE
+    ------------------------------------------------------------------
+    * Read the mode from `kinetics_mode` / `photron_mode`, NOT from
+      derived state that might be stale.
+    * Guard on `cross_mode_cal_info(side)` for cross-mode logic — it
+      already normalizes shape and checks all preconditions.
+    * If you touch ROIs, decide whether the edit is data-dim or cal-dim
+      and use the right setter/mirror.
+    * If you inspect `cal_file.img.shape`, normalize 3D → 2D. Add your
+      site to the list above.
+    """
+
     def __init__(self):
         super().__init__()
 
@@ -1279,6 +1380,26 @@ class TemperatureModelConfiguration(QtCore.QObject):
             ds_bg_out = self.ds_roi_bg
         ds_group['roi'] = ds_roi_out.as_list()
         ds_group['roi_bg'] = ds_bg_out.as_list()
+        # Cross-mode: also persist the data-dim ROI+BG so the kinetics-strip
+        # (or Photron centered-window) BG round-trips. Without this, only the
+        # cal-dim BG survives; on reload the data-dim entry is seeded by
+        # RoiDataManager.get_rois to an equal-strip layout across the full
+        # sensor, which puts the strip BG outside the readout window.
+        if (ds_cal_dim is not None and self.data_img_file is not None):
+            try:
+                data_dim = self.data_img_file.get_dimension()
+            except Exception:
+                data_dim = None
+            if data_dim is not None and tuple(data_dim) != tuple(ds_cal_dim):
+                try:
+                    ds_roi_data = self.roi_data_manager.get_roi(0, data_dim)
+                    ds_bg_data = self.roi_data_manager.get_roi(2, data_dim)
+                    ds_group['roi_data_dim'] = ds_roi_data.as_list()
+                    ds_group['roi_bg_data_dim'] = ds_bg_data.as_list()
+                    ds_group.attrs['data_xdim'] = int(data_dim[0])
+                    ds_group.attrs['data_ydim'] = int(data_dim[1])
+                except Exception:
+                    pass
         ds_group['modus'] = self.ds_temperature_model.calibration_parameter.modus
         ds_group['temperature'] = self.ds_temperature_model.calibration_parameter.temperature
         ds_group['standard_spectrum'] = self.ds_temperature_model.calibration_parameter.get_standard_spectrum().data
@@ -1310,6 +1431,22 @@ class TemperatureModelConfiguration(QtCore.QObject):
             us_bg_out = self.us_roi_bg
         us_group['roi'] = us_roi_out.as_list()
         us_group['roi_bg'] = us_bg_out.as_list()
+        # Cross-mode data-dim ROI+BG (see DS block above for rationale).
+        if (us_cal_dim is not None and self.data_img_file is not None):
+            try:
+                data_dim = self.data_img_file.get_dimension()
+            except Exception:
+                data_dim = None
+            if data_dim is not None and tuple(data_dim) != tuple(us_cal_dim):
+                try:
+                    us_roi_data = self.roi_data_manager.get_roi(1, data_dim)
+                    us_bg_data = self.roi_data_manager.get_roi(3, data_dim)
+                    us_group['roi_data_dim'] = us_roi_data.as_list()
+                    us_group['roi_bg_data_dim'] = us_bg_data.as_list()
+                    us_group.attrs['data_xdim'] = int(data_dim[0])
+                    us_group.attrs['data_ydim'] = int(data_dim[1])
+                except Exception:
+                    pass
         us_group['modus'] = self.us_temperature_model.calibration_parameter.modus
         us_group['temperature'] = self.us_temperature_model.calibration_parameter.temperature
         us_group['standard_spectrum'] = self.us_temperature_model.calibration_parameter.get_standard_spectrum().data
@@ -1565,6 +1702,19 @@ class TemperatureModelConfiguration(QtCore.QObject):
                 'ds', ds_dim, _ds_roi_saved, _ds_bg_saved)
             self.roi_data_manager.set_roi(0, ds_dim, _ds_roi_saved)
             self.roi_data_manager.set_roi(2, ds_dim, _ds_bg_saved)
+        # Cross-mode: restore the data-dim ROI+BG under its own key so the
+        # kinetics-strip / Photron-window BG survives the round-trip (see
+        # save_setting for why this is written separately).
+        if ('roi_data_dim' in ds_group and 'roi_bg_data_dim' in ds_group
+                and 'data_xdim' in ds_group.attrs
+                and 'data_ydim' in ds_group.attrs):
+            _ds_data_dim = (int(ds_group.attrs['data_xdim']),
+                            int(ds_group.attrs['data_ydim']))
+            if ds_dim is None or tuple(_ds_data_dim) != tuple(ds_dim):
+                self.roi_data_manager.set_roi(
+                    0, _ds_data_dim, ds_group['roi_data_dim'][...])
+                self.roi_data_manager.set_roi(
+                    2, _ds_data_dim, ds_group['roi_bg_data_dim'][...])
 
         # Restore the identity-calibration flag (True = user cleared).
         self.ds_temperature_model._identity_calibration = bool(
@@ -1615,6 +1765,17 @@ class TemperatureModelConfiguration(QtCore.QObject):
                 'us', us_dim, _us_roi_saved, _us_bg_saved)
             self.roi_data_manager.set_roi(1, us_dim, _us_roi_saved)
             self.roi_data_manager.set_roi(3, us_dim, _us_bg_saved)
+        # Cross-mode data-dim restore (see DS block above for rationale).
+        if ('roi_data_dim' in us_group and 'roi_bg_data_dim' in us_group
+                and 'data_xdim' in us_group.attrs
+                and 'data_ydim' in us_group.attrs):
+            _us_data_dim = (int(us_group.attrs['data_xdim']),
+                            int(us_group.attrs['data_ydim']))
+            if us_dim is None or tuple(_us_data_dim) != tuple(us_dim):
+                self.roi_data_manager.set_roi(
+                    1, _us_data_dim, us_group['roi_data_dim'][...])
+                self.roi_data_manager.set_roi(
+                    3, _us_data_dim, us_group['roi_bg_data_dim'][...])
 
         # Restore the identity-calibration flag (True = user cleared).
         self.us_temperature_model._identity_calibration = bool(
@@ -1883,8 +2044,15 @@ class TemperatureModelConfiguration(QtCore.QObject):
                     else self.us_calibration_img_file)
         if cal_file is None or getattr(cal_file, 'img', None) is None:
             return None
-        cal_shape = np.asarray(cal_file.img).shape
-        if len(cal_shape) != 2:
+        raw_shape = np.asarray(cal_file.img).shape
+        # Accept 2D full-chip cal or 3D stack (N, H, W). Only H×W matters
+        # for cross-mode geometry — normalize to 2D so downstream consumers
+        # (info['cal_shape']) get consistent (H, W).
+        if len(raw_shape) == 2:
+            cal_shape = raw_shape
+        elif len(raw_shape) == 3:
+            cal_shape = raw_shape[-2:]
+        else:
             return None
         cal_dim = (cal_shape[1], cal_shape[0])
         try:
@@ -1988,9 +2156,17 @@ class TemperatureModelConfiguration(QtCore.QObject):
                                ('us', self.us_calibration_img_file)):
             if cal_file is None or getattr(cal_file, 'img', None) is None:
                 continue
-            cal_shape = np.asarray(cal_file.img).shape
-            if len(cal_shape) != 2:
-                continue  # 3D kinetics cal stack already lives at data-dim
+            raw_shape = np.asarray(cal_file.img).shape
+            # 2D full-chip cal or 3D stack (N, H, W); use H×W. A stack whose
+            # per-frame H×W already matches data_dim is a kinetics-mode cal
+            # and needs no projection — caught by the cal_dim == data_dim
+            # guard below.
+            if len(raw_shape) == 2:
+                cal_shape = raw_shape
+            elif len(raw_shape) == 3:
+                cal_shape = raw_shape[-2:]
+            else:
+                continue
             cal_dim = (cal_shape[1], cal_shape[0])
             if cal_dim == data_dim:
                 continue
@@ -2063,8 +2239,12 @@ class TemperatureModelConfiguration(QtCore.QObject):
             else self.us_calibration_img_file
         if cal_file is None or getattr(cal_file, 'img', None) is None:
             return
-        cal_shape = np.asarray(cal_file.img).shape
-        if len(cal_shape) != 2:
+        raw_shape = np.asarray(cal_file.img).shape
+        if len(raw_shape) == 2:
+            cal_shape = raw_shape
+        elif len(raw_shape) == 3:
+            cal_shape = raw_shape[-2:]
+        else:
             return
         cal_dim = (cal_shape[1], cal_shape[0])
         if cal_dim == data_dim:

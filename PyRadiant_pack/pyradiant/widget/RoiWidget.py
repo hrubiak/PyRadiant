@@ -140,9 +140,10 @@ class RoiWidget(QtWidgets.QWidget):
         self.create_roi_gbs()
         self._roi_v_bs_layout.addLayout(self._roi_gbs_layout)
 
-        # Read-only kinetics-strip mirror panel. Hidden by default; shown
-        # only when kinetics data is loaded. Users edit in the full-chip
-        # panel above; this panel reflects the strip-Y equivalent.
+        # Kinetics-strip ROI panel. Hidden by default; shown (and the
+        # full-chip panel hidden) only when kinetics-interleaved data is
+        # loaded. Values are strip-Y (== data-viewer coords) and edits
+        # route through _update_img_roi_from_kin.
         self.roi_kin_gb = QtWidgets.QGroupBox('ROI (kinetics strip)')
         self.roi_kin_gb.setMaximumWidth(300)
         self._roi_kin_v_layout = QtWidgets.QVBoxLayout(self.roi_kin_gb)
@@ -153,11 +154,8 @@ class RoiWidget(QtWidgets.QWidget):
             row = ind % 2
             col = ind // 2
             kgb = RoiGroupBox(self.roi_titles[ind], self.roi_colors[ind])
-            for w in (kgb.x_min_txt, kgb.x_max_txt,
-                      kgb.y_min_txt, kgb.y_max_txt):
-                w.setReadOnly(True)
-                w.setEnabled(False)
-            kgb.y_n_txt.setEnabled(False)
+            kgb.roi_txt_changed.connect(
+                partial(self._update_img_roi_from_kin, ind))
             self.roi_kin_gbs.append(kgb)
             self._roi_kin_gbs_layout.addWidget(kgb, row, col)
         self._roi_kin_v_layout.addLayout(self._roi_kin_gbs_layout)
@@ -433,7 +431,9 @@ class RoiWidget(QtWidgets.QWidget):
         return [int(v) for v in fullchip_limits]
 
     def update_kinetics_roi_gbs(self, rois_list_strip):
-        """Write strip-Y limits into the read-only kinetics-strip panel."""
+        """Write strip-Y limits into the kinetics-strip panel. Signals are
+        blocked during the write so the panel's own roi_txt_changed does
+        not re-fire _update_img_roi_from_kin."""
         for ind, kgb in enumerate(self.roi_kin_gbs):
             if ind >= len(rois_list_strip):
                 continue
@@ -464,7 +464,10 @@ class RoiWidget(QtWidgets.QWidget):
             list(ds_cross_bg) if ds_cross_bg is not None else None)
         self._cross_mode_bg['us'] = (
             list(us_cross_bg) if us_cross_bg is not None else None)
+        # Show exactly one of the two ROI panels: kinetics-strip when
+        # kinetics is active (interleaved), full-chip otherwise.
         self.roi_kin_gb.setVisible(self._kinetics_active)
+        self.roi_gb.setVisible(not self._kinetics_active)
         # Refresh main-panel BG editability + re-project current strip
         # limits into full-chip display.
         strip_rois = self.img_widget.get_roi_limits()
@@ -562,15 +565,92 @@ class RoiWidget(QtWidgets.QWidget):
             self.update_kinetics_roi_gbs(roi_limits)
         self.rois_changed.emit(roi_limits)
 
+    def _update_img_roi_from_kin(self, ind, roi_list):
+        """User edited a spinbox in the kinetics-strip (read-write) panel.
+
+        roi_list is already in strip-Y (== data-viewer coords), so no
+        strip→fullchip projection is applied. Signal (0/1) Y is clamped
+        to [0, window_height-1]. BG (2/3) edits target the data-dim BG
+        directly here — the cross-mode cal-dim BG (which the full-chip
+        panel routes via `main_bg_edit`) is separate and unaffected.
+        """
+        if not self._kinetics_active:
+            return
+        x_min = int(roi_list[0])
+        x_max = int(roi_list[1])
+        y_min = int(roi_list[2])
+        y_max = int(roi_list[3])
+        wh = int(self._kinetics_window_height)
+        if wh > 0:
+            y_min = max(0, min(wh - 1, y_min))
+            y_max = max(0, min(wh, y_max))
+        strip_limits = [x_min, x_max, y_min, y_max]
+
+        n = int(round(abs(strip_limits[3] - strip_limits[2])))
+        self.roi_kin_gbs[ind].blockSignals(True)
+        self.roi_kin_gbs[ind].y_n_txt.setText(str(n))
+        self.roi_kin_gbs[ind].blockSignals(False)
+
+        # X range is shared across all ROIs (single wavelength window):
+        # mirror to every groupbox in both panels.
+        for gb in list(self.roi_gbs) + list(self.roi_kin_gbs):
+            gb.blockSignals(True)
+            gb.x_min_txt.setValue(x_min)
+            gb.x_max_txt.setValue(x_max)
+            gb.blockSignals(False)
+
+        # Push into the 2D viewers (skip cal viewers in cross-mode to
+        # avoid clobbering their cal-dim coords).
+        for w in (self.img_widget, self.ds_cal_img_widget, self.us_cal_img_widget):
+            if w is self.ds_cal_img_widget and self._ds_cross_mode and ind in (0, 2):
+                continue
+            if w is self.us_cal_img_widget and self._us_cross_mode and ind in (1, 3):
+                continue
+            w.blockSignals(True)
+            w.update_roi(ind, strip_limits)
+            w.blockSignals(False)
+
+        roi_limits = self.img_widget.get_roi_limits()
+        # Reproject strip → full-chip so the (hidden) main panel stays
+        # consistent if the user toggles back out of kinetics.
+        self._refresh_main_panel_from_strip(roi_limits)
+        self.rois_changed.emit(roi_limits)
+
     def set_rois(self, rois_list):
+        """Push data-dim (strip-Y for kinetics) ROIs into the three 2D
+        viewers and refresh the display panels.
+
+        Bypasses `_update_img_roi` on purpose: that path handles USER
+        typing into the full-chip panel (including a cross-mode BG
+        branch that early-returns to route the edit to a cal-dim setter
+        via `main_bg_edit`). Programmatic pushes from the controller
+        must not enter that branch — the BG would never reach the data
+        viewer and `_cross_mode_bg` state would be clobbered with
+        data-dim coords."""
         self.blockSignals(True)
         self.roi_gb.blockSignals(True)
-        for ind in range(self.roi_num):
-            self._update_img_roi(ind, rois_list[ind])
-        self._update_roi_gbs(rois_list)
-        
-        self.blockSignals(False)
-        self.roi_gb.blockSignals(False)
+        try:
+            for ind in range(self.roi_num):
+                if ind >= len(rois_list):
+                    continue
+                limits = list(rois_list[ind])
+                for w in (self.img_widget, self.ds_cal_img_widget,
+                          self.us_cal_img_widget):
+                    # Skip cal viewers in cross-mode; cal-dim coords are
+                    # applied separately by set_cross_mode_cal.
+                    if (w is self.ds_cal_img_widget
+                            and self._ds_cross_mode and ind in (0, 2)):
+                        continue
+                    if (w is self.us_cal_img_widget
+                            and self._us_cross_mode and ind in (1, 3)):
+                        continue
+                    w.blockSignals(True)
+                    w.update_roi(ind, limits)
+                    w.blockSignals(False)
+            self._update_roi_gbs(rois_list)
+        finally:
+            self.blockSignals(False)
+            self.roi_gb.blockSignals(False)
 
     def get_rois(self):
         return self.img_widget.get_roi_limits()
