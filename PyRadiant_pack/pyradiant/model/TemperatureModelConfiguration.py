@@ -2591,9 +2591,16 @@ class TemperatureModelConfiguration(QtCore.QObject):
             if 'image' not in g or 'roi' not in g:
                 return None
             cal_shape = g['image'].shape
-            if len(cal_shape) != 2:
+            # Accept 2D (single-frame cal) or 3D (multi-frame stack — legacy
+            # PIMAX4 full-chip cals often store N frames as (N, H, W)). Only
+            # the H×W geometry matters for slot derivation.
+            if len(cal_shape) == 2:
+                h, w = cal_shape
+            elif len(cal_shape) == 3:
+                h, w = cal_shape[-2], cal_shape[-1]
+            else:
                 return None
-            cal_dim_local = (cal_shape[1], cal_shape[0])
+            cal_dim_local = (w, h)
             if data_dim is not None and cal_dim_local == data_dim:
                 # Not cross-mode relative to current data — no q to derive.
                 return None

@@ -1534,6 +1534,9 @@ class TemperatureController(QtCore.QObject):
         QtWidgets.QMessageBox.information(self.widget, "Import slots", msg)
         # Sync alignment now depends on new q values; re-render history plot.
         self.redraw_time_lapse()
+        # Refresh the Kinetics panel's DS/US slot labels (which read _q_side)
+        # by re-emitting data_changed — apply_kinetics_state runs off this.
+        cfg.data_changed_emit(cfg.current_frame)
 
     def save_data_btn_clicked(self, filename=None):
         if filename is None or filename is False:
