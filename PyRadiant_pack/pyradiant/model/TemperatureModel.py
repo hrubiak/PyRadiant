@@ -84,8 +84,16 @@ class TemperatureModel(QtCore.QObject):
             self.disconnect_models()
             self.configuration_ind = ind
             self.connect_models()
+            # Recompute spectra + fit on the newly-selected config against its
+            # current state, so a switch never leaves stale results visible.
+            # Without this, switching from a kinetics config back to a non-
+            # kinetics config required a PyRadiant restart before fits ran.
+            cfg = self.current_configuration
+            if cfg.data_img_file is not None:
+                from .temperature_pipeline import pipeline, Stage
+                pipeline.run(cfg, Stage.DATA_SPEC)
             self.configuration_selected.emit(ind)
-          
+
             self.data_changed_signal.emit()
             self.ds_calculations_changed.emit()
             self.us_calculations_changed.emit()

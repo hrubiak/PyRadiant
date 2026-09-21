@@ -2964,21 +2964,33 @@ class TemperatureController(QtCore.QObject):
                 self.epics_datalog_file_changed.emit(value)
 
     def temperature_file_folder_changed(self, *args, **kwargs):
-        
-        if self.widget.connect_to_epics_cb.isChecked() and self.widget.autoprocess_cb.isChecked():
+        # Fires on the EPICS CA thread. Only the monitor_folder_cb owns this
+        # feature; publish/autoprocess are independent toggles. Marshal to the
+        # Qt main thread via the signal.
+        if self.widget.monitor_folder_cb.isChecked():
             self.temperature_folder_changed.emit()
 
     def temperature_folder_changed_emitted(self):
-        if self.epics_available:
-            self._exp_working_dir = caget(eps.epics_settings['T_folder'], as_string=True)
-            self._directory_watcher.path = self._exp_working_dir
-            # Route the folder change through the model's single funnel so
-            # the T-log switches over immediately — even before the first
-            # file in the new folder is auto-loaded.
-            self.model.current_configuration.set_data_folder(self._exp_working_dir)
-        if self.widget.monitor_folder_cb.isChecked():
-            folder_path = caget(eps.epics_settings['T_folder'], as_string=True) or ''
-            self.widget.monitor_folder_path_lbl.setText(folder_path)
+        if not self.widget.monitor_folder_cb.isChecked():
+            return
+        new_folder = caget(eps.epics_settings['T_folder'], as_string=True)
+        if not new_folder or not os.path.isdir(new_folder):
+            print(f'[monitor_folder] ignoring invalid PV folder path: {new_folder!r}')
+            self.widget.monitor_folder_indicator.set_error()
+            return
+        self.widget.monitor_folder_indicator.set_active()
+        self.widget.monitor_folder_path_lbl.setText(new_folder)
+        self._exp_working_dir = new_folder
+        try:
+            self._directory_watcher.path = new_folder
+        except OSError as e:
+            print(f'[monitor_folder] failed to set watcher path {new_folder!r}: {e}')
+            self.widget.monitor_folder_indicator.set_error()
+            return
+        # Route the folder change through the model's single funnel so
+        # the T-log switches over immediately — even before the first
+        # file in the new folder is auto-loaded.
+        self.model.current_configuration.set_data_folder(new_folder)
 
     def epics_datalog_file_changed_emitted(self, filename):
         
