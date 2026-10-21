@@ -341,6 +341,8 @@ class TemperatureController(QtCore.QObject):
         self.widget.temperature_function_plank_rb.clicked.connect(self.temperature_function_callback)
         self.widget.temperature_function_wien_rb.clicked.connect(self.temperature_function_callback)
         self.widget.t_function_type_section.error_limit_sb.valueChanged.connect(self.error_limit_changed)
+        self.widget.t_function_type_section.counts_filter_cb.toggled.connect(self.counts_filter_changed)
+        self.widget.t_function_type_section.counts_filter_threshold_sb.valueChanged.connect(self.counts_filter_threshold_changed)
 
         self.widget.dual_mode_rb.toggled.connect(self._measurement_mode_changed)
         self.widget.single_mode_rb.toggled.connect(self._measurement_mode_changed)
@@ -1384,6 +1386,20 @@ class TemperatureController(QtCore.QObject):
         # Time-lapse plot uses the same limit; force a redraw so it re-selects.
         self.redraw_time_lapse()
 
+    def counts_filter_changed(self, checked):
+        cfg = self.model.current_configuration
+        if cfg is None:
+            return
+        cfg.set_apply_counts_filter(checked)
+        self.redraw_time_lapse()
+
+    def counts_filter_threshold_changed(self, percent):
+        cfg = self.model.current_configuration
+        if cfg is None:
+            return
+        cfg.set_counts_filter_threshold(float(percent) / 100.0)
+        self.redraw_time_lapse()
+
     def filter_setting_callback(self):
         self.model.current_configuration.ds_filter_oscillation = \
             self.widget.ds_interference_filter_cb.isChecked()
@@ -1735,6 +1751,16 @@ class TemperatureController(QtCore.QObject):
         el_sb.blockSignals(True)
         el_sb.setValue(float(cfg.error_limit))
         el_sb.blockSignals(False)
+
+        cf_cb = self.widget.t_function_type_section.counts_filter_cb
+        cf_cb.blockSignals(True)
+        cf_cb.setChecked(bool(cfg.apply_counts_filter))
+        cf_cb.blockSignals(False)
+        cf_sb = self.widget.t_function_type_section.counts_filter_threshold_sb
+        cf_sb.blockSignals(True)
+        cf_sb.setValue(float(cfg.counts_filter_threshold) * 100.0)
+        cf_sb.setEnabled(bool(cfg.apply_counts_filter))
+        cf_sb.blockSignals(False)
 
         self.ds_calculations_changed()
         self.us_calculations_changed()

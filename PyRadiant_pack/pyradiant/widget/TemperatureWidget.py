@@ -1254,6 +1254,22 @@ class TemperatureFitSettings(QtWidgets.QGroupBox):
         self.error_limit_sb.setValue(200.0)
         self._layout.addWidget(self.error_limit_sb, 1, 1)
 
+        # Dual-side counts gate. ON suppresses a side's fit when its
+        # integrated counts fall below <threshold> of the brighter
+        # side's. Threshold editable via the % spinbox (disabled when the
+        # gate is off). Both persisted per-configuration.
+        self.counts_filter_cb = QtWidgets.QCheckBox('Dual-side counts gate')
+        self.counts_filter_cb.setChecked(True)
+        self._layout.addWidget(self.counts_filter_cb, 2, 0)
+        self.counts_filter_threshold_sb = QtWidgets.QDoubleSpinBox()
+        self.counts_filter_threshold_sb.setDecimals(1)
+        self.counts_filter_threshold_sb.setRange(0.0, 100.0)
+        self.counts_filter_threshold_sb.setSingleStep(0.5)
+        self.counts_filter_threshold_sb.setSuffix(' %')
+        self.counts_filter_threshold_sb.setValue(7.5)
+        self._layout.addWidget(self.counts_filter_threshold_sb, 2, 1)
+        self.counts_filter_cb.toggled.connect(self.counts_filter_threshold_sb.setEnabled)
+
         self.setLayout(self._layout)
         self.setMaximumWidth(300)
 

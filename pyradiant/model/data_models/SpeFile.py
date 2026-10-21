@@ -102,6 +102,7 @@ class SpeFile(DataModel):
         self._read_roi_from_header()
         self._read_num_frames_from_header()
         self._read_num_combined_frames_from_header()
+        self._compute_per_frame_timestamps(source="v2_header")
 
     def _read_parameter_from_dom(self):
         """High level function which calls all the read_"parameter" function
@@ -122,6 +123,7 @@ class SpeFile(DataModel):
         self._read_num_frames_from_header()
         self._read_num_combined_frames_from_dom()
         self._read_readout_control_from_dom()
+        self._compute_per_frame_timestamps(source="origin_computed")
 
     def _read_date_time_from_header(self):
         """Reads the collection time from the header into the date_time field"""
@@ -193,6 +195,62 @@ class SpeFile(DataModel):
         """Reads the time of collection and saves it date_time field"""
         date_time_str = self.dom.getElementsByTagName('Origin')[0].getAttribute('created')
         self.date_time = parser.parse(date_time_str)
+
+    def _compute_per_frame_timestamps(self, source):
+        """Populate self.per_frame_timestamps + self.per_frame_timestamp_source.
+
+        Timestamps are naive-local datetimes approximating when each frame's
+        exposure started. For external correlation (pressure, XRD) this is
+        the physics-relevant time, not the file-write time.
+
+        Resolution hierarchy (strongest → weakest):
+          1. v3 LightField inline per-frame TimeStamp metadata — NOT YET
+             IMPLEMENTED. Would require parsing <DataBlock stride> + reading
+             post-frame bytes from the binary section. Add when a file in
+             the wild actually carries it (ExposureStartedTimeStamp
+             relevance="True").
+          2. origin_computed — origin + k * exposure_time. Used for v3 files
+             whose Origin element is present (today's common path).
+          3. v2_header — same formula but origin comes from the v2 header
+             bytes. Backward-compat fallback only.
+
+        `source` names which fallback the caller landed on so downstream
+        logs can record the provenance alongside the timestamp.
+        """
+        n = int(getattr(self, 'num_frames', 1) or 1)
+        origin = getattr(self, 'date_time', None)
+        if origin is None:
+            self.per_frame_timestamps = None
+            self.per_frame_timestamp_source = "unknown"
+            return
+
+        # Normalise to naive-local wall-clock. v3 Origin carries a tz offset;
+        # strip it so every timestamp downstream is on the same clock the
+        # user looks at. v2 headers are already naive-local.
+        if getattr(origin, 'tzinfo', None) is not None:
+            try:
+                origin_local = origin.astimezone().replace(tzinfo=None)
+            except (ValueError, OSError):
+                origin_local = origin.replace(tzinfo=None)
+        else:
+            origin_local = origin
+
+        try:
+            period = float(getattr(self, 'exposure_time', 0.0) or 0.0)
+        except (TypeError, ValueError):
+            period = 0.0
+
+        # Per-frame interval approximation: readout overhead is unknown
+        # here, so we use exposure_time as the frame period. For sub-second
+        # exposures this undercounts cadence by the readout time (typically
+        # µs-to-ms); for correlation against pressure/XRD at ≤10 Hz the
+        # error is negligible. If a real inline timestamp becomes available
+        # (hierarchy step 1 above), it overrides this.
+        self.per_frame_timestamps = [
+            origin_local + datetime.timedelta(seconds=k * period)
+            for k in range(n)
+        ]
+        self.per_frame_timestamp_source = source
 
     def _read_calibration_from_dom(self):
         """Reads the x calibration of the image from the xml footer and saves 

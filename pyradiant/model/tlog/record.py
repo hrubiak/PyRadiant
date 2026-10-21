@@ -76,6 +76,19 @@ class TLogRecord:
     (fit failed, mode='single' hides US, error above the display limit).
     Serialization (to_tsv_row) collapses NaN to '0' to keep the on-disk
     schema identical to the legacy T_log.txt.
+
+    Timestamp fields are naive local wall-clock datetimes:
+      * `exposure_start_local` — when the frame's exposure started,
+        from `SpeFile.per_frame_timestamps[frame]`. Closest to physics
+        time; used as the correlation key when matching against pressure
+        or XRD logs. None when the data file didn't expose it.
+      * `exposure_start_source` — provenance of `exposure_start_local`
+        ("lightfield_metadata" | "origin_computed" | "v2_header").
+      * `fit_timestamp_local` — when PyRadiant computed the fit.
+      * `timestamp` — folder-order sort key used by TLogStore. For
+        placeholder records this is the file's filesystem time; for fit
+        records it is preserved across re-fits so revisiting a file
+        doesn't shuffle the Total-tab plot. Not persisted externally.
     """
 
     file: str = ""
@@ -92,6 +105,14 @@ class TLogRecord:
     scaling_US: float = float("nan")
     counts_DS: float = 0.0
     counts_US: float = 0.0
+    ds_fringe_frequency: float = float("nan")
+    us_fringe_frequency: float = float("nan")
+    ds_fringe_nd_um: float = float("nan")
+    us_fringe_nd_um: float = float("nan")
+    mode: str = "dual"
+    exposure_start_local: Optional[datetime] = None
+    exposure_start_source: str = "unknown"
+    fit_timestamp_local: datetime = field(default_factory=datetime.now)
     timestamp: datetime = field(default_factory=datetime.now)
 
     # -------- Serialization --------------------------------------------------
@@ -217,9 +238,33 @@ class TLogRecord:
         ds_spec = getattr(cfg, "ds_data_spectrum", None)
         ds_counts = float(getattr(ds_spec, "counts", 0.0) or 0.0)
 
+        # Fringe-fit outputs (interference oscillation freq + wavelength) —
+        # on the ZMQ trigger today but previously missing from the log.
+        def _f(attr: str) -> float:
+            try:
+                v = getattr(cfg, attr, None)
+                return float("nan") if v is None else float(v)
+            except (TypeError, ValueError):
+                return float("nan")
+
+        ds_fringe_freq = _f("ds_fringe_frequency")
+        us_fringe_freq = _f("us_fringe_frequency") if mode == "dual" else float("nan")
+        ds_fringe_nd = _f("ds_fringe_nd_um")
+        us_fringe_nd = _f("us_fringe_nd_um") if mode == "dual" else float("nan")
+
         detector = getattr(data_file, "detector", "unspecified") or "unspecified"
         exposure = float(getattr(data_file, "exposure_time", 0.0) or 0.0)
         gain = float(getattr(data_file, "gain", 1.0) or 1.0)
+
+        # Pull the per-frame acquisition timestamp if the SpeFile parser
+        # populated it. Falls back to None (JSON serializer emits null) —
+        # readers can then skip the record or compute from file-level data.
+        pft = getattr(data_file, "per_frame_timestamps", None)
+        if pft is not None and 0 <= int(frame) < len(pft):
+            exp_start = pft[int(frame)]
+        else:
+            exp_start = None
+        exp_source = getattr(data_file, "per_frame_timestamp_source", "unknown")
 
         return cls(
             file=os.path.basename(filename),
@@ -236,4 +281,11 @@ class TLogRecord:
             scaling_US=us_scaling,
             counts_DS=ds_counts,
             counts_US=us_counts,
+            ds_fringe_frequency=ds_fringe_freq,
+            us_fringe_frequency=us_fringe_freq,
+            ds_fringe_nd_um=ds_fringe_nd,
+            us_fringe_nd_um=us_fringe_nd,
+            mode=mode,
+            exposure_start_local=exp_start,
+            exposure_start_source=exp_source,
         )

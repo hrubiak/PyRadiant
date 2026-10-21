@@ -25,5 +25,10 @@
 from .record import TLogRecord
 from .store import TLogStore
 from .writer import TLogWriter, WriterState
+from .json_writer import TLogJsonWriter, T_HISTORY_BASENAME
 
-__all__ = ["TLogRecord", "TLogStore", "TLogWriter", "WriterState"]
+__all__ = [
+    "TLogRecord", "TLogStore",
+    "TLogWriter", "TLogJsonWriter",
+    "WriterState", "T_HISTORY_BASENAME",
+]

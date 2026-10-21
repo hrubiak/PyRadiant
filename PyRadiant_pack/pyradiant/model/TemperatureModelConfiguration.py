@@ -377,7 +377,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.error_limit = 200
         self.min_allowed_T = 0.0
         self.max_allowed_T = 1.0e6
-        self.apply_counts_filter = True  # 7.5%-of-max rule, applied uniformly
+        self.apply_counts_filter = True  # dual-side counts-ratio gate on/off
+        self.counts_filter_threshold = 0.075  # fraction-of-max; dim side suppressed below this
 
         # Backwards-compat scalar caches — populated as shims from the record
         # store. Kept so pre-refactor readers keep working during migration.
@@ -1282,6 +1283,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
         # Fit-error display gate (K). Persisted so a re-opened workspace
         # keeps the user's threshold instead of snapping back to 200 K.
         f.attrs['error_limit'] = float(self.error_limit)
+        f.attrs['apply_counts_filter'] = bool(self.apply_counts_filter)
+        f.attrs['counts_filter_threshold'] = float(self.counts_filter_threshold)
         if self.kinetics_info:
             kg = f.create_group('kinetics_info')
             for k, v in self.kinetics_info.items():
@@ -1649,6 +1652,15 @@ class TemperatureModelConfiguration(QtCore.QObject):
                 el = float(f.attrs['error_limit'])
                 if el >= 0:
                     self.error_limit = el
+            except (TypeError, ValueError):
+                pass
+        if 'apply_counts_filter' in f.attrs:
+            self.apply_counts_filter = bool(f.attrs['apply_counts_filter'])
+        if 'counts_filter_threshold' in f.attrs:
+            try:
+                thr = float(f.attrs['counts_filter_threshold'])
+                if 0.0 <= thr <= 1.0:
+                    self.counts_filter_threshold = thr
             except (TypeError, ValueError):
                 pass
         if 'kinetics_info' in f:
@@ -3056,7 +3068,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
         if self.apply_counts_filter and self.mode == 'dual':
             other = self.frame_record('us' if side == 'ds' else 'ds', f)
             max_c = max(rec.counts, other.counts)
-            if max_c > 0 and rec.counts <= 0.075 * max_c:
+            if max_c > 0 and rec.counts <= self.counts_filter_threshold * max_c:
                 return False
         return True
 
@@ -3078,6 +3090,36 @@ class TemperatureModelConfiguration(QtCore.QObject):
         # Bypass data_changed_emit (which writes to the datalog) — nothing
         # about the underlying data changed. Direct signal emit refreshes
         # every consumer of the display gate.
+        self.data_changed_signal.emit()
+
+    def set_apply_counts_filter(self, enabled):
+        """Toggle the dual-side counts-ratio gate. OFF lets a dim side
+        (US << DS or vice-versa) still display its fit as long as the
+        error_limit and T-range gates pass. Same no-refit refresh path
+        as set_error_limit."""
+        v = bool(enabled)
+        if v == self.apply_counts_filter:
+            return
+        self.apply_counts_filter = v
+        self.dirty = True
+        self.data_changed_signal.emit()
+
+    def set_counts_filter_threshold(self, fraction):
+        """Set the fraction-of-max threshold (0..1) below which the
+        dimmer side's fit is suppressed. Only takes effect when
+        apply_counts_filter is True. Clamped to [0, 1]."""
+        try:
+            v = float(fraction)
+        except (TypeError, ValueError):
+            return
+        if v < 0.0:
+            v = 0.0
+        elif v > 1.0:
+            v = 1.0
+        if v == self.counts_filter_threshold:
+            return
+        self.counts_filter_threshold = v
+        self.dirty = True
         self.data_changed_signal.emit()
 
     def frame_display_T(self, side, f):
