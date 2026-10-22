@@ -66,6 +66,12 @@ class TLogWriter:
     REOPEN_BACKOFF_START_SEC = 0.5
     REOPEN_BACKOFF_MAX_SEC = 4.0
 
+    # Any single write + flush taking longer than this hints at a slow /
+    # saturated disk and is logged (rate-limited). The TSV writer runs on
+    # a background thread so slowness doesn't freeze the UI, but a steady
+    # pile-up of slow writes still deserves attention.
+    SLOW_WRITE_SEC = 0.1
+
     def __init__(self, filename: str = T_LOG_BASENAME):
         self._filename = filename
 
@@ -286,10 +292,18 @@ class TLogWriter:
                 self.writes_failed += 1
                 return
 
+        t0 = time.monotonic()
         try:
             self._fh.write(record.to_tsv_row() + "\n")
             self._fh.flush()
+            dt = time.monotonic() - t0
             self.writes_ok += 1
+            if dt > self.SLOW_WRITE_SEC:
+                self._stderr_rate_limited(
+                    "slow_write",
+                    f"TLogWriter: slow write+flush {dt*1000:.0f}ms "
+                    f"(path={self._path!r}, writes_ok={self.writes_ok})",
+                )
             if self.state == WriterState.DEGRADED:
                 self._set_state(WriterState.OK)
         except OSError as exc:

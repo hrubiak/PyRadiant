@@ -216,6 +216,18 @@ class TLogJsonWriter:
     REOPEN_BACKOFF_START_SEC = 0.5
     REOPEN_BACKOFF_MAX_SEC = 4.0
 
+    # After a record arrives, wait this long for more records before writing.
+    # The queue-drain-nowait pass already coalesces records that arrived
+    # before we got to them; this extra wait catches a 32-strip burst where
+    # each strip's record arrives ~1 Qt tick apart. One rewrite per burst
+    # instead of 32 — critical because the whole history is serialised each
+    # time, so the cost is O(n_records) per flush.
+    BURST_COALESCE_SEC = 0.25
+    # Any flush taking longer than this gets logged (rate-limited). On a
+    # slow network drive the atomic tmp+fsync+rename can take seconds; we
+    # want visibility.
+    SLOW_FLUSH_SEC = 0.1
+
     def __init__(self, filename: str = T_HISTORY_BASENAME):
         self._filename = filename
         self._folder: Optional[str] = None
@@ -369,18 +381,25 @@ class TLogJsonWriter:
                 self._records[(item.file, int(item.frame))] = item
             dirty = True
 
-            # Coalesce bursts: drain anything else queued right now so one
-            # atomic rewrite captures the whole burst.
-            while True:
+            # Burst coalesce: wait briefly for more records (e.g. the next
+            # kinetics strip), draining them into the map, then do one flush.
+            # Caps at BURST_COALESCE_SEC total so a steady producer doesn't
+            # starve the writer. A None sentinel inside the window still
+            # breaks out so shutdown is responsive.
+            burst_deadline = time.monotonic() + self.BURST_COALESCE_SEC
+            while not self._stop.is_set():
+                remaining = burst_deadline - time.monotonic()
+                if remaining <= 0:
+                    break
                 try:
-                    extra = self._q.get_nowait()
+                    extra = self._q.get(timeout=min(remaining, 0.05))
                 except queue.Empty:
                     break
                 if extra is None:
                     self._stop.set()
                     break
                 if extra is _FLUSH_SENTINEL:
-                    continue  # handled by trailing flush below
+                    continue  # handled by the trailing flush below
                 with self._records_lock:
                     self._records[(extra.file, int(extra.frame))] = extra
 
@@ -414,9 +433,22 @@ class TLogJsonWriter:
             "fits":               [_record_to_dict(r) for r in records],
         }
 
+        t0 = time.monotonic()
         try:
             _atomic_write_json(self._path, payload)
+            dt = time.monotonic() - t0
             self.writes_ok += 1
+            if dt > self.SLOW_FLUSH_SEC:
+                try:
+                    size_kb = os.path.getsize(self._path) / 1024.0
+                except OSError:
+                    size_kb = -1.0
+                self._stderr_rate_limited(
+                    "slow_flush",
+                    f"TLogJsonWriter: slow flush {dt*1000:.0f}ms "
+                    f"({len(records)} records, {size_kb:.0f}kB, "
+                    f"writes_ok={self.writes_ok})",
+                )
             if self.state == WriterState.DEGRADED:
                 self._set_state(WriterState.OK)
             self._reopen_backoff = self.REOPEN_BACKOFF_START_SEC

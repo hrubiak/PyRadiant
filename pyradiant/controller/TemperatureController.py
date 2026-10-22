@@ -41,7 +41,87 @@ import json
 
 from .. import EPICS_INSTALLED
 if EPICS_INSTALLED:
-    from epics import caput, camonitor, camonitor_clear, caget, PV
+    import sys as _epics_sys
+    import time as _epics_time
+    from epics import (
+        caput as _raw_caput, camonitor, camonitor_clear,
+        caget as _raw_caget, PV,
+    )
+
+    # Timing threshold (seconds) above which an EPICS call is considered
+    # "slow" and logged. Captures both unresponsive PVs on this network
+    # (common when IOC subsets are missing from an isolated subnet) and
+    # genuine CA-client misbehaviour. Default caget timeout stays whatever
+    # the caller passed; we never change behavior, only observe it.
+    _EPICS_SLOW_SEC = 0.1
+    # Per-PV stderr rate limit so a single dead PV doesn't flood the log.
+    _EPICS_LOG_INTERVAL_SEC = 10.0
+    _epics_last_log: dict = {}
+
+    def _epics_log(key: str, msg: str) -> None:
+        now = _epics_time.monotonic()
+        prev = _epics_last_log.get(key, 0.0)
+        if now - prev < _EPICS_LOG_INTERVAL_SEC:
+            return
+        _epics_last_log[key] = now
+        print(msg, file=_epics_sys.stderr)
+
+    def caget(pv, *args, **kwargs):
+        """Timing-logged caget. Returns None on exception or timeout.
+
+        Logs to stderr (rate-limited per PV) when: the call raises, returns
+        None (which pyepics uses for timeout / disconnected), or exceeds
+        _EPICS_SLOW_SEC wall-clock. Behaviour is otherwise identical to the
+        bare epics.caget — callers see the same return value."""
+        t0 = _epics_time.monotonic()
+        try:
+            result = _raw_caget(pv, *args, **kwargs)
+        except Exception as exc:
+            dt = _epics_time.monotonic() - t0
+            _epics_log(
+                f"caget_exc:{pv}",
+                f"[EPICS] caget({pv!r}) raised after {dt*1000:.0f}ms: "
+                f"{type(exc).__name__}: {exc}",
+            )
+            return None
+        dt = _epics_time.monotonic() - t0
+        if result is None:
+            _epics_log(
+                f"caget_none:{pv}",
+                f"[EPICS] caget({pv!r}) returned None after {dt*1000:.0f}ms "
+                f"(timeout or disconnected)",
+            )
+        elif dt > _EPICS_SLOW_SEC:
+            _epics_log(
+                f"caget_slow:{pv}",
+                f"[EPICS] caget({pv!r}) slow: {dt*1000:.0f}ms",
+            )
+        return result
+
+    def caput(pv, value, *args, **kwargs):
+        """Timing-logged caput. Returns pyepics' return (int or None).
+
+        Logged on exception or slow completion. caput is non-blocking by
+        default in pyepics unless wait=True; a slow return here means the
+        CA client is itself stalled (connection search, flow control)."""
+        t0 = _epics_time.monotonic()
+        try:
+            result = _raw_caput(pv, value, *args, **kwargs)
+        except Exception as exc:
+            dt = _epics_time.monotonic() - t0
+            _epics_log(
+                f"caput_exc:{pv}",
+                f"[EPICS] caput({pv!r}) raised after {dt*1000:.0f}ms: "
+                f"{type(exc).__name__}: {exc}",
+            )
+            return None
+        dt = _epics_time.monotonic() - t0
+        if dt > _EPICS_SLOW_SEC:
+            _epics_log(
+                f"caput_slow:{pv}",
+                f"[EPICS] caput({pv!r}) slow: {dt*1000:.0f}ms",
+            )
+        return result
 else:
     caput = None
     camonitor = None
@@ -2961,8 +3041,11 @@ class TemperatureController(QtCore.QObject):
         
 
     def check_pv(self, pv_name):
-        # DEBUG: try/except removed so failures raise with full traceback.
-        value = caget(pv_name, timeout=0.2)  # Short timeout for quick response
+        # 0.2s is tight — on a cold connection pyepics' first-contact
+        # search can easily exceed it even for a healthy PV. The wrapper
+        # above logs anything slow or null, so this routine stays silent
+        # about transients but we'll see the pattern in stderr.
+        value = caget(pv_name, timeout=0.5)
         return value is not None
  
     def setup_epics_datalog_file_monitor(self):

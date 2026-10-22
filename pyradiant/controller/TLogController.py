@@ -21,6 +21,11 @@ from ..widget.DataHistoryWidget import dataHistoryWidget
 
 CONFIG_BACKUP_DIRNAME = "config_backup"
 CONFIG_BACKUP_DEBOUNCE_MS = 10_000
+# Log any backup write whose wall-clock exceeds this. Expected normal is
+# tens of ms for a small .trs on local disk; a kinetics config with
+# embedded cal stacks can take hundreds of ms. Anything above a second
+# on the main thread will be felt as a UI hiccup.
+CONFIG_BACKUP_SLOW_SEC = 0.25
 
 
 class TLogController(QtCore.QObject):
@@ -70,7 +75,13 @@ class TLogController(QtCore.QObject):
         self._cfg_used: dict[str, set[int]] = {}
         self._cfg_debounce: dict[tuple[str, int], QtCore.QTimer] = {}
         self._cfg_session_date: dict[tuple[str, int], str] = {}
-        self._cfg_backup_last_err: float = 0.0
+        # Backup write counters — reported in stderr summaries so a long
+        # beamline session can tell at a glance whether the mirror is
+        # healthy. Reset per controller lifetime (which is per app run).
+        self._cfg_backup_writes_ok: int = 0
+        self._cfg_backup_writes_failed: int = 0
+        self._cfg_backup_total_sec: float = 0.0
+        self._cfg_backup_max_sec: float = 0.0
 
         # Static plot titles
         self.widget.setWindowTitle('Temperature Log')
@@ -324,6 +335,7 @@ class TLogController(QtCore.QObject):
         prev_setting_filename = cfg.setting_filename
         prev_working_dir = cfg._setting_working_dir
         prev_dirty = cfg.dirty
+        t0 = time.monotonic()
         try:
             os.makedirs(subdir, exist_ok=True)
             if os.path.exists(tmp_path):
@@ -333,15 +345,34 @@ class TLogController(QtCore.QObject):
                     pass
             cfg.save_setting(tmp_path)
             os.replace(tmp_path, final_path)
-        except Exception as exc:
-            now = time.monotonic()
-            if now - self._cfg_backup_last_err > 60.0:
-                self._cfg_backup_last_err = now
+            dt = time.monotonic() - t0
+            self._cfg_backup_writes_ok += 1
+            self._cfg_backup_total_sec += dt
+            if dt > self._cfg_backup_max_sec:
+                self._cfg_backup_max_sec = dt
+            # Log slow writes every time (not rate-limited) — they are what
+            # the user is debugging. Fast writes stay silent to avoid spam.
+            if dt > CONFIG_BACKUP_SLOW_SEC:
+                try:
+                    size_kb = os.path.getsize(final_path) / 1024.0
+                except OSError:
+                    size_kb = -1.0
                 print(
-                    f"TLog: config backup failed for cfg{idx + 1} in "
-                    f"{subdir}: {exc}",
+                    f"[config_backup] SLOW write cfg{idx + 1} "
+                    f"({dt*1000:.0f}ms, {size_kb:.0f}kB) → {final_path}",
                     file=sys.stderr,
                 )
+        except Exception as exc:
+            dt = time.monotonic() - t0
+            self._cfg_backup_writes_failed += 1
+            # Log every failure in full — the user explicitly asked for
+            # these not to be rate-limited. Full traceback-free one-liner
+            # keeps stderr readable while still carrying the type + path.
+            print(
+                f"[config_backup] FAIL cfg{idx + 1} after {dt*1000:.0f}ms "
+                f"→ {final_path}: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
             try:
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)
@@ -355,6 +386,15 @@ class TLogController(QtCore.QObject):
     # -------- Shutdown ------------------------------------------------------
     def shutdown(self) -> None:
         self._flush_all_config_backups()
+        n_ok = self._cfg_backup_writes_ok
+        n_fail = self._cfg_backup_writes_failed
+        if n_ok or n_fail:
+            avg_ms = (self._cfg_backup_total_sec / n_ok * 1000.0) if n_ok else 0.0
+            print(
+                f"[config_backup] session summary: {n_ok} ok, {n_fail} failed, "
+                f"avg {avg_ms:.0f}ms, max {self._cfg_backup_max_sec*1000:.0f}ms",
+                file=sys.stderr,
+            )
         self.writer.close()
         self.json_writer.close()
 

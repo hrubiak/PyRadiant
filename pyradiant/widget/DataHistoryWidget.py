@@ -120,6 +120,17 @@ class historyPlotWidget(QtWidgets.QWidget):
         # Dashed vertical items delimiting file boundaries in per-frame mode.
         self._boundary_items: list = []
 
+        # Burst-coalescing redraw. In kinetics-interleaved every strip emits
+        # a tlog record → store.records_changed → set_records → _redraw.
+        # A 32-strip file would redraw 32 times inside the same user action;
+        # with the debouncer we draw once at the end of the burst instead.
+        # 50ms is below perceivable latency for the user but comfortably
+        # above a Qt event-loop tick, so it collapses a strip burst cleanly.
+        self._redraw_timer = QtCore.QTimer(self)
+        self._redraw_timer.setSingleShot(True)
+        self._redraw_timer.setInterval(50)
+        self._redraw_timer.timeout.connect(self._redraw)
+
         self._build_ui()
         self._wire_signals()
         self._load_cutoffs_from_qsettings()
@@ -370,7 +381,9 @@ class historyPlotWidget(QtWidgets.QWidget):
                 [self._nan_safe(getattr(r, 'T_US', float('nan'))) for r in self._records],
                 dtype=float,
             )
-        self._redraw()
+        # Debounced — see _redraw_timer in __init__. Burst of records from a
+        # kinetics file collapses into one repaint instead of 32.
+        self._redraw_timer.start()
 
     def set_cursor_to_file_frame(self, file: str, frame: int) -> None:
         """Programmatic cursor move. No emit.

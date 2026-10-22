@@ -19,6 +19,7 @@
 
 import sys
 import os
+import time
 
 from PyQt6 import QtWidgets, QtCore
 
@@ -57,6 +58,62 @@ class MainController(object):
                 self.tlog_controller
             ],
         )
+
+        self._install_ui_stall_detector()
+
+    # ---------------------------------------------------------------------
+    # UI stall detector
+    # ---------------------------------------------------------------------
+    # Fires a periodic QTimer and measures the actual wall-clock between
+    # fires. The timer can only tick when the Qt event loop is running, so
+    # if the main thread was blocked (slow disk write, blocking EPICS call,
+    # long garbage-collection pause, …) the gap between ticks grows
+    # noticeably past the configured interval. Any gap above the warn
+    # threshold goes to stderr; totals are summarised on shutdown.
+    #
+    # Keep this cheap: a single empty timer callback adds microseconds per
+    # tick and no allocations in the fast path.
+    _STALL_INTERVAL_MS = 500
+    _STALL_WARN_SEC = 0.75   # 500ms interval + 250ms slack
+    _STALL_LOG_INTERVAL_SEC = 2.0  # rate-limit stall prints to stderr
+
+    def _install_ui_stall_detector(self):
+        self._stall_last_tick = time.monotonic()
+        self._stall_max_gap = 0.0
+        self._stall_count = 0
+        self._stall_last_log = 0.0
+        self._stall_timer = QtCore.QTimer(self.main_widget)
+        self._stall_timer.setInterval(self._STALL_INTERVAL_MS)
+        self._stall_timer.timeout.connect(self._stall_tick)
+        self._stall_timer.start()
+
+    def _stall_tick(self):
+        now = time.monotonic()
+        gap = now - self._stall_last_tick
+        self._stall_last_tick = now
+        if gap > self._STALL_WARN_SEC:
+            self._stall_count += 1
+            if gap > self._stall_max_gap:
+                self._stall_max_gap = gap
+            # Rate-limit: a single long stall can trip several ticks as the
+            # event loop catches up — fold near-simultaneous reports into
+            # one line so stderr stays readable.
+            if now - self._stall_last_log >= self._STALL_LOG_INTERVAL_SEC:
+                self._stall_last_log = now
+                print(
+                    f"[ui_stall] main-thread blocked for {gap*1000:.0f}ms "
+                    f"(expected {self._STALL_INTERVAL_MS}ms, "
+                    f"total stalls this session={self._stall_count})",
+                    file=sys.stderr,
+                )
+
+    def _report_ui_stall_summary(self):
+        if self._stall_count:
+            print(
+                f"[ui_stall] session summary: {self._stall_count} stalls, "
+                f"longest {self._stall_max_gap*1000:.0f}ms",
+                file=sys.stderr,
+            )
 
     def show_window(self):
         self.main_widget.show()
@@ -149,6 +206,7 @@ class MainController(object):
         self.main_widget.close()
         self.data_history_widget.close()
         self.tlog_controller.shutdown()
+        self._report_ui_stall_summary()
         event.accept()
 
     def _prompt_save_dirty_configs(self, event):
