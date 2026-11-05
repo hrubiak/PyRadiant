@@ -897,6 +897,35 @@ class TemperatureController(QtCore.QObject):
 
                 self.update_time_lapse()
 
+            self._reapply_history_axis_pairing()
+
+    def _reapply_history_axis_pairing(self):
+        """Re-derive the DS/US readout pairing for the current history axis.
+
+        The per-side readout indices (cfg.current_frame_ds / _us) are only
+        meaningful for the file they were derived from: _load_raw_data resets
+        them to lockstep on every load precisely because a q_ds/q_us split
+        carried over from a different file leaves one side on an unrelated
+        frame — or, when the index is out of range, on a NaN blank.
+
+        So re-derive here instead of carrying indices over: in a synced axis
+        ('sync_frame' / 'time') reload the current coincident k, clamped into
+        the new file's k-range, which recomputes the split from the config's
+        current q values. In 'frame' axis there is nothing to do — the model
+        already left both sides on the same frame.
+        """
+        cfg = self.model.current_configuration
+        if cfg is None or cfg.data_img_file is None:
+            return
+        if not self._kinetics_sync_active(cfg):
+            return
+        rng = cfg.get_coincident_frame_range()
+        if rng is None:
+            return
+        k_min, k_max = rng
+        k = max(k_min, min(k_max, int(self._current_coincident_k)))
+        self._load_coincident_k(k)
+
     def load_data_file(self, filenames=None):
         if isinstance(filenames, str):
             filenames = [filenames]
@@ -1333,6 +1362,45 @@ class TemperatureController(QtCore.QObject):
             self.model.current_configuration._filename_iterator.update_file_list()
         
 
+    def _parse_cal_frame_range(self, side):
+        """Read a side's Start/End frame fields.
+
+        Returns (start, end), 1-based inclusive, or (None, None) for "average
+        all frames" — which is what a blank or unparseable field means. Swaps
+        reversed ends so typing 5 then 2 does the obvious thing."""
+        start_txt = getattr(self.widget, f'{side}_calibration_start_frame').text().strip()
+        end_txt = getattr(self.widget, f'{side}_calibration_end_frame').text().strip()
+        if not start_txt or not end_txt:
+            return None, None
+        try:
+            start, end = int(start_txt), int(end_txt)
+        except ValueError:
+            return None, None
+        if start > end:
+            start, end = end, start
+        return start, end
+
+    def _sync_cal_frame_fields(self, side):
+        """Show the frame range actually applied to this side's cal stack.
+
+        Driven from ds/us_calculations_changed, so a configuration switch, a
+        .trs load or a cal load all land the truth in the fields — and a range
+        clamped to a shorter stack becomes visible instead of silently
+        differing from what was typed. Blank means all frames."""
+        model = getattr(self.model.current_configuration, f'{side}_temperature_model')
+        applied = model.calibration_frames_applied
+        start_w = getattr(self.widget, f'{side}_calibration_start_frame')
+        end_w = getattr(self.widget, f'{side}_calibration_end_frame')
+        start_txt, end_txt = ('', '') if applied is None else \
+            (str(applied[0]), str(applied[1]))
+        for w, txt in ((start_w, start_txt), (end_w, end_txt)):
+            if w.text() == txt:
+                continue
+            # Programmatic sync: don't fire editingFinished back at ourselves.
+            w.blockSignals(True)
+            w.setText(txt)
+            w.blockSignals(False)
+
     def load_ds_calibration_file(self, filename=None):
         if filename is None or filename is False:
             filename = open_file_dialog(self.widget, caption="Load Downstream Calibration SPE",
@@ -1341,9 +1409,8 @@ class TemperatureController(QtCore.QObject):
 
         if filename != '':
             self._remember_dir('ds_cal', filename)
-            ds_start_frame = int(self.widget.ds_calibration_start_frame.text())
-            ds_end_frame = int(self.widget.ds_calibration_end_frame.text())
-            self.model.current_configuration.ds_temperature_model.calibration_frames = [ds_start_frame,ds_end_frame]
+            start, end = self._parse_cal_frame_range('ds')
+            self.model.current_configuration.set_ds_calibration_frames(start, end)
             self.model.current_configuration.load_ds_calibration_image(filename)
 
     def load_us_calibration_file(self, filename=None):
@@ -1354,11 +1421,8 @@ class TemperatureController(QtCore.QObject):
 
         if filename != '':
             self._remember_dir('us_cal', filename)
-
-            us_start_frame = int(self.widget.us_calibration_start_frame.text())
-            us_end_frame = int(self.widget.us_calibration_end_frame.text())
-            self.model.current_configuration.us_temperature_model.calibration_frames = [us_start_frame,us_end_frame]
-
+            start, end = self._parse_cal_frame_range('us')
+            self.model.current_configuration.set_us_calibration_frames(start, end)
             self.model.current_configuration.load_us_calibration_image(filename)
 
     def clear_ds_calibration_file(self):
@@ -1428,17 +1492,12 @@ class TemperatureController(QtCore.QObject):
             self.data_history_widget.set_mode(mode)
 
     def us_calibration_frame_range_callback(self, *args):
-        us_start_frame = int(self.widget.us_calibration_start_frame.text())
-        us_end_frame = int(self.widget.us_calibration_end_frame.text())
-        self.model.current_configuration.us_temperature_model.calibration_frames = [us_start_frame,us_end_frame]
-        self.model.current_configuration.us_set_calibration_data()
+        start, end = self._parse_cal_frame_range('us')
+        self.model.current_configuration.set_us_calibration_frames(start, end)
 
     def ds_calibration_frame_range_callback(self, *args):
-        ds_start_frame = int(self.widget.ds_calibration_start_frame.text())
-        ds_end_frame = int(self.widget.ds_calibration_end_frame.text())
-        self.model.current_configuration.ds_temperature_model.calibration_frames = [ds_start_frame,ds_end_frame]
-       
-        self.model.current_configuration.ds_set_calibration_data()
+        start, end = self._parse_cal_frame_range('ds')
+        self.model.current_configuration.set_ds_calibration_frames(start, end)
 
 
     def ds_temperature_txt_changed(self):
@@ -2022,6 +2081,8 @@ class TemperatureController(QtCore.QObject):
         else:
             self.widget.ds_calibration_filename_lbl.setText('Select File...')
 
+        self._sync_cal_frame_fields('ds')
+
         self.widget.ds_standard_filename_lbl.setText(str(os.path.basename(self.model.current_configuration.ds_standard_filename)))
         # Programmatic sync: block signals so the toggled→set_ds_calibration_modus
         # side-effect doesn't mark the config dirty just from refreshing the UI.
@@ -2108,6 +2169,8 @@ class TemperatureController(QtCore.QObject):
             self.widget.us_calibration_filename_lbl.setText(label)
         else:
             self.widget.us_calibration_filename_lbl.setText('Select File...')
+
+        self._sync_cal_frame_fields('us')
 
         self.widget.us_standard_filename_lbl.setText(str(os.path.basename(self.model.current_configuration.us_standard_filename)))
         self.widget.us_standard_rb.blockSignals(True)

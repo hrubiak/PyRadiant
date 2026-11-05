@@ -1369,8 +1369,21 @@ class CalibrationGB(QtWidgets.QGroupBox):
 
         self.start_frame_lbl = QtWidgets.QLabel('Start frame')
         self.end_frame_lbl = QtWidgets.QLabel('End frame')
-        self.start_frame = IntegerTextField('1')
-        self.end_frame = IntegerTextField('1')
+        # Frame selection within a multi-frame calibration stack. Blank means
+        # "average every frame" — the same thing a fresh config and a legacy
+        # .trs do — so the default is blank rather than a number.
+        self.start_frame = IntegerTextField('')
+        self.end_frame = IntegerTextField('')
+        _frame_tip = ('Frames of a multi-frame calibration stack to average.\n'
+                      '1-based and inclusive, matching the frame navigator.\n'
+                      'Leave blank to average all frames.')
+        for _w in (self.start_frame, self.end_frame,
+                   self.start_frame_lbl, self.end_frame_lbl):
+            _w.setToolTip(_frame_tip)
+        for _w in (self.start_frame, self.end_frame):
+            _w.setPlaceholderText('all')
+            # 1-based: reject 0 and negatives at the keyboard.
+            _w.setValidator(QtGui.QIntValidator(1, 1000000))
 
         self._layout.addWidget(self.load_file_btn, 0, 0, 1, 2)
         self._layout.addWidget(self.clear_file_btn, 0, 2)

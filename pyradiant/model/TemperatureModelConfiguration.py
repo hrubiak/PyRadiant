@@ -553,6 +553,16 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.current_frame = 0
             self._data_img = self.data_img_file.img
 
+        # Per-side readout indices belong to the file we just replaced — a
+        # DS/US split derived from the previous file's q_ds/q_us (sync-frame
+        # or lab-time axis) is meaningless for this one, and carrying it over
+        # leaves one side pinned to an unrelated frame (or, when the index is
+        # out of range, to a NaN blank via set_img_frame_numbers). Start in
+        # lockstep; the controller re-derives the synced pairing from the
+        # current axis mode after the load (process_multiframe).
+        self.current_frame_ds = self.current_frame
+        self.current_frame_us = self.current_frame
+
         # New file (or reload) → bg-matrix cache from the old file is stale.
         self._invalidate_bg_matrix()
 
@@ -1182,12 +1192,42 @@ class TemperatureModelConfiguration(QtCore.QObject):
                                                        self.us_calibration_img_file.x_calibration)
         pipeline.run_us(self, Stage.CALIB_SPEC)
 
+    def set_ds_calibration_frames(self, start, end):
+        """Select which frames of a multi-frame DS cal stack get averaged.
+
+        start/end are 1-based inclusive; pass (None, None) for all frames.
+        Out-of-range values are clamped when applied — read back the result
+        from ds_temperature_model.calibration_frames_applied."""
+        frames = [start, end]
+        if frames == self.ds_temperature_model.calibration_frames:
+            return
+        self.ds_temperature_model.calibration_frames = frames
+        # Only re-average when there is a stack to average; the range is
+        # still remembered for whenever a cal image does get loaded.
+        if self.ds_calibration_img_file is not None:
+            self.ds_set_calibration_data()
+        self.dirty = True
+        self.ds_calculations_changed_emit()
+
+    def set_us_calibration_frames(self, start, end):
+        """US counterpart of set_ds_calibration_frames."""
+        frames = [start, end]
+        if frames == self.us_temperature_model.calibration_frames:
+            return
+        self.us_temperature_model.calibration_frames = frames
+        if self.us_calibration_img_file is not None:
+            self.us_set_calibration_data()
+        self.dirty = True
+        self.us_calculations_changed_emit()
+
     def clear_ds_calibration_image(self):
         """Drop the DS intensity calibration and switch to an identity transfer
         function (response = 1). Corrected spectrum falls back to raw data."""
         self.ds_calibration_img_file = None
         self.ds_calibration_filename = None
         self.ds_temperature_model.reset_calibration_data()
+        # The frame range belonged to the stack we just dropped.
+        self.ds_temperature_model.calibration_frames = [None, None]
         self.ds_temperature_model._identity_calibration = True
         pipeline.run_ds(self, Stage.CORRECT)
         # Set dirty BEFORE emitting so the downstream button-refresh sees the new state.
@@ -1200,6 +1240,8 @@ class TemperatureModelConfiguration(QtCore.QObject):
         self.us_calibration_img_file = None
         self.us_calibration_filename = None
         self.us_temperature_model.reset_calibration_data()
+        # The frame range belonged to the stack we just dropped.
+        self.us_temperature_model.calibration_frames = [None, None]
         self.us_temperature_model._identity_calibration = True
         pipeline.run_us(self, Stage.CORRECT)
         self.dirty = True
@@ -1252,6 +1294,30 @@ class TemperatureModelConfiguration(QtCore.QObject):
         pipeline.run_us(self, Stage.CORRECT)
         self.dirty = True
         self.us_calculations_changed_emit()
+
+    @staticmethod
+    def _save_cal_frames(image_dataset, side_model):
+        """Persist a side's cal-stack frame selection onto its image dataset.
+
+        Written only when the user actually chose a range; absent attrs mean
+        "average all frames" on reload, which keeps every pre-existing .trs
+        reading exactly as before."""
+        start, end = side_model.calibration_frames
+        if start is None or end is None:
+            return
+        image_dataset.attrs['cal_frame_start'] = int(start)
+        image_dataset.attrs['cal_frame_end'] = int(end)
+
+    @staticmethod
+    def _load_cal_frames(image_dataset, side_model):
+        """Restore a side's cal-stack frame selection. Must run BEFORE
+        set_calibration_data, which is what applies it."""
+        attrs = image_dataset.attrs
+        if 'cal_frame_start' in attrs and 'cal_frame_end' in attrs:
+            side_model.calibration_frames = [int(attrs['cal_frame_start']),
+                                             int(attrs['cal_frame_end'])]
+        else:
+            side_model.calibration_frames = [None, None]
 
     def save_setting(self, filename):
         f = h5py.File(filename, 'w')
@@ -1359,6 +1425,12 @@ class TemperatureModelConfiguration(QtCore.QObject):
             ds_group['image'].attrs['filename'] = self.ds_calibration_img_file.filename
             ds_group['image'].attrs['x_calibration'] = self.ds_calibration_img_file.x_calibration
             ds_group['image'].attrs['subtract_bg'] = self.use_insitu_data_background
+            # Frame selection for a multi-frame cal stack (1-based inclusive).
+            # Only meaningful here, where the RAW stack is what we wrote —
+            # the else-branch below saves an already-averaged 2D image.
+            # Absent attrs on reload mean "average all frames", which is what
+            # every pre-existing .trs did anyway.
+            self._save_cal_frames(ds_group['image'], self.ds_temperature_model)
         else:
             if self.ds_temperature_model.calibration_img is not None:
                 ds_group['image'] = self.ds_temperature_model.calibration_img
@@ -1417,6 +1489,7 @@ class TemperatureModelConfiguration(QtCore.QObject):
             us_group['image'].attrs['filename'] = self.us_calibration_img_file.filename
             us_group['image'].attrs['x_calibration'] = self.us_calibration_img_file.x_calibration
             us_group['image'].attrs['subtract_bg'] = self.use_insitu_data_background
+            self._save_cal_frames(us_group['image'], self.us_temperature_model)
         else:
             if self.us_temperature_model.calibration_img is not None:
                 us_group['image'] = self.us_temperature_model.calibration_img
@@ -1696,9 +1769,12 @@ class TemperatureModelConfiguration(QtCore.QObject):
             self.ds_calibration_img_file.x_calibration = self.x_calibration
             self.ds_calibration_img_file.filename = self.ds_calibration_filename
 
+            # Must precede set_calibration_data — that call is what applies it.
+            self._load_cal_frames(ds_group['image'], self.ds_temperature_model)
             self.ds_temperature_model.set_calibration_data(ds_img, x_calibration)
         else:
             self.ds_temperature_model.reset_calibration_data()
+            self.ds_temperature_model.calibration_frames = [None, None]
             self.ds_calibration_filename = None
             self.ds_calibration_img_file = None
 
@@ -1761,10 +1837,13 @@ class TemperatureModelConfiguration(QtCore.QObject):
             us_img = us_group['image'][...]
 
             self.us_calibration_filename = us_group['image'].attrs['filename']
+            # Must precede set_calibration_data — that call is what applies it.
+            self._load_cal_frames(us_group['image'], self.us_temperature_model)
             self.us_temperature_model.set_calibration_data(us_img,
                                                            us_group['image'].attrs['x_calibration'][...])
         else:
             self.us_temperature_model.reset_calibration_data()
+            self.us_temperature_model.calibration_frames = [None, None]
             self.us_calibration_filename = None
 
         # US ROIs — saved independently of whether an intensity calibration
@@ -3005,12 +3084,19 @@ class TemperatureModelConfiguration(QtCore.QObject):
         finally:
             # Restore navigation to where the user was; force pipeline rerun
             # so live-model state is coherent with the current frame.
+            # Both indices must be in range for THIS file: set_img_frame_numbers
+            # turns an out-of-range index into None and feeds that side a NaN
+            # blank, which would silently kill its fit. Same for cur_frame —
+            # set_img_frame_number_to bails on an out-of-range value, which
+            # would leave current_frame at -1 and the models on the last
+            # loop frame.
             self.current_frame = -1
-            if cur_frame_ds is not None and cur_frame_us is not None \
+            _in_range = lambda f: f is not None and 0 <= int(f) < n
+            if _in_range(cur_frame_ds) and _in_range(cur_frame_us) \
                     and cur_frame_ds != cur_frame_us:
                 self.set_img_frame_numbers(cur_frame_ds, cur_frame_us)
             else:
-                self.set_img_frame_number_to(cur_frame)
+                self.set_img_frame_number_to(max(0, min(n - 1, int(cur_frame))))
             self.blockSignals(False)
             self._rebuilding_records = False
 
@@ -3240,7 +3326,18 @@ class SingleTemperatureModel(QtCore.QObject):
         self.scaling = np.nan
         self.fit_spectrum = Spectrum([], [])
 
-        self.calibration_frames=[None,None]
+        # Which frames of a multi-frame calibration stack to average.
+        # [start, end] is 1-BASED and INCLUSIVE, matching the main frame
+        # navigator's display. [None, None] (the default) means "average
+        # every frame". Persisted per side in the .trs; see save_setting /
+        # load_setting. Out-of-range values are clamped at apply time, never
+        # sliced blindly — an empty slice would make np.mean produce an
+        # all-NaN calibration image and silently kill that side's fit.
+        self.calibration_frames = [None, None]
+        # The range actually used by the last set_calibration_data call:
+        # (start, end) 1-based inclusive, or None for "all frames". The UI
+        # shows this rather than what was typed, so clamping is visible.
+        self.calibration_frames_applied = None
 
     @property
     def data_img(self):
@@ -3258,39 +3355,57 @@ class SingleTemperatureModel(QtCore.QObject):
     
 
 
+    def _resolve_calibration_frames(self, n_frames):
+        """Clamp self.calibration_frames to a stack of `n_frames`.
+
+        Returns (lo0, hi0) as a 0-based half-open slice. Also records the
+        1-based inclusive range actually used in calibration_frames_applied
+        (None = all frames) so the UI can show what happened rather than
+        what was typed.
+
+        [None, None] means "all frames". A requested range that misses the
+        stack entirely (e.g. frames 10-20 of a 5-frame cal, left over from a
+        longer stack) falls back to all frames: slicing it would hand
+        np.mean an empty axis and produce an all-NaN calibration image,
+        which silently kills that side's fit.
+        """
+        start, end = self.calibration_frames
+        if start is None or end is None or n_frames <= 0:
+            self.calibration_frames_applied = None
+            return 0, n_frames
+        lo, hi = int(start), int(end)
+        if lo > hi:
+            lo, hi = hi, lo
+        lo = max(1, lo)
+        hi = min(int(n_frames), hi)
+        if lo > hi:
+            self.calibration_frames_applied = None
+            return 0, n_frames
+        self.calibration_frames_applied = (lo, hi)
+        return lo - 1, hi
+
     def set_calibration_data(self, img_data_file, x_calibration):
         # Loading a real calibration image cancels any prior identity/clear state.
         self._identity_calibration = False
-        calibration_frames=self.calibration_frames
 
         if hasattr(img_data_file,'img'):
             img_data = img_data_file.img
         else:
             img_data =  img_data_file
 
-
         self._calibration_img_x_calibration = x_calibration
-        if type(img_data) == list:
-            if calibration_frames[0] is not None and calibration_frames[1] is not None:
-
-                img_data_selected = img_data[calibration_frames[0]:calibration_frames[1]+1]
-            else:
-                img_data_selected = img_data[:]
-            # Stack and average along the first dimension of the list
-            average_array = np.mean(img_data_selected, axis=0)
-            self._calibration_img = average_array
+        is_stack = isinstance(img_data, list) or \
+            (hasattr(img_data, 'shape') and len(img_data.shape) == 3)
+        if is_stack:
+            lo, hi = self._resolve_calibration_frames(len(img_data))
+            # Average the selected frames into the single 2D cal image the
+            # physics works on. `.img` keeps the raw stack (see the CAL IMAGE
+            # SHAPES note in TemperatureModelConfiguration's docstring).
+            self._calibration_img = np.mean(img_data[lo:hi], axis=0)
         else:
-            if len(img_data.shape) == 3:
-                if calibration_frames[0] is not None and calibration_frames[1] is not None:
-                    img_data_selected = img_data[calibration_frames[0]:calibration_frames[1]+1]
-                else:
-                    img_data_selected = img_data[:]
-                # Stack and average along the first dimension of the list
-                average_array = np.mean(img_data_selected, axis=0)
-                self._calibration_img = average_array
-
-            else:
-                self._calibration_img = img_data    
+            # Single-frame cal — there is nothing to select from.
+            self.calibration_frames_applied = None
+            self._calibration_img = img_data
 
         self._calibration_img_dimension = (self._calibration_img.shape[1], self._calibration_img.shape[0])
         # Computation is handled by TemperaturePipeline (run_ds / run_us from CALIB_SPEC).
@@ -3305,6 +3420,7 @@ class SingleTemperatureModel(QtCore.QObject):
         self._calibration_img = None
         self._calibration_img_x_calibration = None
         self._calibration_img_dimension = None
+        self.calibration_frames_applied = None
 
         self.calibration_spectrum = Spectrum([], [])
         self.corrected_spectrum = Spectrum([], [])
