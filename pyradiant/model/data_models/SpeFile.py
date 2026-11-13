@@ -410,6 +410,36 @@ class SpeFile(DataModel):
             pass
         return 'unspecified'
 
+    @staticmethod
+    def read_header_signature(filename):
+        """Reads the hardware facts used to pick a configuration, without
+        loading image data: (detector model, is_kinetics).
+
+        is_kinetics mirrors _read_readout_control_from_dom + the
+        `readout_mode == 'kinetics'` test in
+        TemperatureModelConfiguration._sync_kinetics_from_file.
+        Returns ('unspecified', False) for v2 files or unreadable headers."""
+        try:
+            with open(filename, 'rb') as fid:
+                fid.seek(678)
+                xml_offset = np.frombuffer(fid.read(8), dtype=np.int64)[0]
+                if xml_offset <= 0:
+                    return 'unspecified', False
+                fid.seek(int(xml_offset))
+                dom = parseString(fid.read())
+            cameras = dom.getElementsByTagName('Camera')
+            detector = cameras[0].getAttribute('model') if cameras else 'unspecified'
+            is_kinetics = False
+            readout_controls = dom.getElementsByTagName('ReadoutControl')
+            if readout_controls:
+                mode_nodes = readout_controls[0].getElementsByTagName('Mode')
+                if mode_nodes and mode_nodes[0].firstChild:
+                    mode = mode_nodes[0].firstChild.nodeValue.strip()
+                    is_kinetics = mode.lower() == 'kinetics'
+            return (detector or 'unspecified'), is_kinetics
+        except Exception:
+            return 'unspecified', False
+
     def _read_grating_from_dom(self):
         """Reads the type of grating from the dom Model"""
         try:

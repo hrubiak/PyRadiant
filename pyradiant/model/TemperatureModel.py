@@ -141,25 +141,64 @@ class TemperatureModel(QtCore.QObject):
         self.connect_models()
         self.configuration_removed.emit(self.configuration_ind)
 
-    def find_configuration_for_detector(self, detector):
-        """Returns the index of a configuration whose calibration files match the given
-        detector model name. Prefers the current configuration to avoid unnecessary switching.
-        Returns None if no match is found."""
-        if not detector or detector == 'unspecified':
-            return None
-        if self._config_matches_detector(self.configurations[self.configuration_ind], detector):
-            return self.configuration_ind
-        for ind, config in enumerate(self.configurations):
-            if ind == self.configuration_ind:
-                continue
-            if self._config_matches_detector(config, detector):
-                return ind
-        return None
+    def resolve_configuration_for_file(self, detector, is_kinetics):
+        """Decide which configuration a newly-opened data file should load into.
 
-    def _config_matches_detector(self, config, detector):
-        """Returns True if the config has a data file loaded from the given detector."""
-        if config.data_img_file is not None:
-            cal_detector = getattr(config.data_img_file, 'detector', 'unspecified')
-            if cal_detector != 'unspecified' and cal_detector.lower() == detector.lower():
-                return True
-        return False
+        Only hardware facts from the file header are used — camera model and
+        normal vs. kinetics readout — never calibration / ROI / fit settings,
+        because those are exactly what users vary between configurations.
+        A config's hardware is taken from the data file it currently holds.
+
+        Rules (first that applies wins):
+          * unknown detector (v2 SPE)           -> stay, silently
+          * current config has no data yet      -> stay (just added / mid-restore:
+                                                   it is the user's explicit target)
+          * then, first with an exact match (camera + readout), then camera-only:
+              - current config matches          -> stay
+              - exactly one other matches       -> switch to it
+              - two or more others match        -> stay + note (never guess)
+          * nothing matches                     -> stay + note
+
+        Returns (ind, note): ind is the config index to load into (may be the
+        current one); note is None or a short user-facing message.
+        """
+        cur = self.configuration_ind
+        if not detector or detector == 'unspecified':
+            return cur, None
+        if self.configurations[cur].data_img_file is None:
+            return cur, None
+
+        want_det = detector.lower()
+        want_kin = bool(is_kinetics)
+
+        def hardware(config):
+            f = config.data_img_file
+            if f is None:
+                return None
+            det = str(getattr(f, 'detector', 'unspecified') or 'unspecified').lower()
+            if det == 'unspecified':
+                return None
+            kin = str(getattr(f, 'readout_mode', '') or '').lower() == 'kinetics'
+            return det, kin
+
+        def exact(config):
+            return hardware(config) == (want_det, want_kin)
+
+        def camera_only(config):
+            hw = hardware(config)
+            return hw is not None and hw[0] == want_det
+
+        mode_lbl = 'kinetics' if want_kin else 'normal'
+        for fits in (exact, camera_only):
+            if fits(self.configurations[cur]):
+                return cur, None
+            others = [i for i, c in enumerate(self.configurations)
+                      if i != cur and fits(c)]
+            if len(others) == 1:
+                return others[0], None
+            if len(others) > 1:
+                nums = ', '.join(str(i + 1) for i in others)
+                return cur, (f"Configurations {nums} all match {detector} ({mode_lbl}); "
+                             f"stayed on {cur + 1}. Pick one above.")
+        return cur, (f"No configuration holds {detector} data yet; "
+                     f"loaded into {cur + 1}.")

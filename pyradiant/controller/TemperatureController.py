@@ -958,14 +958,23 @@ class TemperatureController(QtCore.QObject):
                     #print('file not found: ' + str(filename))
 
     def _auto_switch_configuration_by_detector(self, filename):
-        """Switch to the configuration whose calibration files match the detector of the given file."""
+        """Before loading `filename`, move to the configuration set up for its
+        camera + readout mode (rules in TemperatureModel.resolve_configuration_for_file).
+        Gated by the 'Auto-switch configuration' checkbox under the config buttons;
+        when the choice is unclear we stay put and show a note there instead."""
+        config_widget = self.widget.config_widget
+        config_widget.set_auto_switch_note('')
+        if not config_widget.auto_switch_cb.isChecked():
+            return
         _, ext = os.path.splitext(filename)
         if ext.lower() != '.spe':
             return
-        detector = SpeFile.read_detector(filename)
-        ind = self.model.find_configuration_for_detector(detector)
-        if ind is not None and ind != self.model.configuration_ind:
+        detector, is_kinetics = SpeFile.read_header_signature(filename)
+        ind, note = self.model.resolve_configuration_for_file(detector, is_kinetics)
+        if ind != self.model.configuration_ind:
             self.model.select_configuration(ind)
+        if note:
+            config_widget.set_auto_switch_note(note)
 
     def load_data_file_ad(self, filename=None):
         if isinstance(filename, str):
@@ -2919,6 +2928,8 @@ class TemperatureController(QtCore.QObject):
 
         settings.set("temperature autoprocessing",
                           self.widget.autoprocess_cb.isChecked())
+        settings.set("temperature auto_switch_configuration",
+                          self.widget.config_widget.auto_switch_cb.isChecked())
 
         settings.set("temperature epics connected",
                           self.widget.connect_to_epics_cb.isChecked())
@@ -2994,6 +3005,11 @@ class TemperatureController(QtCore.QObject):
                     }
             except (ValueError, TypeError):
                 pass
+
+        # Restore auto-switch before the config restore below (which routes
+        # through load_data_file). Missing key -> on (pre-checkbox behavior).
+        auto_switch = str(settings.get("temperature auto_switch_configuration", True)).lower() == 'true'
+        self.widget.config_widget.auto_switch_cb.setChecked(auto_switch)
 
         # Load
         conf_list = json.loads(settings.get("temperature configurations", "[]"))

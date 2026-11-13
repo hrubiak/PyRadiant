@@ -65,6 +65,21 @@ class ConfigurationWidget(QtWidgets.QWidget):
         remove_model_button_icon.addFile(os.path.join(icons_path,'delete_24dp_E1E5E9_FILL0_wght400_GRAD0_opsz24.svg'))
         self.remove_configuration_btn.setIcon(remove_model_button_icon)
 
+        # Auto-switch: when a data file is opened, the controller may move to
+        # the configuration set up for that camera / readout mode. The note
+        # label explains why it did NOT switch when the choice was unclear.
+        self.auto_switch_cb = QtWidgets.QCheckBox("Auto-switch configuration")
+        self.auto_switch_cb.setChecked(True)
+        self.auto_switch_note_lbl = QtWidgets.QLabel('')
+        self.auto_switch_note_lbl.setWordWrap(True)
+        self.auto_switch_note_lbl.setVisible(False)
+        # A manual pick or turning the feature off makes any note stale.
+        self.configuration_selected.connect(lambda _ind: self.set_auto_switch_note(''))
+        self.auto_switch_cb.toggled.connect(lambda _on: self.set_auto_switch_note(''))
+
+    def set_auto_switch_note(self, text):
+        self.auto_switch_note_lbl.setText(text or '')
+        self.auto_switch_note_lbl.setVisible(bool(text))
 
     def create_layout(self):
         self.main_layout = QtWidgets.QHBoxLayout()
@@ -74,8 +89,15 @@ class ConfigurationWidget(QtWidgets.QWidget):
         self.main_layout.addWidget(self.configurations_btn_widget)
         self.main_layout.addSpacerItem(HorizontalSpacerItem())
 
-     
-        self.setLayout(self.main_layout)
+        # Second line under the config buttons: auto-switch toggle + note.
+        self._auto_switch_layout = QtWidgets.QVBoxLayout()
+        self._auto_switch_layout.addWidget(self.auto_switch_cb)
+        self._auto_switch_layout.addWidget(self.auto_switch_note_lbl)
+
+        self._outer_layout = QtWidgets.QVBoxLayout()
+        self._outer_layout.addLayout(self.main_layout)
+        self._outer_layout.addLayout(self._auto_switch_layout)
+        self.setLayout(self._outer_layout)
 
         self.configurations_btn_layout = QtWidgets.QHBoxLayout(
             self.configurations_btn_widget
@@ -86,6 +108,11 @@ class ConfigurationWidget(QtWidgets.QWidget):
         self.main_layout.setContentsMargins(6, 0, 6, 0)
         self.configurations_btn_layout.setSpacing(3)
         self.configurations_btn_layout.setContentsMargins(0, 0, 0, 0)
+        self._outer_layout.setSpacing(2)
+        self._outer_layout.setContentsMargins(0, 0, 0, 0)
+        self._auto_switch_layout.setSpacing(2)
+        self._auto_switch_layout.setContentsMargins(6, 0, 6, 0)
+        self.auto_switch_note_lbl.setStyleSheet("color: #F0A500;")
 
         btns = [
             self.add_configuration_btn,
@@ -140,3 +167,9 @@ class ConfigurationWidget(QtWidgets.QWidget):
     def add_tooltips(self):
         self.add_configuration_btn.setToolTip("Add configuration")
         self.remove_configuration_btn.setToolTip("Remove configuration")
+        self.auto_switch_cb.setToolTip(
+            "When a data file is opened, switch to the configuration already set up\n"
+            "for that camera and readout mode (normal / kinetics).\n"
+            "Never switches away from an empty configuration, and never picks\n"
+            "between two configurations that both match."
+        )

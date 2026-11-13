@@ -24,6 +24,7 @@ Trigger message format (PyRadiant → epicsLogger)::
     }
 """
 
+import json
 from datetime import datetime
 
 from PyQt6 import QtCore
@@ -81,8 +82,18 @@ class ZmqHealthServerThread(QtCore.QThread):
         sock.bind(f"tcp://*:{self.health_port}")
         while not self._stop_flag:
             try:
-                msg = sock.recv_json()
-                msg_type = msg.get("type")
+                raw = sock.recv()
+                # Any ZMQ peer can send a non-JSON or empty frame (a client
+                # sending a plain-text ping, a misconfigured program on this
+                # port); recv_json() raised on those and killed this thread.
+                # REP must reply to every request before it can recv again,
+                # so malformed input falls through to the "unknown type"
+                # error reply below. See ZMQ_MALFORMED_MESSAGE_HARDENING.md.
+                try:
+                    msg = json.loads(raw)
+                except ValueError:
+                    msg = None
+                msg_type = msg.get("type") if isinstance(msg, dict) else None
                 if msg_type == "ping":
                     sock.send_json({
                         "type":   "pong",
