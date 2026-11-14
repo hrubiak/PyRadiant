@@ -28,6 +28,7 @@ import numpy as np
 
 from .CustomWidgets import ElidedLabel
 from .SpectrumLabelWindow import SpectrumLabelWindow
+from .SpectraHeatmap import SpectraHeatmap
 
 from .. import resources_path, icons_path
 
@@ -103,6 +104,8 @@ class historyPlotWidget(QtWidgets.QWidget):
         super().__init__()
         self._scale_label = scale_label
         self._tab_key = tab_key  # key under which cutoffs persist
+        # Optional spectra heatmap under the T plot (batch tabs).
+        self._heatmap: SpectraHeatmap | None = None
 
         # Both groupings are kept in parallel. Per-file is 1 row/file;
         # per-frame is 1 row per (file, frame). Toggle picks which goes to
@@ -127,6 +130,8 @@ class historyPlotWidget(QtWidgets.QWidget):
         self._last_view_mode: tuple | None = None
         # Set by request_view_reset(); consumed by the next _redraw.
         self._view_reset_pending = False
+        # (file, frame) asked for before the first redraw; applied by _redraw.
+        self._pending_cursor: tuple | None = None
         # Dashed vertical items delimiting file boundaries in per-frame mode.
         self._boundary_items: list = []
 
@@ -223,6 +228,7 @@ class historyPlotWidget(QtWidgets.QWidget):
         self._le_ymax.setFixedWidth(80)
         cutoff_l.addWidget(self._le_ymax)
         cutoff_l.addStretch()
+        self._cutoff_l = cutoff_l
         root.addWidget(cutoff)
 
         # ── Plot (same visual as before: top+right axes, header labels) ──
@@ -329,6 +335,56 @@ class historyPlotWidget(QtWidgets.QWidget):
         self._btn_prev.clicked.connect(self._on_prev_clicked)
         self._btn_next.clicked.connect(self._on_next_clicked)
 
+    def enable_heatmap(self) -> SpectraHeatmap:
+        """Add a spectra heatmap under the T plot, sharing its x axis.
+        Its controls go on the Gaps/Cutoff row."""
+        if self._heatmap is not None:
+            return self._heatmap
+        hm = SpectraHeatmap()
+        hm.set_mode(self._mode)
+        self._heatmap = hm
+        # Same left-axis width on both plots so their columns line up.
+        for plot in (self._time_lapse_plot, hm.plot):
+            plot.getAxis('left').setWidth(60)
+        hm.plot.setXLink(self._time_lapse_plot)
+        self._cutoff_l.insertSpacing(self._cutoff_l.count() - 1, 12)
+        self._cutoff_l.insertWidget(self._cutoff_l.count() - 1, hm.controls)
+        self._plot_container.scene().sigMouseMoved.connect(hm.on_mouse_moved)
+        hm.column_clicked.connect(self._jump_cursor_to_x)
+        hm.settings_changed.connect(self._redraw)
+        return hm
+
+    def _show_heatmap_plot(self, show: bool) -> None:
+        """Add/remove the heatmap row; a hidden item would still take space."""
+        hm = self._heatmap
+        layout = self._pg_time_lapse_layout
+        present = hm.plot in layout.items
+        if show and not present:
+            layout.addItem(hm.plot, 2, 0, 1, 3)
+            layout.layout.setRowStretchFactor(1, 3)
+            layout.layout.setRowStretchFactor(2, 2)
+        elif not show and present:
+            layout.removeItem(hm.plot)
+
+    def _update_heatmap(self, n, use_time, compress, shown, compressed_idx) -> None:
+        hm = self._heatmap
+        if hm is None:
+            return
+        # Time mode has uneven column spacing — the heatmap is index-only.
+        visible = hm.is_shown() and not use_time and n > 0
+        self._show_heatmap_plot(visible)
+        if not visible:
+            hm.set_columns([], [])
+            return
+        if compress:
+            rows = np.where(shown)[0]
+            xs = compressed_idx[rows]
+        else:
+            rows = np.arange(n)
+            xs = rows
+        hm.set_columns([self._records[i] for i in rows], xs)
+        hm.set_cursor_x(self._cursor_line.getXPos() if self._cursor_row >= 0 else None)
+
     def add_control_widget(self, widget: QtWidgets.QWidget) -> None:
         """Append a widget at the right end of the control bar."""
         self._ctrl_l.addWidget(widget)
@@ -348,6 +404,8 @@ class historyPlotWidget(QtWidgets.QWidget):
     def set_mode(self, mode: str) -> None:
         """'dual' | 'single'. In single mode the US series stays blank."""
         self._mode = mode
+        if self._heatmap is not None:
+            self._heatmap.set_mode(mode)
         if mode == 'single':
             self._time_lapse_us_temperature_txt.setText('', size='16pt')
         self._redraw()
@@ -422,10 +480,15 @@ class historyPlotWidget(QtWidgets.QWidget):
         """Programmatic cursor move. No emit.
 
         Prefers an exact (file, frame) match; falls back to any record with
-        the matching file; otherwise does nothing.
+        the matching file; otherwise does nothing. While a debounced redraw
+        is pending (new records pushed, snap positions not rebuilt yet) the
+        request is kept and applied once the plot has drawn.
         """
-        if not self._records or len(self._snap_rows) == 0:
+        if (not self._records or len(self._snap_rows) == 0
+                or self._redraw_timer.isActive()):
+            self._pending_cursor = (file, frame)
             return
+        self._pending_cursor = None
         exact = -1
         file_only = -1
         for i, r in enumerate(self._records):
@@ -544,6 +607,7 @@ class historyPlotWidget(QtWidgets.QWidget):
             any_finite=shown, valid_ts=valid_ts,
             compressed_idx=compressed_idx,
         )
+        self._update_heatmap(n, use_time, compress, shown, compressed_idx)
 
         # Reset the view whenever a whole log is (re)loaded, the x-coordinate
         # system changes (index↔time, keep↔compress, grouping) or we go
@@ -602,6 +666,8 @@ class historyPlotWidget(QtWidgets.QWidget):
         self._update_nav_buttons()
         self._update_cursor_label()
         self._reposition_cursor_text()
+        if self._pending_cursor is not None:
+            self.set_cursor_to_file_frame(*self._pending_cursor)
 
     # -------- File-boundary verticals ---------------------------------------
     def _clear_file_boundaries(self) -> None:
@@ -663,9 +729,15 @@ class historyPlotWidget(QtWidgets.QWidget):
         finally:
             self._cursor_line.blockSignals(False)
         self._update_nav_buttons()
+        self._sync_heatmap_cursor()
         rec = self._records[self._cursor_row] if 0 <= self._cursor_row < len(self._records) else None
         if rec is not None:
             self.cursor_record_changed.emit(rec)
+
+    def _sync_heatmap_cursor(self) -> None:
+        if self._heatmap is not None:
+            self._heatmap.set_cursor_x(
+                self._cursor_line.getXPos() if self._cursor_row >= 0 else None)
 
     def _jump_cursor_to_x(self, x: float) -> None:
         if len(self._snap_xs) == 0:
@@ -713,6 +785,8 @@ class historyPlotWidget(QtWidgets.QWidget):
         self._btn_next.setEnabled(idx < n - 1)
 
     def _update_cursor_label(self):
+        # Called on every cursor move, programmatic or not.
+        self._sync_heatmap_cursor()
         row = self._cursor_row
         if not (0 <= row < len(self._records)):
             self._cursor_text.setHtml('')
@@ -791,8 +865,90 @@ class historyPlotWidget(QtWidgets.QWidget):
         return f'{fv:.0f}'
 
 
+class BatchTab(QtWidgets.QWidget):
+    """One batch-reprocessing result: a status row (settings, progress,
+    cancel) above the same T plot the Live tab uses."""
+
+    def __init__(self, mode: str = 'dual', parent=None):
+        super().__init__(parent)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        header = QtWidgets.QWidget()
+        header_l = QtWidgets.QHBoxLayout(header)
+        header_l.setContentsMargins(6, 4, 6, 0)
+        header_l.setSpacing(6)
+        self.info_lbl = ElidedLabel('', elide_mode=QtCore.Qt.TextElideMode.ElideLeft)
+        self.progress_bar = QtWidgets.QProgressBar()
+        self.progress_bar.setMaximumWidth(220)
+        self.progress_bar.setFormat('%v / %m files')
+        self.cancel_btn = QtWidgets.QPushButton('Cancel')
+        header_l.addWidget(self.info_lbl, 1)
+        header_l.addWidget(self.progress_bar)
+        header_l.addWidget(self.cancel_btn)
+        layout.addWidget(header)
+
+        # Shares cutoffs with other batch tabs, not with Live.
+        self.plot = historyPlotWidget(scale_label="T (K)", tab_key="batch")
+        self.plot.set_mode(mode)
+        layout.addWidget(self.plot, 1)
+
+    def set_info(self, text: str) -> None:
+        self.info_lbl.setText(text)
+
+    def set_progress(self, done: int, total: int) -> None:
+        self.progress_bar.setMaximum(max(total, 1))
+        self.progress_bar.setValue(done)
+
+    def set_running(self, running: bool) -> None:
+        self.progress_bar.setVisible(running)
+        self.cancel_btn.setVisible(running)
+
+
+class NewBatchDialog(QtWidgets.QDialog):
+    """Pick the configuration whose settings a batch freezes, and a name."""
+
+    def __init__(self, config_names: list, current_index: int, folder: str,
+                 n_files: int, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('New batch')
+        form = QtWidgets.QFormLayout(self)
+        self.config_cb = QtWidgets.QComboBox()
+        self.config_cb.addItems(config_names)
+        self.config_cb.setCurrentIndex(current_index)
+        self.name_le = QtWidgets.QLineEdit()
+        folder_lbl = ElidedLabel(folder, elide_mode=QtCore.Qt.TextElideMode.ElideLeft)
+        folder_lbl.setMinimumWidth(320)
+        form.addRow('Settings from:', self.config_cb)
+        form.addRow('Name:', self.name_le)
+        form.addRow('Folder:', folder_lbl)
+        form.addRow('Files:', QtWidgets.QLabel(f'{n_files} data files, every frame'))
+        note = QtWidgets.QLabel(
+            'The settings are frozen when the batch starts; later edits to the '
+            'configuration don\'t affect it. Results are kept in memory only.')
+        note.setWordWrap(True)
+        note.setStyleSheet('color: #999999;')
+        form.addRow(note)
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QtWidgets.QDialogButtonBox.StandardButton.Ok).setText('Run')
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def config_index(self) -> int:
+        return self.config_cb.currentIndex()
+
+    def name(self) -> str:
+        return self.name_le.text().strip()
+
+
 class dataHistoryWidget(QtWidgets.QWidget):
     file_dragged_in = QtCore.pyqtSignal(list)
+    # User closed a batch tab (the BatchTab instance).
+    batch_tab_close_requested = QtCore.pyqtSignal(object)
 
     def __init__(self, *args, **kwargs):
         super().__init__()
@@ -815,7 +971,22 @@ class dataHistoryWidget(QtWidgets.QWidget):
         self.temperatures_plot_widget = historyPlotWidget(scale_label="T (K)", tab_key="total")
         self.temperatures_plot_widget.add_control_widget(self.label_window_btn)
         self.temperatures_plot_widget.add_control_widget(self.clear_data_log_file_btn)
-        self._layout.addWidget(self.temperatures_plot_widget)
+
+        # Tabs: "Live" is the session's T log; each batch adds a closable
+        # tab with the same plot, computed from frozen settings.
+        self.tabs = QtWidgets.QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.tabs.setTabsClosable(True)
+        self.tabs.addTab(self.temperatures_plot_widget, 'Live')
+        self.tabs.tabBar().setTabButton(
+            0, QtWidgets.QTabBar.ButtonPosition.RightSide, None)
+        self.tabs.tabCloseRequested.connect(self._on_tab_close_requested)
+        self.new_batch_btn = QtWidgets.QPushButton('New batch…')
+        self.new_batch_btn.setToolTip(
+            'Re-run every spectrum in the folder with one configuration\'s '
+            'settings, in a new tab')
+        self.tabs.setCornerWidget(self.new_batch_btn, QtCore.Qt.Corner.TopRightCorner)
+        self._layout.addWidget(self.tabs)
 
         # ── Status strip: which log file, record count, writer state ──
         self.status_widget = QtWidgets.QWidget()
@@ -841,7 +1012,7 @@ class dataHistoryWidget(QtWidgets.QWidget):
         self.label_window = SpectrumLabelWindow(self)
         self.label_window.install_shortcuts(self)
         self.label_window.step_requested.connect(
-            self.temperatures_plot_widget._step_cursor)
+            lambda d: self.current_plot_widget()._step_cursor(d))
         self.label_window_btn.clicked.connect(self.label_window.show_window)
 
         # ←/→ step through records (and load each one in the main window),
@@ -851,10 +1022,34 @@ class dataHistoryWidget(QtWidgets.QWidget):
             sc = QShortcut(QKeySequence(key), self)
             sc.setContext(QtCore.Qt.ShortcutContext.WindowShortcut)
             sc.activated.connect(
-                lambda d=delta: self.temperatures_plot_widget._step_cursor(d))
+                lambda d=delta: self.current_plot_widget()._step_cursor(d))
 
     def set_mode(self, mode):
         self.temperatures_plot_widget.set_mode(mode)
+
+    # -------- Batch tabs ----------------------------------------------------
+    def add_batch_tab(self, name: str, mode: str) -> BatchTab:
+        tab = BatchTab(mode)
+        self.tabs.setCurrentIndex(self.tabs.addTab(tab, name))
+        return tab
+
+    def remove_batch_tab(self, tab: BatchTab) -> None:
+        idx = self.tabs.indexOf(tab)
+        if idx > 0:
+            self.tabs.removeTab(idx)
+            tab.deleteLater()
+
+    def _on_tab_close_requested(self, idx: int) -> None:
+        if idx > 0:
+            self.batch_tab_close_requested.emit(self.tabs.widget(idx))
+
+    def current_plot_widget(self) -> historyPlotWidget:
+        w = self.tabs.currentWidget()
+        return w.plot if isinstance(w, BatchTab) else self.temperatures_plot_widget
+
+    def all_plot_widgets(self) -> list:
+        return [self.temperatures_plot_widget] + [
+            self.tabs.widget(i).plot for i in range(1, self.tabs.count())]
 
     def raise_widget(self):
         self.show()

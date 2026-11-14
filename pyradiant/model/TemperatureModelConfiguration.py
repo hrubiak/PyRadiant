@@ -1319,6 +1319,23 @@ class TemperatureModelConfiguration(QtCore.QObject):
         else:
             side_model.calibration_frames = [None, None]
 
+    def save_setting_copy(self, filename):
+        """Write the current settings to `filename` without adopting it.
+
+        save_setting() also records `filename` as this configuration's
+        settings file and clears `dirty`; the UI then expects to find that
+        file in the data folder. Backups and batch snapshots must not leak
+        that state, so restore it around the write."""
+        prev_setting_filename = self.setting_filename
+        prev_working_dir = self._setting_working_dir
+        prev_dirty = self.dirty
+        try:
+            self.save_setting(filename)
+        finally:
+            self.setting_filename = prev_setting_filename
+            self._setting_working_dir = prev_working_dir
+            self.dirty = prev_dirty
+
     def save_setting(self, filename):
         f = h5py.File(filename, 'w')
 

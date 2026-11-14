@@ -30,6 +30,7 @@ from ..widget.MainWidget import MainWidget
 from .TemperatureController import TemperatureController
 from .. widget.DataHistoryWidget import dataHistoryWidget
 from .TLogController import TLogController
+from .BatchController import BatchController
 from .ConfigurationController import ConfigurationController
 from ..model.helper.AppSettings import AppSettings
 from .. import style_path
@@ -132,6 +133,8 @@ class MainController(object):
     def create_sub_controller(self):
 
         self.tlog_controller = TLogController(self.temperature_model, self.data_history_widget)
+        self.batch_controller = BatchController(
+            self.temperature_model, self.data_history_widget, self.tlog_controller)
         self.temperature_controller = TemperatureController(self.main_widget.temperature_widget, self.temperature_model, self.data_history_widget)
         
         #self.ruby_controller = RubyController(self.ruby_model, self.main_widget.ruby_widget)
@@ -205,6 +208,7 @@ class MainController(object):
         self.temperature_controller.cleanup()
         self.main_widget.close()
         self.data_history_widget.close()
+        self.batch_controller.shutdown()
         self.tlog_controller.shutdown()
         self._report_ui_stall_summary()
         event.accept()

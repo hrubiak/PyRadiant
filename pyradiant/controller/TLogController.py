@@ -243,7 +243,7 @@ class TLogController(QtCore.QObject):
             pass
 
     def _on_current_record_changed(self, *_args) -> None:
-        """cfg.data_changed_signal fired — move the cursor on both tabs to
+        """cfg.data_changed_signal fired — move the cursor on every tab to
         the currently-loaded (file, frame)."""
         cfg = self._bound_config
         if cfg is None:
@@ -254,7 +254,9 @@ class TLogController(QtCore.QObject):
             return
         base = os.path.basename(fname)
         frame = int(getattr(cfg, 'current_frame', 0))
-        self.widget.temperatures_plot_widget.set_cursor_to_file_frame(base, frame)
+        # Batch tabs follow too, so every tab points at the loaded spectrum.
+        for plot in self.widget.all_plot_widgets():
+            plot.set_cursor_to_file_frame(base, frame)
 
     # -------- Plot refresh --------------------------------------------------
     def _refresh_plots(self) -> None:
@@ -376,13 +378,6 @@ class TLogController(QtCore.QObject):
         fname = f"cfg{idx + 1}_{datestr}.trs"
         final_path = os.path.join(subdir, fname)
         tmp_path = final_path + ".tmp"
-        # save_setting() mutates cfg.setting_filename, _setting_working_dir,
-        # and dirty as a side effect — the UI combobox later indexes into
-        # the data folder expecting to find setting_filename there, so a
-        # backup write must not leak these. Snapshot and restore around it.
-        prev_setting_filename = cfg.setting_filename
-        prev_working_dir = cfg._setting_working_dir
-        prev_dirty = cfg.dirty
         t0 = time.monotonic()
         try:
             os.makedirs(subdir, exist_ok=True)
@@ -391,7 +386,9 @@ class TLogController(QtCore.QObject):
                     os.remove(tmp_path)
                 except OSError:
                     pass
-            cfg.save_setting(tmp_path)
+            # save_setting_copy: a backup write must not change which
+            # settings file the live configuration thinks it has.
+            cfg.save_setting_copy(tmp_path)
             os.replace(tmp_path, final_path)
             dt = time.monotonic() - t0
             self._cfg_backup_writes_ok += 1
@@ -426,10 +423,6 @@ class TLogController(QtCore.QObject):
                     os.remove(tmp_path)
             except OSError:
                 pass
-        finally:
-            cfg.setting_filename = prev_setting_filename
-            cfg._setting_working_dir = prev_working_dir
-            cfg.dirty = prev_dirty
 
     # -------- Shutdown ------------------------------------------------------
     def shutdown(self) -> None:
