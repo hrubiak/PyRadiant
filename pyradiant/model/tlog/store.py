@@ -44,6 +44,9 @@ class TLogStore:
         self._by_file_frame: dict[tuple[str, int], TLogRecord] = {}
         self._folder_order: list[str] = []
         self._folder: Optional[str] = None
+        # Manual labels per (file, frame). Independent of the records so a
+        # re-fit (which replaces the record) never drops them.
+        self._labels: dict[tuple[str, int], tuple[str, ...]] = {}
 
         self.records_changed = Signal()
 
@@ -150,13 +153,35 @@ class TLogStore:
 
     def clear(self) -> None:
         if (not self._latest and not self._by_file
-                and not self._by_file_frame and not self._folder_order):
+                and not self._by_file_frame and not self._folder_order
+                and not self._labels):
             # Skip the emit if nothing actually changed.
             return
         self._latest.clear()
         self._by_file.clear()
         self._by_file_frame.clear()
         self._folder_order = []
+        self._labels.clear()
+        self.records_changed.emit()
+
+    # -------- Labels --------------------------------------------------------
+    def set_labels(self, file: str, frame: int, values: Iterable[str]) -> None:
+        """Replace the labels of (file, frame); empty `values` removes them."""
+        key = (file, int(frame))
+        values = tuple(v for v in values if v)
+        if self._labels.get(key, ()) == values:
+            return
+        if values:
+            self._labels[key] = values
+        else:
+            self._labels.pop(key, None)
+        self.records_changed.emit()
+
+    def load_labels(self, labels: dict) -> None:
+        """Replace every label at once (folder open). Emits once."""
+        self._labels = {
+            (f, int(fr)): tuple(v) for (f, fr), v in labels.items() if v
+        }
         self.records_changed.emit()
 
     # -------- Reads ---------------------------------------------------------
@@ -177,6 +202,13 @@ class TLogStore:
         return sorted(
             frame for (f, frame) in self._by_file_frame.keys() if f == file
         )
+
+    def labels_for(self, file: str, frame: int) -> tuple[str, ...]:
+        return self._labels.get((file, int(frame)), ())
+
+    def labels(self) -> dict[tuple[str, int], tuple[str, ...]]:
+        """Snapshot of every labelled (file, frame)."""
+        return dict(self._labels)
 
     def snapshot(self) -> List[TLogRecord]:
         """Alias for latest() — the primary consumer for the widget."""

@@ -94,6 +94,38 @@ class LabelAlignRight(QtWidgets.QLabel):
         self.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
 
 
+class ElidedLabel(QtWidgets.QLabel):
+    """Single-line label that never widens its window: long text is cut in
+    the middle with '…' to fit the available width, and the full text is
+    shown as a tooltip."""
+
+    def __init__(self, text='', elide_mode=QtCore.Qt.TextElideMode.ElideMiddle, *args):
+        super(ElidedLabel, self).__init__(*args)
+        self._full_text = ''
+        self._elide_mode = elide_mode
+        # Ignored → the layout doesn't use our text width as a minimum.
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored,
+                           QtWidgets.QSizePolicy.Policy.Preferred)
+        self.setText(text)
+
+    def setText(self, text):
+        self._full_text = text or ''
+        self.setToolTip(self._full_text)
+        self._update_elided()
+
+    def text(self):
+        return self._full_text
+
+    def resizeEvent(self, event):
+        super(ElidedLabel, self).resizeEvent(event)
+        self._update_elided()
+
+    def _update_elided(self):
+        elided = self.fontMetrics().elidedText(
+            self._full_text, self._elide_mode, max(self.width(), 0))
+        super(ElidedLabel, self).setText(elided)
+
+
 class CleanLooksComboBox(QtWidgets.QComboBox):
     cleanlooks = QtWidgets.QStyleFactory.create('motif')
 

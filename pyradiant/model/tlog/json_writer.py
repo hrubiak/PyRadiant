@@ -158,6 +158,18 @@ def _dict_to_record(d: dict) -> Optional[TLogRecord]:
         return None
 
 
+def _labels_from_dict(d: dict) -> Optional[dict]:
+    """Pull a well-formed {"values", "updated_local"} block out of a fit
+    entry, or None if there isn't one (or it holds no values)."""
+    lab = d.get("labels")
+    if not isinstance(lab, dict):
+        return None
+    values = [v for v in lab.get("values") or () if isinstance(v, str) and v]
+    if not values:
+        return None
+    return {"values": values, "updated_local": lab.get("updated_local")}
+
+
 def _atomic_write_json(path: str, payload: dict) -> None:
     """Write `payload` as JSON to `path` atomically.
 
@@ -234,6 +246,10 @@ class TLogJsonWriter:
         self._path: Optional[str] = None
 
         self._records: Dict[Tuple[str, int], TLogRecord] = {}
+        # Manual labels, keyed like _records but owned by the user: re-fits
+        # replace _records entries and leave these alone. Guarded by
+        # _records_lock too.
+        self._labels: Dict[Tuple[str, int], dict] = {}
         self._records_lock = threading.Lock()
 
         self._q: "queue.Queue[Optional[TLogRecord]]" = queue.Queue(
@@ -291,8 +307,10 @@ class TLogJsonWriter:
         self._folder = folder
         self._path = os.path.join(folder, self._filename)
         # Preload existing contents so re-fits merge in rather than wipe.
+        records, labels = self._load_existing()
         with self._records_lock:
-            self._records = self._load_existing() or {}
+            self._records = records
+            self._labels = labels
         self._set_state(WriterState.OK)
         self._stop.clear()
         self._thread = threading.Thread(
@@ -314,6 +332,7 @@ class TLogJsonWriter:
         self._folder = None
         with self._records_lock:
             self._records = {}
+            self._labels = {}
         self._set_state(WriterState.DISABLED)
         try:
             while True:
@@ -335,8 +354,38 @@ class TLogJsonWriter:
                 f"(total drops={self.drops_queue_full})",
             )
 
+    def set_labels(self, file: str, frame: int, values) -> None:
+        """Replace the manual labels of (file, frame). Empty `values` removes
+        them. Applied on the drain thread like a record, so it coalesces with
+        any fit burst and never blocks the caller."""
+        if self.state == WriterState.DISABLED or not file:
+            return
+        values = [v for v in values if v]
+        update = _LabelUpdate(
+            (file, int(frame)),
+            {"values": values,
+             "updated_local": datetime.now().isoformat(timespec="microseconds")}
+            if values else None,
+        )
+        try:
+            self._q.put_nowait(update)  # type: ignore[arg-type]
+        except queue.Full:
+            self._stderr_rate_limited(
+                "queue_full_label",
+                f"TLogJsonWriter: queue full, dropped label update for "
+                f"{file} [f{frame}]",
+            )
+
+    def labels(self) -> Dict[Tuple[str, int], List[str]]:
+        """Snapshot of every labelled (file, frame) → label keys."""
+        with self._records_lock:
+            return {k: list(v["values"]) for k, v in self._labels.items()}
+
     def truncate(self) -> None:
-        """Clear the in-memory latest-only map and rewrite an empty file."""
+        """Clear the in-memory latest-only map and rewrite the file.
+
+        Manual labels are kept: they are user work, not fit output, and
+        Clear Log is about discarding fits."""
         with self._records_lock:
             self._records = {}
         self.enqueue(_FLUSH_SENTINEL)  # type: ignore[arg-type]
@@ -377,8 +426,7 @@ class TLogJsonWriter:
                 continue
 
             # Merge the record into the latest-only map.
-            with self._records_lock:
-                self._records[(item.file, int(item.frame))] = item
+            self._merge_item(item)
             dirty = True
 
             # Burst coalesce: wait briefly for more records (e.g. the next
@@ -400,8 +448,7 @@ class TLogJsonWriter:
                     break
                 if extra is _FLUSH_SENTINEL:
                     continue  # handled by the trailing flush below
-                with self._records_lock:
-                    self._records[(extra.file, int(extra.frame))] = extra
+                self._merge_item(extra)
 
             if self._flush():
                 dirty = False
@@ -409,15 +456,32 @@ class TLogJsonWriter:
         if dirty:
             self._flush()
 
+    def _merge_item(self, item) -> None:
+        with self._records_lock:
+            if isinstance(item, _LabelUpdate):
+                if item.labels is None:
+                    self._labels.pop(item.key, None)
+                else:
+                    self._labels[item.key] = item.labels
+            else:
+                self._records[(item.file, int(item.frame))] = item
+
     def _flush(self) -> bool:
         """Atomically rewrite the JSON file from the current in-memory map.
         Returns True on success, False on failure (state → DEGRADED)."""
         if not self._path:
             return False
         with self._records_lock:
-            records = list(self._records.values())
+            records = dict(self._records)
+            labels = dict(self._labels)
 
-        records.sort(
+        # A label can outlive its fit (Clear Log keeps labels). Emit a bare
+        # entry for it so the annotation isn't lost from the file.
+        for key in labels.keys() - records.keys():
+            records[key] = TLogRecord(file=key[0], frame=key[1])
+
+        ordered = sorted(
+            records.values(),
             key=lambda r: (
                 r.exposure_start_local or r.fit_timestamp_local or datetime.min,
                 r.file,
@@ -425,12 +489,20 @@ class TLogJsonWriter:
             )
         )
 
+        fits = []
+        for r in ordered:
+            d = _record_to_dict(r)
+            lab = labels.get((r.file, int(r.frame)))
+            if lab is not None:
+                d["labels"] = lab
+            fits.append(d)
+
         payload = {
             "schema_version":     SCHEMA_VERSION,
             "timezone":           _local_timezone_label(),
             "folder":             self._folder,
             "last_updated_local": datetime.now().isoformat(timespec="microseconds"),
-            "fits":               [_record_to_dict(r) for r in records],
+            "fits":               fits,
         }
 
         t0 = time.monotonic()
@@ -446,7 +518,7 @@ class TLogJsonWriter:
                 self._stderr_rate_limited(
                     "slow_flush",
                     f"TLogJsonWriter: slow flush {dt*1000:.0f}ms "
-                    f"({len(records)} records, {size_kb:.0f}kB, "
+                    f"({len(fits)} records, {size_kb:.0f}kB, "
                     f"writes_ok={self.writes_ok})",
                 )
             if self.state == WriterState.DEGRADED:
@@ -469,12 +541,14 @@ class TLogJsonWriter:
             return False
 
     # -------- Loader --------------------------------------------------------
-    def _load_existing(self) -> Dict[Tuple[str, int], TLogRecord]:
-        """Parse T_history.json if present. Returns {} on any error so a
-        corrupt file (shouldn't happen with atomic writes, but) doesn't
-        prevent recovery — the next flush overwrites it."""
+    def _load_existing(self) -> Tuple[Dict[Tuple[str, int], TLogRecord],
+                                      Dict[Tuple[str, int], dict]]:
+        """Parse T_history.json if present → (records, labels). Returns
+        empties on any error so a corrupt file (shouldn't happen with
+        atomic writes, but) doesn't prevent recovery — the next flush
+        overwrites it."""
         if not self._path or not os.path.isfile(self._path):
-            return {}
+            return {}, {}
         try:
             with open(self._path, "r", encoding="utf-8") as f:
                 payload = json.load(f)
@@ -482,20 +556,25 @@ class TLogJsonWriter:
             self._stderr_rate_limited(
                 "load", f"TLogJsonWriter: load({self._path!r}) failed: {exc}"
             )
-            return {}
+            return {}, {}
 
         fits = payload.get("fits") if isinstance(payload, dict) else None
         if not isinstance(fits, list):
-            return {}
+            return {}, {}
         out: Dict[Tuple[str, int], TLogRecord] = {}
+        labels: Dict[Tuple[str, int], dict] = {}
         for d in fits:
             if not isinstance(d, dict):
                 continue
             rec = _dict_to_record(d)
             if rec is None or not rec.file:
                 continue
-            out[(rec.file, int(rec.frame))] = rec
-        return out
+            key = (rec.file, int(rec.frame))
+            out[key] = rec
+            lab = _labels_from_dict(d)
+            if lab is not None:
+                labels[key] = lab
+        return out, labels
 
     # -------- Utilities -----------------------------------------------------
     def _set_state(self, new_state: WriterState) -> None:
@@ -519,3 +598,14 @@ class _FlushSentinel:
 
 
 _FLUSH_SENTINEL = _FlushSentinel()
+
+
+class _LabelUpdate:
+    """Queue item carrying a manual-label change for one (file, frame).
+    `labels` is the full {"values", "updated_local"} block, or None to
+    remove the labels."""
+    __slots__ = ("key", "labels")
+
+    def __init__(self, key: Tuple[str, int], labels: Optional[dict]):
+        self.key = key
+        self.labels = labels

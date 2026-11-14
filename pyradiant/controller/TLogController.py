@@ -15,7 +15,9 @@ from PyQt6 import QtCore
 
 from ..model.TemperatureModel import TemperatureModel
 from ..model.TemperatureModelConfiguration import TemperatureModelConfiguration
-from ..model.tlog import TLogStore, TLogWriter, TLogJsonWriter, TLogRecord, WriterState
+from ..model.tlog import (TLogStore, TLogWriter, TLogJsonWriter, TLogRecord,
+                          WriterState, T_HISTORY_BASENAME)
+from ..model.tlog.labels import DEFAULT_LABEL_DEFINITIONS
 from ..widget.DataHistoryWidget import dataHistoryWidget
 
 
@@ -92,18 +94,23 @@ class TLogController(QtCore.QObject):
         self.widget.clear_data_log_file_btn.clicked.connect(self._on_clear_clicked)
         self.widget.temperatures_plot_widget.cursor_record_changed.connect(
             self._on_cursor_record_selected)
+        self.widget.label_window.set_definitions(DEFAULT_LABEL_DEFINITIONS)
+        self.widget.label_window.label_toggled.connect(self._on_label_toggled)
 
         # Store → widget
         self.store.records_changed.connect(self._refresh_plots)
 
         # Writer → widget status strip (fires from the drain thread; route
         # through a queued slot so we touch Qt on the main thread only).
-        self.writer.state_changed.connect(self._on_writer_state_changed_bg)
+        # T_history.json is the primary history, so its writer drives the
+        # strip; T_log.txt is a legacy companion written alongside.
+        self.json_writer.state_changed.connect(self._on_writer_state_changed_bg)
 
         # Model → controller (configuration switching)
         self.model.configuration_selected.connect(self._on_configuration_selected)
 
         self._bind(self.model.current_configuration)
+        self._sync_label_window()
 
     # -------- Configuration binding -----------------------------------------
     def _bind(self, cfg: TemperatureModelConfiguration) -> None:
@@ -140,6 +147,7 @@ class TLogController(QtCore.QObject):
         self.store.set_folder(folder)
         if not folder:
             self._update_status_strip("")
+            self._sync_label_window()
             return
 
         self.writer.open(folder)
@@ -149,6 +157,9 @@ class TLogController(QtCore.QObject):
             existing = self.writer.read_all()
         if existing:
             self.store.bulk_load(existing)
+        self.store.load_labels(self.json_writer.labels())
+        self.widget.temperatures_plot_widget.request_view_reset()
+        self._sync_label_window()
         self._update_status_strip(folder)
 
     def _on_folder_changed(self, folder) -> None:
@@ -166,6 +177,41 @@ class TLogController(QtCore.QObject):
         self.store.clear()
         self.writer.truncate()
         self.json_writer.truncate()
+        # Labels are user work, not fit output — Clear Log keeps them.
+        self.store.load_labels(self.json_writer.labels())
+
+    # -------- Manual labels -------------------------------------------------
+    def _current_file_frame(self) -> tuple[str, int] | None:
+        cfg = self._bound_config
+        if cfg is None:
+            return None
+        fname = getattr(cfg, 'filename', None) or ''
+        if not fname or getattr(cfg, 'data_img_file', None) is None:
+            return None
+        return os.path.basename(fname), int(getattr(cfg, 'current_frame', 0))
+
+    def _on_label_toggled(self, key: str, checked: bool) -> None:
+        cur = self._current_file_frame()
+        if cur is None:
+            self._sync_label_window()  # nothing loaded — undo the click
+            return
+        file, frame = cur
+        values = list(self.store.labels_for(file, frame))
+        if checked and key not in values:
+            values.append(key)
+        elif not checked and key in values:
+            values.remove(key)
+        self.store.set_labels(file, frame, values)
+        self.json_writer.set_labels(file, frame, values)
+        self._sync_label_window()
+
+    def _sync_label_window(self) -> None:
+        cur = self._current_file_frame()
+        values = self.store.labels_for(*cur) if cur is not None else ()
+        win = self.widget.label_window
+        win.set_labels_enabled(cur is not None and self.json_writer.path is not None)
+        win.set_values(values)
+        win.set_target(f'{cur[0]} [f{cur[1]}]' if cur is not None else '')
 
     # -------- Cursor interaction -------------------------------------------
     def _on_cursor_record_selected(self, record) -> None:
@@ -202,6 +248,7 @@ class TLogController(QtCore.QObject):
         cfg = self._bound_config
         if cfg is None:
             return
+        self._sync_label_window()
         fname = getattr(cfg, 'filename', None) or ''
         if not fname:
             return
@@ -232,7 +279,8 @@ class TLogController(QtCore.QObject):
             for fr in frames:
                 per_frame.append(by_ff[(f, fr)])
 
-        self.widget.temperatures_plot_widget.set_records(per_file, per_frame)
+        self.widget.temperatures_plot_widget.set_records(
+            per_file, per_frame, labels=self.store.labels())
 
         # Re-sync the cursor to the current main-window file+frame after a
         # repaint (the record list changed, so prior cursor row may no longer
@@ -241,7 +289,7 @@ class TLogController(QtCore.QObject):
 
     # -------- Status strip --------------------------------------------------
     def _update_status_strip(self, folder: str) -> None:
-        state = self.writer.state
+        state = self.json_writer.state
         n = len(self.store)
         if not folder:
             self.widget.load_data_log_file_lbl.setText("(no folder selected)")
@@ -251,7 +299,7 @@ class TLogController(QtCore.QObject):
             WriterState.DEGRADED: "write degraded (see console)",
             WriterState.DISABLED: "read-only (no write access)",
         }.get(state, str(state.value))
-        path = self.writer.path or f"{folder}/T_log.txt"
+        path = self.json_writer.path or f"{folder}/{T_HISTORY_BASENAME}"
         self.widget.load_data_log_file_lbl.setText(
             f"{path}  ·  {n} records  ·  {state_str}"
         )

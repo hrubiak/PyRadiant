@@ -22,13 +22,14 @@ from datetime import datetime
 
 from PyQt6 import QtWidgets, QtCore
 from PyQt6.QtCore import QSettings, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon
+from PyQt6.QtGui import QColor, QIcon, QKeySequence, QShortcut
 import pyqtgraph as pg
 import numpy as np
 
-from .CustomWidgets import HorizontalSpacerItem
+from .CustomWidgets import ElidedLabel
+from .SpectrumLabelWindow import SpectrumLabelWindow
 
-from .. import resources_path
+from .. import resources_path, icons_path
 
 
 colors = {
@@ -37,7 +38,8 @@ colors = {
     'fit_pen': '#C90048',
     'downstream': '#FFD700',
     'upstream': '#FF6F61',
-    'combined': '#66FFFF'
+    'combined': '#66FFFF',
+    'labeled': '#999999',
 }
 
 export_colors = {
@@ -112,11 +114,19 @@ class historyPlotWidget(QtWidgets.QWidget):
         self._timestamps = np.array([], dtype=float)  # unix epoch; NaN if unknown
         self._ds = np.array([], dtype=float)
         self._us = np.array([], dtype=float)
+        # Manual labels: (file, frame) → label keys, and the per-row view of
+        # it for the active grouping. Labelled rows are drawn as grey
+        # crosses instead of on the T lines.
+        self._labels_by_key: dict = {}
+        self._row_labels: list = []
+        self._labeled = np.array([], dtype=bool)
         self._snap_xs = np.array([], dtype=float)
         self._snap_rows = np.array([], dtype=int)
         self._cursor_row: int = -1
         self._mode = 'dual'
         self._last_view_mode: tuple | None = None
+        # Set by request_view_reset(); consumed by the next _redraw.
+        self._view_reset_pending = False
         # Dashed vertical items delimiting file boundaries in per-frame mode.
         self._boundary_items: list = []
 
@@ -147,6 +157,17 @@ class historyPlotWidget(QtWidgets.QWidget):
         ctrl_l = QtWidgets.QHBoxLayout(ctrl)
         ctrl_l.setContentsMargins(0, 0, 0, 0)
         ctrl_l.setSpacing(6)
+        self._ctrl_l = ctrl_l
+
+        self._btn_prev = QtWidgets.QPushButton('◀')
+        self._btn_next = QtWidgets.QPushButton('▶')
+        self._btn_prev.setToolTip('Previous record (←)')
+        self._btn_next.setToolTip('Next record (→)')
+        self._btn_prev.setMaximumWidth(32)
+        self._btn_next.setMaximumWidth(32)
+        ctrl_l.addWidget(self._btn_prev)
+        ctrl_l.addWidget(self._btn_next)
+        ctrl_l.addSpacing(12)
 
         ctrl_l.addWidget(QtWidgets.QLabel('X:'))
         self._grp_x = QtWidgets.QButtonGroup(self)
@@ -173,34 +194,7 @@ class historyPlotWidget(QtWidgets.QWidget):
         ctrl_l.addWidget(self._group_box)
         self._group_box.setVisible(False)
 
-        ctrl_l.addSpacing(12)
-        ctrl_l.addWidget(QtWidgets.QLabel('Gaps:'))
-        self._grp_gaps = QtWidgets.QButtonGroup(self)
-        self._rb_keep = QtWidgets.QRadioButton('Keep'); self._rb_keep.setChecked(True)
-        self._rb_compress = QtWidgets.QRadioButton('Compress')
-        for rb in (self._rb_keep, self._rb_compress):
-            self._grp_gaps.addButton(rb)
-            ctrl_l.addWidget(rb)
-
-        ctrl_l.addSpacing(12)
-        ctrl_l.addWidget(QtWidgets.QLabel('Mouse:'))
-        self._grp_mouse = QtWidgets.QButtonGroup(self)
-        self._rb_zoom = QtWidgets.QRadioButton('Zoom'); self._rb_zoom.setChecked(True)
-        self._rb_pan = QtWidgets.QRadioButton('Pan')
-        for rb in (self._rb_zoom, self._rb_pan):
-            self._grp_mouse.addButton(rb)
-            ctrl_l.addWidget(rb)
-
         ctrl_l.addStretch()
-
-        self._btn_prev = QtWidgets.QPushButton('◀')
-        self._btn_next = QtWidgets.QPushButton('▶')
-        self._btn_prev.setToolTip('Previous valid record')
-        self._btn_next.setToolTip('Next valid record')
-        self._btn_prev.setMaximumWidth(32)
-        self._btn_next.setMaximumWidth(32)
-        ctrl_l.addWidget(self._btn_prev)
-        ctrl_l.addWidget(self._btn_next)
 
         root.addWidget(ctrl)
 
@@ -209,6 +203,14 @@ class historyPlotWidget(QtWidgets.QWidget):
         cutoff_l = QtWidgets.QHBoxLayout(cutoff)
         cutoff_l.setContentsMargins(0, 0, 0, 0)
         cutoff_l.setSpacing(6)
+        cutoff_l.addWidget(QtWidgets.QLabel('Gaps:'))
+        self._grp_gaps = QtWidgets.QButtonGroup(self)
+        self._rb_keep = QtWidgets.QRadioButton('Keep'); self._rb_keep.setChecked(True)
+        self._rb_compress = QtWidgets.QRadioButton('Compress')
+        for rb in (self._rb_keep, self._rb_compress):
+            self._grp_gaps.addButton(rb)
+            cutoff_l.addWidget(rb)
+        cutoff_l.addSpacing(12)
         cutoff_l.addWidget(QtWidgets.QLabel('Cutoff:'))
         cutoff_l.addWidget(QtWidgets.QLabel('Min'))
         self._le_ymin = QtWidgets.QLineEdit()
@@ -241,6 +243,8 @@ class historyPlotWidget(QtWidgets.QWidget):
         self._time_lapse_plot.setLabel('left', self._scale_label)
         self._time_lapse_plot.showGrid(x=True, y=True, alpha=0.25)
         vb = self._time_lapse_plot.getViewBox()
+        # Left-drag box-zooms; middle-drag pans, wheel zooms, right-click
+        # resets (see _vb_click below).
         vb.setMouseMode(pg.ViewBox.RectMode)
         vb.setMenuEnabled(False)
         self._time_lapse_plot.setMenuEnabled(False)
@@ -249,6 +253,11 @@ class historyPlotWidget(QtWidgets.QWidget):
         def _vb_click(ev, _orig=_orig_vb_click, _vb=vb):
             if ev.button() == QtCore.Qt.MouseButton.RightButton:
                 _vb.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
+                ev.accept()
+                return
+            if ev.button() == QtCore.Qt.MouseButton.LeftButton:
+                # Click anywhere → jump the cursor to the nearest record.
+                self._jump_cursor_to_x(_vb.mapSceneToView(ev.scenePos()).x())
                 ev.accept()
                 return
             _orig(ev)
@@ -283,8 +292,14 @@ class historyPlotWidget(QtWidgets.QWidget):
             symbolBrush=pg.mkBrush(QColor(colors['upstream'])),
             symbolSize=5, symbol='s',
         )
+        self._labeled_item = pg.PlotDataItem(
+            pen=None, symbol='x', symbolSize=9,
+            symbolPen=pg.mkPen(QColor(colors['labeled']), width=1.5),
+            symbolBrush=None,
+        )
         self._time_lapse_plot.addItem(self._ds_item)
         self._time_lapse_plot.addItem(self._us_item)
+        self._time_lapse_plot.addItem(self._labeled_item)
 
         # Interactive cursor
         self._cursor_line = pg.InfiniteLine(
@@ -306,8 +321,6 @@ class historyPlotWidget(QtWidgets.QWidget):
             rb.clicked.connect(self._redraw)
         for rb in (self._rb_per_file, self._rb_per_frame):
             rb.clicked.connect(self._on_grouping_toggled)
-        self._rb_zoom.clicked.connect(self._on_mouse_mode_toggled)
-        self._rb_pan.clicked.connect(self._on_mouse_mode_toggled)
         self._le_ymin.editingFinished.connect(self._on_cutoff_edited)
         self._le_ymax.editingFinished.connect(self._on_cutoff_edited)
         self._cursor_line.sigPositionChanged.connect(self._on_cursor_moved)
@@ -315,6 +328,10 @@ class historyPlotWidget(QtWidgets.QWidget):
         self._time_lapse_plot.getViewBox().sigRangeChanged.connect(self._reposition_cursor_text)
         self._btn_prev.clicked.connect(self._on_prev_clicked)
         self._btn_next.clicked.connect(self._on_next_clicked)
+
+    def add_control_widget(self, widget: QtWidgets.QWidget) -> None:
+        """Append a widget at the right end of the control bar."""
+        self._ctrl_l.addWidget(widget)
 
     # -------- Legacy header-label API (used by the controller) --------------
     def update_time_lapse_ds_temperature_txt(self, txt):
@@ -336,10 +353,13 @@ class historyPlotWidget(QtWidgets.QWidget):
         self._redraw()
 
     # -------- New primary API -----------------------------------------------
-    def set_records(self, per_file: list, per_frame: list | None = None) -> None:
+    def set_records(self, per_file: list, per_frame: list | None = None,
+                    labels: dict | None = None) -> None:
         """Push new record lists. `per_file` is required (one record per file,
         legacy single-list callers still work); `per_frame` is optional and
-        enables the Per-frame grouping. Repaints according to current controls."""
+        enables the Per-frame grouping. `labels` maps (file, frame) to manual
+        label keys. Repaints according to current controls."""
+        self._labels_by_key = dict(labels or {})
         self._records_per_file = list(per_file)
         self._records_per_frame = list(per_frame) if per_frame is not None else list(per_file)
         # Only expose the grouping toggle when per-frame actually differs from
@@ -381,8 +401,21 @@ class historyPlotWidget(QtWidgets.QWidget):
                 [self._nan_safe(getattr(r, 'T_US', float('nan'))) for r in self._records],
                 dtype=float,
             )
+        self._row_labels = [
+            tuple(self._labels_by_key.get(
+                (getattr(r, 'file', ''), int(getattr(r, 'frame', 0))), ()))
+            for r in self._records
+        ]
+        self._labeled = np.array([bool(v) for v in self._row_labels], dtype=bool)
         # Debounced — see _redraw_timer in __init__. Burst of records from a
         # kinetics file collapses into one repaint instead of 32.
+        self._redraw_timer.start()
+
+    def request_view_reset(self) -> None:
+        """Fit the view to all data on the next redraw — same as clicking
+        pyqtgraph's "A" button. Call when a whole log is (re)loaded; the
+        redraw is debounced, so the reset lands after the new records."""
+        self._view_reset_pending = True
         self._redraw_timer.start()
 
     def set_cursor_to_file_frame(self, file: str, frame: int) -> None:
@@ -443,7 +476,18 @@ class historyPlotWidget(QtWidgets.QWidget):
         else:
             finite_us = np.isfinite(us_full) & (us_full > 0) & (us_full >= y_lo) & (us_full <= y_hi)
 
+        # Manually labelled rows come off the T lines; they get their own
+        # grey crosses below so the user can still see and select them.
+        labeled = self._labeled if self._labeled.size == n else np.zeros(n, dtype=bool)
+        ds_raw_ok = finite_ds.copy() if n else finite_ds
+        finite_ds = finite_ds & ~labeled
+        finite_us = finite_us & ~labeled
+
         any_finite = finite_ds | finite_us if n else np.array([], dtype=bool)
+        # Rows that get an x slot: valid fits plus labelled rows, so a
+        # labelled spectrum stays reachable (to inspect or un-label) in
+        # every view.
+        shown = any_finite | labeled if n else any_finite
         valid_ts = np.isfinite(self._timestamps) if n else np.array([], dtype=bool)
         compressed_idx = None  # populated only in index+compress branch below
 
@@ -456,7 +500,7 @@ class historyPlotWidget(QtWidgets.QWidget):
         elif compress:
             compressed_idx = np.full(n, -1, dtype=int)
             if n:
-                compressed_idx[any_finite] = np.arange(int(any_finite.sum()))
+                compressed_idx[shown] = np.arange(int(shown.sum()))
             ds_x = compressed_idx[finite_ds].astype(float)
             ds_y = ds_full[finite_ds]
             us_x = compressed_idx[finite_us].astype(float)
@@ -480,25 +524,42 @@ class historyPlotWidget(QtWidgets.QWidget):
         self._ds_item.setData(ds_x, ds_y)
         self._us_item.setData(us_x, us_y)
 
+        # Labelled markers sit at the (rejected) DS temperature, or at 0 when
+        # the fit gave nothing usable.
+        lab_y_all = np.where(ds_raw_ok, ds_full, 0.0) if n else np.array([])
+        if use_time:
+            lab_mask = labeled & valid_ts
+            lab_x = self._timestamps[lab_mask]
+        elif compress:
+            lab_mask = labeled
+            lab_x = compressed_idx[lab_mask].astype(float)
+        else:
+            lab_mask = labeled
+            lab_x = np.where(lab_mask)[0].astype(float)
+        self._labeled_item.setData(lab_x, lab_y_all[lab_mask] if n else np.array([]))
+
         # File-boundary dashed verticals — only meaningful in per-frame mode.
         self._update_file_boundaries(
             n=n, use_time=use_time, compress=compress,
-            any_finite=any_finite, valid_ts=valid_ts,
+            any_finite=shown, valid_ts=valid_ts,
             compressed_idx=compressed_idx,
         )
 
-        # Reset the view whenever the x-coordinate system changes (index↔time,
-        # keep↔compress) or we transition empty→populated. Otherwise the view
-        # box keeps old-scale ranges and the new data lands off-screen — most
-        # visible on Index→Time where indices (0..n) and unix epoch (~1.7e9)
-        # share no overlap. User zoom in the same mode is preserved.
+        # Reset the view whenever a whole log is (re)loaded, the x-coordinate
+        # system changes (index↔time, keep↔compress, grouping) or we go
+        # empty→populated. Otherwise the view box keeps old-scale ranges and
+        # the new data lands off-screen — most visible on Index→Time where
+        # indices (0..n) and unix epoch (~1.7e9) share no overlap. The reset
+        # behaves like pyqtgraph's "A" button: auto-range both axes and keep
+        # following the data until the user zooms. User zoom within the same
+        # mode is preserved.
         view_mode = ('time' if use_time else ('compress' if compress else 'keep'))
         last_mode, last_had_data = self._last_view_mode or (None, False)
-        if n and (view_mode != last_mode or not last_had_data):
-            if not use_time and not compress:
-                self._time_lapse_plot.setXRange(0, n - 1, padding=0.05)
-            else:
-                self._time_lapse_plot.getViewBox().autoRange()
+        if n and (self._view_reset_pending or view_mode != last_mode
+                  or not last_had_data):
+            self._time_lapse_plot.getViewBox().enableAutoRange(
+                axis=pg.ViewBox.XYAxes, enable=True)
+            self._view_reset_pending = False
         self._last_view_mode = (view_mode, n > 0)
 
         # Snap data: which record rows are selectable, and at what x.
@@ -506,11 +567,11 @@ class historyPlotWidget(QtWidgets.QWidget):
             self._snap_xs = np.array([], dtype=float)
             self._snap_rows = np.array([], dtype=int)
         elif use_time:
-            snap_mask = valid_ts & any_finite
+            snap_mask = valid_ts & shown
             self._snap_rows = np.where(snap_mask)[0]
             self._snap_xs = self._timestamps[snap_mask]
         elif compress:
-            rows = np.where(any_finite)[0]
+            rows = np.where(shown)[0]
             self._snap_rows = rows
             self._snap_xs = compressed_idx[rows].astype(float)
         else:
@@ -606,6 +667,12 @@ class historyPlotWidget(QtWidgets.QWidget):
         if rec is not None:
             self.cursor_record_changed.emit(rec)
 
+    def _jump_cursor_to_x(self, x: float) -> None:
+        if len(self._snap_xs) == 0:
+            return
+        idx = int(np.argmin(np.abs(self._snap_xs - x)))
+        self._step_cursor_to(idx)
+
     def _on_prev_clicked(self):
         self._step_cursor(-1)
 
@@ -616,7 +683,11 @@ class historyPlotWidget(QtWidgets.QWidget):
         if len(self._snap_rows) == 0:
             return
         idx = int(np.argmin(np.abs(self._snap_rows - self._cursor_row)))
-        new_idx = idx + delta
+        self._step_cursor_to(idx + delta)
+
+    def _step_cursor_to(self, new_idx: int) -> None:
+        """Move the cursor to snap position `new_idx` and emit, as if the
+        user had dragged it there."""
         if new_idx < 0 or new_idx >= len(self._snap_rows):
             return
         self._cursor_row = int(self._snap_rows[new_idx])
@@ -655,6 +726,9 @@ class historyPlotWidget(QtWidgets.QWidget):
         fname = getattr(rec, 'file', '') or ''
         frame = int(getattr(rec, 'frame', 0))
         parts.append(f'<span style="color:#CCCCCC;">{fname} [f{frame}]</span>')
+        if 0 <= row < len(self._row_labels) and self._row_labels[row]:
+            parts.append(f'<span style="color:{colors["labeled"]};">'
+                         f'labels: {", ".join(self._row_labels[row])}</span>')
         self._cursor_text.setHtml('<br>'.join(parts))
 
     def _reposition_cursor_text(self, *_):
@@ -662,12 +736,6 @@ class historyPlotWidget(QtWidgets.QWidget):
             return
         xr, yr = self._time_lapse_plot.getViewBox().viewRange()
         self._cursor_text.setPos(xr[0], yr[1])
-
-    # -------- Zoom / Pan ----------------------------------------------------
-    def _on_mouse_mode_toggled(self):
-        self._time_lapse_plot.getViewBox().setMouseMode(
-            pg.ViewBox.RectMode if self._rb_zoom.isChecked() else pg.ViewBox.PanMode
-        )
 
     # -------- Cutoffs -------------------------------------------------------
     def _on_cutoff_edited(self):
@@ -733,26 +801,57 @@ class dataHistoryWidget(QtWidgets.QWidget):
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(0)
 
-        self.file_navigation_widget = QtWidgets.QWidget()
-        self._file_navigation_widget_layout = QtWidgets.QHBoxLayout(self.file_navigation_widget)
-        self._file_navigation_widget_layout.setSpacing(5)
-        self.btn_lbl = QtWidgets.QLabel("Log file ")
         self.load_data_log_file_btn = QtWidgets.QPushButton('Load')
-        self.load_data_log_file_lbl = QtWidgets.QLabel('')
-        self._file_navigation_widget_layout.addWidget(self.btn_lbl)
-        self._file_navigation_widget_layout.addWidget(self.load_data_log_file_lbl)
-        self._file_navigation_widget_layout.addSpacerItem(HorizontalSpacerItem())
+        self.label_window_btn = QtWidgets.QPushButton('Label…')
+        self.label_window_btn.setIcon(QIcon(os.path.join(
+            icons_path, 'label_24dp_E1E5E9_FILL0_wght400_GRAD0_opsz24.svg')))
+        self.label_window_btn.setToolTip(
+            'Open the labelling window to mark spectra (bad fit, low signal, …)')
         self.clear_data_log_file_btn = QtWidgets.QPushButton('Clear Log')
         clear_data_icon = QIcon()
         clear_data_icon.addFile(os.path.join(resources_path, 'style', 'delete_forever.svg'))
         self.clear_data_log_file_btn.setIcon(clear_data_icon)
 
-        self._file_navigation_widget_layout.addWidget(self.clear_data_log_file_btn)
-
-        self._layout.addWidget(self.file_navigation_widget)
-
         self.temperatures_plot_widget = historyPlotWidget(scale_label="T (K)", tab_key="total")
+        self.temperatures_plot_widget.add_control_widget(self.label_window_btn)
+        self.temperatures_plot_widget.add_control_widget(self.clear_data_log_file_btn)
         self._layout.addWidget(self.temperatures_plot_widget)
+
+        # ── Status strip: which log file, record count, writer state ──
+        self.status_widget = QtWidgets.QWidget()
+        status_l = QtWidgets.QHBoxLayout(self.status_widget)
+        status_l.setContentsMargins(6, 2, 6, 4)
+        status_l.setSpacing(5)
+        self.btn_lbl = QtWidgets.QLabel("Log file ")
+        # Elide from the left: the innermost folders and the record/status
+        # suffix are what identify the log, not the volume root.
+        self.load_data_log_file_lbl = ElidedLabel(
+            '', elide_mode=QtCore.Qt.TextElideMode.ElideLeft)
+        status_l.addWidget(self.btn_lbl)
+        # Stretch instead of a spacer: the label takes the free width and
+        # elides the path to fit, so a long path can't widen the window.
+        status_l.addWidget(self.load_data_log_file_lbl, 1)
+        self._layout.addWidget(self.status_widget)
+
+        # Labels apply to the record under the cursor, which is always the
+        # file/frame loaded in the main window. Separate window so neither
+        # this one nor the main panel carries the controls permanently. The
+        # number keys work from this window too, while the label window is
+        # open.
+        self.label_window = SpectrumLabelWindow(self)
+        self.label_window.install_shortcuts(self)
+        self.label_window.step_requested.connect(
+            self.temperatures_plot_widget._step_cursor)
+        self.label_window_btn.clicked.connect(self.label_window.show_window)
+
+        # ←/→ step through records (and load each one in the main window),
+        # mirroring the main window's prev/next-file arrows. This is a
+        # separate top-level window, so the keys don't collide.
+        for key, delta in ((QtCore.Qt.Key.Key_Left, -1), (QtCore.Qt.Key.Key_Right, +1)):
+            sc = QShortcut(QKeySequence(key), self)
+            sc.setContext(QtCore.Qt.ShortcutContext.WindowShortcut)
+            sc.activated.connect(
+                lambda d=delta: self.temperatures_plot_widget._step_cursor(d))
 
     def set_mode(self, mode):
         self.temperatures_plot_widget.set_mode(mode)
