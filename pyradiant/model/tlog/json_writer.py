@@ -13,7 +13,8 @@
 #   * Background drain thread; the Qt main thread never blocks on I/O.
 #   * Naive-local timestamps (ISO-8601 strings), with the folder-wide
 #     timezone label stored at the top of the file.
-#   * NaN serialises as JSON null (strict-valid JSON).
+#   * NaN serialises as JSON null (strict-valid JSON). "No fit" is always
+#     null: failed fits, fits over the error limit, and labelled sides.
 
 from __future__ import annotations
 
@@ -29,6 +30,7 @@ from math import isfinite
 from typing import Dict, List, Optional, Tuple
 
 from ..helper.signal import Signal
+from .labels import block_from_sides, sides_from_block
 from .record import TLogRecord
 from .writer import WriterState   # reuse the enum — same semantics
 
@@ -82,7 +84,7 @@ def _finite_or_none(v) -> Optional[float]:
 def _record_to_dict(r: TLogRecord) -> dict:
     """Canonical per-fit JSON object. Field order is preserved so the file
     diff is stable across writes (Python dicts are insertion-ordered)."""
-    return {
+    d = {
         "file":                     r.file,
         "frame":                    int(r.frame),
         "exposure_start_local":     _iso_or_none(r.exposure_start_local),
@@ -105,6 +107,15 @@ def _record_to_dict(r: TLogRecord) -> dict:
         "detector":                 r.detector,
         "mode":                     r.mode,
     }
+    # "No fit" is null. Older files (and older records loaded from them)
+    # stored a failed fit as T = 0; normalise so the next save cleans them.
+    for side in ("DS", "US"):
+        t = d[f"T_{side}"]
+        if t is None or t <= 0:
+            d[f"T_{side}"] = None
+            d[f"T_{side}_err"] = None
+            d[f"scaling_{side}"] = None
+    return d
 
 
 def _dict_to_record(d: dict) -> Optional[TLogRecord]:
@@ -159,15 +170,13 @@ def _dict_to_record(d: dict) -> Optional[TLogRecord]:
 
 
 def _labels_from_dict(d: dict) -> Optional[dict]:
-    """Pull a well-formed {"values", "updated_local"} block out of a fit
-    entry, or None if there isn't one (or it holds no values)."""
+    """Normalised per-side "labels" block of a fit entry (earlier
+    single-list form converted), or None if it holds no labels."""
     lab = d.get("labels")
-    if not isinstance(lab, dict):
+    sides = sides_from_block(lab)
+    if not sides:
         return None
-    values = [v for v in lab.get("values") or () if isinstance(v, str) and v]
-    if not values:
-        return None
-    return {"values": values, "updated_local": lab.get("updated_local")}
+    return block_from_sides(sides, lab.get("updated_local"))
 
 
 def _atomic_write_json(path: str, payload: dict) -> None:
@@ -354,19 +363,14 @@ class TLogJsonWriter:
                 f"(total drops={self.drops_queue_full})",
             )
 
-    def set_labels(self, file: str, frame: int, values) -> None:
-        """Replace the manual labels of (file, frame). Empty `values` removes
-        them. Applied on the drain thread like a record, so it coalesces with
-        any fit burst and never blocks the caller."""
+    def set_labels(self, file: str, frame: int, sides: dict) -> None:
+        """Replace the manual labels of (file, frame) with `sides`
+        ({"ds": keys, "us": keys}); all-empty removes them. Applied on the
+        drain thread like a record, so it coalesces with any fit burst and
+        never blocks the caller."""
         if self.state == WriterState.DISABLED or not file:
             return
-        values = [v for v in values if v]
-        update = _LabelUpdate(
-            (file, int(frame)),
-            {"values": values,
-             "updated_local": datetime.now().isoformat(timespec="microseconds")}
-            if values else None,
-        )
+        update = _LabelUpdate((file, int(frame)), block_from_sides(sides))
         try:
             self._q.put_nowait(update)  # type: ignore[arg-type]
         except queue.Full:
@@ -376,10 +380,10 @@ class TLogJsonWriter:
                 f"{file} [f{frame}]",
             )
 
-    def labels(self) -> Dict[Tuple[str, int], List[str]]:
-        """Snapshot of every labelled (file, frame) → label keys."""
+    def labels(self) -> Dict[Tuple[str, int], dict]:
+        """Snapshot of every labelled (file, frame) → {"ds": keys, "us": keys}."""
         with self._records_lock:
-            return {k: list(v["values"]) for k, v in self._labels.items()}
+            return {k: sides_from_block(v) for k, v in self._labels.items()}
 
     def truncate(self) -> None:
         """Clear the in-memory latest-only map and rewrite the file.
@@ -495,6 +499,15 @@ class TLogJsonWriter:
             lab = labels.get((r.file, int(r.frame)))
             if lab is not None:
                 d["labels"] = lab
+                # A labelled side's fit doesn't count: report it exactly like
+                # no fit (null), so readers needn't interpret labels to skip
+                # it. The fitted values return on the next re-fit after the
+                # label is removed.
+                for side in ("DS", "US"):
+                    if lab.get(side):
+                        d[f"T_{side}"] = None
+                        d[f"T_{side}_err"] = None
+                        d[f"scaling_{side}"] = None
             fits.append(d)
 
         payload = {
@@ -602,8 +615,8 @@ _FLUSH_SENTINEL = _FlushSentinel()
 
 class _LabelUpdate:
     """Queue item carrying a manual-label change for one (file, frame).
-    `labels` is the full {"values", "updated_local"} block, or None to
-    remove the labels."""
+    `labels` is the full on-disk block ({"DS": .., "US": .., "updated_local"}),
+    or None to remove the labels."""
     __slots__ = ("key", "labels")
 
     def __init__(self, key: Tuple[str, int], labels: Optional[dict]):

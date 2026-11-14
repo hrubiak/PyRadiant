@@ -190,27 +190,31 @@ class TLogController(QtCore.QObject):
             return None
         return os.path.basename(fname), int(getattr(cfg, 'current_frame', 0))
 
-    def _on_label_toggled(self, key: str, checked: bool) -> None:
+    def _on_label_toggled(self, side: str, key: str, checked: bool) -> None:
         cur = self._current_file_frame()
         if cur is None:
             self._sync_label_window()  # nothing loaded — undo the click
             return
         file, frame = cur
-        values = list(self.store.labels_for(file, frame))
+        sides = self.store.labels_for(file, frame)
+        values = list(sides.get(side, ()))
         if checked and key not in values:
             values.append(key)
         elif not checked and key in values:
             values.remove(key)
-        self.store.set_labels(file, frame, values)
-        self.json_writer.set_labels(file, frame, values)
+        sides[side] = tuple(values)
+        self.store.set_labels(file, frame, sides)
+        self.json_writer.set_labels(file, frame, sides)
         self._sync_label_window()
 
     def _sync_label_window(self) -> None:
         cur = self._current_file_frame()
-        values = self.store.labels_for(*cur) if cur is not None else ()
+        sides = self.store.labels_for(*cur) if cur is not None else {}
         win = self.widget.label_window
+        cfg = self._bound_config
+        win.set_mode(getattr(cfg, 'mode', 'dual') if cfg is not None else 'dual')
         win.set_labels_enabled(cur is not None and self.json_writer.path is not None)
-        win.set_values(values)
+        win.set_values(sides)
         win.set_target(f'{cur[0]} [f{cur[1]}]' if cur is not None else '')
 
     # -------- Cursor interaction -------------------------------------------

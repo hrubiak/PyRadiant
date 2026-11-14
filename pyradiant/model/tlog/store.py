@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Iterable, List, Optional
 
 from ..helper.signal import Signal
+from .labels import SIDES
 from .record import TLogRecord
 
 
@@ -44,9 +45,10 @@ class TLogStore:
         self._by_file_frame: dict[tuple[str, int], TLogRecord] = {}
         self._folder_order: list[str] = []
         self._folder: Optional[str] = None
-        # Manual labels per (file, frame). Independent of the records so a
-        # re-fit (which replaces the record) never drops them.
-        self._labels: dict[tuple[str, int], tuple[str, ...]] = {}
+        # Manual labels per (file, frame) as {"ds": keys, "us": keys}, empty
+        # sides omitted. Independent of the records so a re-fit (which
+        # replaces the record) never drops them.
+        self._labels: dict[tuple[str, int], dict] = {}
 
         self.records_changed = Signal()
 
@@ -165,23 +167,26 @@ class TLogStore:
         self.records_changed.emit()
 
     # -------- Labels --------------------------------------------------------
-    def set_labels(self, file: str, frame: int, values: Iterable[str]) -> None:
-        """Replace the labels of (file, frame); empty `values` removes them."""
+    def set_labels(self, file: str, frame: int, sides: dict) -> None:
+        """Replace the labels of (file, frame) with `sides`
+        ({"ds": keys, "us": keys}); all-empty removes them."""
         key = (file, int(frame))
-        values = tuple(v for v in values if v)
-        if self._labels.get(key, ()) == values:
+        sides = _clean_sides(sides)
+        if self._labels.get(key, {}) == sides:
             return
-        if values:
-            self._labels[key] = values
+        if sides:
+            self._labels[key] = sides
         else:
             self._labels.pop(key, None)
         self.records_changed.emit()
 
     def load_labels(self, labels: dict) -> None:
         """Replace every label at once (folder open). Emits once."""
-        self._labels = {
-            (f, int(fr)): tuple(v) for (f, fr), v in labels.items() if v
-        }
+        self._labels = {}
+        for (f, fr), sides in labels.items():
+            sides = _clean_sides(sides)
+            if sides:
+                self._labels[(f, int(fr))] = sides
         self.records_changed.emit()
 
     # -------- Reads ---------------------------------------------------------
@@ -203,10 +208,11 @@ class TLogStore:
             frame for (f, frame) in self._by_file_frame.keys() if f == file
         )
 
-    def labels_for(self, file: str, frame: int) -> tuple[str, ...]:
-        return self._labels.get((file, int(frame)), ())
+    def labels_for(self, file: str, frame: int) -> dict:
+        """{"ds": keys, "us": keys} for (file, frame); empty sides omitted."""
+        return dict(self._labels.get((file, int(frame)), {}))
 
-    def labels(self) -> dict[tuple[str, int], tuple[str, ...]]:
+    def labels(self) -> dict[tuple[str, int], dict]:
         """Snapshot of every labelled (file, frame)."""
         return dict(self._labels)
 
@@ -219,3 +225,13 @@ class TLogStore:
 
     def is_empty(self) -> bool:
         return not self._latest and not self._by_file
+
+
+def _clean_sides(sides: dict) -> dict:
+    """Normalise {"ds": keys, "us": keys}: tuples, empty sides dropped."""
+    out = {}
+    for side in SIDES:
+        keys = tuple(k for k in ((sides or {}).get(side) or ()) if k)
+        if keys:
+            out[side] = keys
+    return out

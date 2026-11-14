@@ -206,6 +206,10 @@ class TLogRecord:
         def _gated(t: float, terr: float) -> tuple[float, float]:
             if t is None or terr is None:
                 return float("nan"), float("nan")
+            # A failed fit leaves T = 0 in the model. Report it as "no fit"
+            # (NaN → JSON null), like a gated fit, so readers see one form.
+            if not (t > 0):
+                return float("nan"), float("nan")
             if isinstance(terr, float) and math.isnan(terr):
                 return t, terr
             if terr > err_limit:
@@ -238,6 +242,13 @@ class TLogRecord:
         ds_spec = getattr(cfg, "ds_data_spectrum", None)
         ds_counts = float(getattr(ds_spec, "counts", 0.0) or 0.0)
 
+        # Scaling is part of the fit: no reported T (failed or over the error
+        # limit) means no reported scaling either.
+        if math.isnan(ds_t):
+            ds_scaling = float("nan")
+        if math.isnan(us_t):
+            us_scaling = float("nan")
+
         # Fringe-fit outputs (interference oscillation freq + wavelength) —
         # on the ZMQ trigger today but previously missing from the log.
         def _f(attr: str) -> float:
@@ -254,7 +265,10 @@ class TLogRecord:
 
         detector = getattr(data_file, "detector", "unspecified") or "unspecified"
         exposure = float(getattr(data_file, "exposure_time", 0.0) or 0.0)
-        gain = float(getattr(data_file, "gain", 1.0) or 1.0)
+        # SPE files keep the parsed camera gain in EMIccd_gain; their generic
+        # `gain` attribute is always 1 (same precedence as the ZMQ worker).
+        gain = float(getattr(data_file, "EMIccd_gain", None)
+                     or getattr(data_file, "gain", 1.0) or 1.0)
 
         # Pull the per-frame acquisition timestamp if the SpeFile parser
         # populated it. Falls back to None (JSON serializer emits null) —

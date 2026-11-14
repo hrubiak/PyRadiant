@@ -3710,6 +3710,8 @@ class SingleTemperatureModel(QtCore.QObject):
             self.temperature = 0
             self.temperature_error = 0
             self.fit_spectrum = Spectrum([],[])
+            # Don't let a failed fit report the previous frame's scaling.
+            self.scaling = np.nan
                 
     def get2color(self):
         temp = None

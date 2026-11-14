@@ -20,26 +20,32 @@
 from PyQt6 import QtWidgets, QtCore, QtGui
 
 
+_SIDES = (('ds', 'DS'), ('us', 'US'))
+
+
 class SpectrumLabelWindow(QtWidgets.QWidget):
     """Small floating window for manually labelling the current spectrum.
 
     Opened from the Temperature Log window and kept above it (Tool window),
-    so the user can step through records there and label them here. One
-    checkable button per label definition; several can be on at once.
+    so the user can step through records there and label them here. Labels
+    are per side — DS can be good while US is junk — so there is one column
+    of checkable buttons per side; several labels can be on at once.
 
     Holds no state beyond the button check marks — the controller pushes the
     current (file, frame) and its labels in via set_target()/set_values()
-    and listens to label_toggled(key, checked). step_requested(delta) asks
-    the log to move to the previous/next record.
+    and listens to label_toggled(side, key, checked). step_requested(delta)
+    asks the log to move to the previous/next record.
     """
 
-    label_toggled = QtCore.pyqtSignal(str, bool)
+    label_toggled = QtCore.pyqtSignal(str, str, bool)   # side, key, checked
     step_requested = QtCore.pyqtSignal(int)
 
     def __init__(self, parent: QtWidgets.QWidget | None = None):
         super().__init__(parent, QtCore.Qt.WindowType.Tool)
         self.setWindowTitle('Label spectrum')
-        self._buttons: dict[str, QtWidgets.QPushButton] = {}
+        # side → key → button, in definition order
+        self._buttons: dict[str, dict[str, QtWidgets.QPushButton]] = {s: {} for s, _ in _SIDES}
+        self._mode = 'dual'
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(4)
@@ -50,9 +56,15 @@ class SpectrumLabelWindow(QtWidgets.QWidget):
             QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self._target_lbl)
 
-        self._btn_layout = QtWidgets.QVBoxLayout()
-        self._btn_layout.setSpacing(4)
-        layout.addLayout(self._btn_layout)
+        self._grid = QtWidgets.QGridLayout()
+        self._grid.setSpacing(4)
+        self._side_headers = {}
+        for col, (side, title) in enumerate(_SIDES):
+            hdr = QtWidgets.QLabel(title)
+            hdr.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            self._grid.addWidget(hdr, 0, col)
+            self._side_headers[side] = hdr
+        layout.addLayout(self._grid)
 
         nav = QtWidgets.QHBoxLayout()
         self._btn_prev = QtWidgets.QPushButton('◀')
@@ -65,9 +77,9 @@ class SpectrumLabelWindow(QtWidgets.QWidget):
         nav.addWidget(self._btn_next)
         layout.addLayout(nav)
 
-        hint = QtWidgets.QLabel('Keys: number toggles label · ←/→ step')
-        hint.setStyleSheet('color: #999999;')
-        layout.addWidget(hint)
+        self._hint = QtWidgets.QLabel()
+        self._hint.setStyleSheet('color: #999999;')
+        layout.addWidget(self._hint)
         layout.addStretch()
         # No shortcuts of our own: Qt resolves a Tool window's shortcuts in
         # its parent's window context, so keys registered here would clash
@@ -78,29 +90,50 @@ class SpectrumLabelWindow(QtWidgets.QWidget):
         """Rebuild the buttons from [{"key", "display_name", "color"}, ...].
         Keeps check marks for keys that survive the rebuild."""
         checked = self.values()
-        for btn in self._buttons.values():
-            self._btn_layout.removeWidget(btn)
-            btn.deleteLater()
-        self._buttons = {}
-        for n, d in enumerate(definitions, start=1):
+        for side_btns in self._buttons.values():
+            for btn in side_btns.values():
+                self._grid.removeWidget(btn)
+                btn.deleteLater()
+        self._buttons = {s: {} for s, _ in _SIDES}
+        n_defs = len(definitions)
+        for row, d in enumerate(definitions, start=1):
             key = d['key']
             name = d.get('display_name') or key
-            btn = QtWidgets.QPushButton(f'{n}   {name}' if n <= 9 else name)
-            btn.setCheckable(True)
-            btn.setChecked(key in checked)
-            btn.setToolTip(f'Toggle the "{name}" label on the current spectrum')
-            btn.setStyleSheet(
-                'QPushButton { text-align: left; padding: 4px 8px; }'
-                f' QPushButton:checked {{ background-color: {d.get("color", "#b8b7b2")};'
-                ' color: black; }')
-            btn.toggled.connect(lambda on, k=key: self.label_toggled.emit(k, on))
-            self._btn_layout.addWidget(btn)
-            self._buttons[key] = btn
+            for col, (side, title) in enumerate(_SIDES):
+                n = row + col * n_defs          # DS 1..N, US N+1..2N
+                btn = QtWidgets.QPushButton(f'{n}   {name}' if n <= 9 else name)
+                btn.setCheckable(True)
+                btn.setChecked(key in checked.get(side, ()))
+                btn.setToolTip(f'Toggle "{name}" on the {title} side of the current spectrum')
+                btn.setStyleSheet(
+                    'QPushButton { text-align: left; padding: 4px 8px; }'
+                    f' QPushButton:checked {{ background-color: {d.get("color", "#b8b7b2")};'
+                    ' color: black; }')
+                btn.toggled.connect(
+                    lambda on, s=side, k=key: self.label_toggled.emit(s, k, on))
+                self._grid.addWidget(btn, row, col)
+                self._buttons[side][key] = btn
+        self.set_mode(self._mode)
+
+    def set_mode(self, mode: str) -> None:
+        """'single' hides the US column (and its keys do nothing)."""
+        self._mode = mode
+        dual = mode != 'single'
+        self._side_headers['us'].setVisible(dual)
+        self._side_headers['ds'].setVisible(dual)
+        for btn in self._buttons['us'].values():
+            btn.setVisible(dual)
+        n = len(self._buttons['ds'])
+        if dual and n:
+            self._hint.setText(f'Keys: 1–{n} DS · {n + 1}–{min(2 * n, 9)} US · ←/→ step')
+        else:
+            self._hint.setText('Keys: number toggles label · ←/→ step')
 
     def install_shortcuts(self, window: QtWidgets.QWidget) -> None:
         """Number keys 1..9 toggle the matching button while `window` is
-        active. Text fields that have focus keep their digits (Qt's
-        ShortcutOverride), so typing numbers elsewhere is unaffected."""
+        active: DS buttons first, then US. Text fields that have focus keep
+        their digits (Qt's ShortcutOverride), so typing numbers elsewhere is
+        unaffected."""
         for i in range(1, 10):
             sc = QtGui.QShortcut(QtGui.QKeySequence(str(i)), window)
             sc.setContext(QtCore.Qt.ShortcutContext.WindowShortcut)
@@ -109,31 +142,37 @@ class SpectrumLabelWindow(QtWidgets.QWidget):
     def _toggle_nth(self, n: int) -> None:
         # Only while the window is open — the keys are a labelling mode,
         # not a global feature of the log window.
-        btns = list(self._buttons.values())
-        if self.isVisible() and 0 <= n < len(btns) and btns[n].isEnabled():
+        btns = list(self._buttons['ds'].values()) + list(self._buttons['us'].values())
+        if (self.isVisible() and 0 <= n < len(btns) and btns[n].isEnabled()
+                and btns[n].isVisible()):
             btns[n].click()
 
     def set_labels_enabled(self, enabled: bool) -> None:
         """Grey out the label buttons (nothing loaded / read-only folder)
         while leaving ◀ ▶ usable."""
-        for btn in self._buttons.values():
-            btn.setEnabled(enabled)
+        for side_btns in self._buttons.values():
+            for btn in side_btns.values():
+                btn.setEnabled(enabled)
 
     def set_target(self, text: str) -> None:
         self._target_lbl.setText(text or '(no spectrum loaded)')
 
-    def set_values(self, values) -> None:
-        """Programmatic update of the check marks. No emit."""
-        values = set(values)
-        for key, btn in self._buttons.items():
-            btn.blockSignals(True)
-            try:
-                btn.setChecked(key in values)
-            finally:
-                btn.blockSignals(False)
+    def set_values(self, sides: dict) -> None:
+        """Programmatic update of the check marks from {"ds": keys,
+        "us": keys}. No emit."""
+        for side, side_btns in self._buttons.items():
+            on = set((sides or {}).get(side, ()))
+            for key, btn in side_btns.items():
+                btn.blockSignals(True)
+                try:
+                    btn.setChecked(key in on)
+                finally:
+                    btn.blockSignals(False)
 
-    def values(self) -> set[str]:
-        return {k for k, b in self._buttons.items() if b.isChecked()}
+    def values(self) -> dict:
+        """{"ds": {keys}, "us": {keys}} currently checked."""
+        return {side: {k for k, b in side_btns.items() if b.isChecked()}
+                for side, side_btns in self._buttons.items()}
 
     def show_window(self) -> None:
         self.show()

@@ -40,7 +40,6 @@ colors = {
     'downstream': '#FFD700',
     'upstream': '#FF6F61',
     'combined': '#66FFFF',
-    'labeled': '#999999',
 }
 
 export_colors = {
@@ -70,10 +69,22 @@ class _FlexAxisItem(pg.DateAxisItem):
             return super().tickStrings(values, scale, spacing)
         return [str(int(v)) for v in values]
 
+    def tickValues(self, minVal, maxVal, size):
+        # DateAxisItem.tickValues ignores tickSpacing; in Index mode use the
+        # plain AxisItem logic so the integer spacing below takes effect.
+        if self._use_date:
+            return super().tickValues(minVal, maxVal, size)
+        return pg.AxisItem.tickValues(self, minVal, maxVal, size)
+
     def tickSpacing(self, minVal, maxVal, size):
         if self._use_date:
             return super().tickSpacing(minVal, maxVal, size)
-        return pg.AxisItem.tickSpacing(self, minVal, maxVal, size)
+        # Record indices are whole numbers: drop sub-integer tick levels,
+        # which would otherwise print as repeated labels (0 0 0 1 1 …) when
+        # zoomed in or with only a few records.
+        levels = [(sp, off) for sp, off in
+                  pg.AxisItem.tickSpacing(self, minVal, maxVal, size) if sp >= 1]
+        return levels or [(1.0, 0.0)]
 
 
 def _dt_to_epoch(dt) -> float:
@@ -117,12 +128,19 @@ class historyPlotWidget(QtWidgets.QWidget):
         self._timestamps = np.array([], dtype=float)  # unix epoch; NaN if unknown
         self._ds = np.array([], dtype=float)
         self._us = np.array([], dtype=float)
+        # Fit scaling constants per second of exposure per unit gain (right
+        # axis, log10), parallel to _ds/_us. NaN where exposure is unknown.
+        self._sc_ds = np.array([], dtype=float)
+        self._sc_us = np.array([], dtype=float)
         # Manual labels: (file, frame) → label keys, and the per-row view of
         # it for the active grouping. Labelled rows are drawn as grey
         # crosses instead of on the T lines.
+        # Labels are per side: {"ds": keys, "us": keys}.
         self._labels_by_key: dict = {}
         self._row_labels: list = []
-        self._labeled = np.array([], dtype=bool)
+        self._labeled_ds = np.array([], dtype=bool)
+        self._labeled_us = np.array([], dtype=bool)
+        self._labeled = np.array([], dtype=bool)      # either side
         self._snap_xs = np.array([], dtype=float)
         self._snap_rows = np.array([], dtype=int)
         self._cursor_row: int = -1
@@ -149,6 +167,8 @@ class historyPlotWidget(QtWidgets.QWidget):
         self._build_ui()
         self._wire_signals()
         self._load_cutoffs_from_qsettings()
+        self._cb_scaling.setChecked(self._qsettings().value(
+            f"tlog/show_scaling/{self._tab_key}", False, type=bool))
         self._redraw()
 
     # ------------------------------------------------------------------ UI
@@ -198,6 +218,13 @@ class historyPlotWidget(QtWidgets.QWidget):
         ctrl_l.addSpacing(12)
         ctrl_l.addWidget(self._group_box)
         self._group_box.setVisible(False)
+
+        ctrl_l.addSpacing(12)
+        self._cb_scaling = QtWidgets.QCheckBox('Scaling')
+        self._cb_scaling.setToolTip(
+            'Also plot the fit scaling constant divided by exposure time and '
+            'gain (hollow circles, dashed), on its own log axis on the right')
+        ctrl_l.addWidget(self._cb_scaling)
 
         ctrl_l.addStretch()
 
@@ -259,6 +286,7 @@ class historyPlotWidget(QtWidgets.QWidget):
         def _vb_click(ev, _orig=_orig_vb_click, _vb=vb):
             if ev.button() == QtCore.Qt.MouseButton.RightButton:
                 _vb.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
+                self._scaling_vb.enableAutoRange(axis=pg.ViewBox.YAxis, enable=True)
                 ev.accept()
                 return
             if ev.button() == QtCore.Qt.MouseButton.LeftButton:
@@ -298,14 +326,48 @@ class historyPlotWidget(QtWidgets.QWidget):
             symbolBrush=pg.mkBrush(QColor(colors['upstream'])),
             symbolSize=5, symbol='s',
         )
-        self._labeled_item = pg.PlotDataItem(
+        # Labelled points: a cross in the labelled side's colour, at that
+        # side's (rejected) temperature.
+        self._labeled_ds_item = pg.PlotDataItem(
             pen=None, symbol='x', symbolSize=9,
-            symbolPen=pg.mkPen(QColor(colors['labeled']), width=1.5),
+            symbolPen=pg.mkPen(QColor(colors['downstream']), width=1.5),
+            symbolBrush=None,
+        )
+        self._labeled_us_item = pg.PlotDataItem(
+            pen=None, symbol='x', symbolSize=9,
+            symbolPen=pg.mkPen(QColor(colors['upstream']), width=1.5),
             symbolBrush=None,
         )
         self._time_lapse_plot.addItem(self._ds_item)
         self._time_lapse_plot.addItem(self._us_item)
-        self._time_lapse_plot.addItem(self._labeled_item)
+        self._time_lapse_plot.addItem(self._labeled_ds_item)
+        self._time_lapse_plot.addItem(self._labeled_us_item)
+
+        # Scaling constants: a second ViewBox over the same area, x linked
+        # to the T plot, y on the right axis (log10 values, log labels).
+        # It must not take mouse input, or clicks/zoom on the T plot break.
+        self._scaling_vb = pg.ViewBox(enableMenu=False)
+        self._scaling_vb.setMouseEnabled(False, False)
+        self._scaling_vb.setAcceptedMouseButtons(QtCore.Qt.MouseButton.NoButton)
+        self._scaling_vb.wheelEvent = lambda ev, axis=None: ev.ignore()
+        self._time_lapse_plot.scene().addItem(self._scaling_vb)
+        self._scaling_vb.setXLink(self._time_lapse_plot)
+        self._scaling_vb.setVisible(False)
+        vb.sigResized.connect(self._sync_scaling_geometry)
+        self._sc_ds_item = pg.PlotDataItem(
+            pen=pg.mkPen(QColor(colors['downstream']), width=1,
+                         style=QtCore.Qt.PenStyle.DashLine),
+            symbol='o', symbolSize=6, symbolBrush=None,
+            symbolPen=pg.mkPen(QColor(colors['downstream']), width=1),
+        )
+        self._sc_us_item = pg.PlotDataItem(
+            pen=pg.mkPen(QColor(colors['upstream']), width=1,
+                         style=QtCore.Qt.PenStyle.DashLine),
+            symbol='o', symbolSize=6, symbolBrush=None,
+            symbolPen=pg.mkPen(QColor(colors['upstream']), width=1),
+        )
+        self._scaling_vb.addItem(self._sc_ds_item)
+        self._scaling_vb.addItem(self._sc_us_item)
 
         # Interactive cursor
         self._cursor_line = pg.InfiniteLine(
@@ -334,6 +396,61 @@ class historyPlotWidget(QtWidgets.QWidget):
         self._time_lapse_plot.getViewBox().sigRangeChanged.connect(self._reposition_cursor_text)
         self._btn_prev.clicked.connect(self._on_prev_clicked)
         self._btn_next.clicked.connect(self._on_next_clicked)
+        self._cb_scaling.toggled.connect(self._on_scaling_toggled)
+
+    # -------- Scaling constants (right axis) --------------------------------
+    def _on_scaling_toggled(self, on: bool) -> None:
+        axis = self._time_lapse_plot.getAxis('right')
+        if on:
+            axis.linkToView(self._scaling_vb)
+            # SI-prefix rescaling breaks log-axis labels ("3·10¹ (x1e-12)").
+            axis.enableAutoSIPrefix(False)
+            axis.setLogMode(False, True)
+            axis.setStyle(showValues=True)
+            # Short: the T plot can be only ~150 px tall above a heatmap.
+            axis.setLabel('scale / (s·gain)')
+            self._sync_scaling_geometry()
+        else:
+            axis.linkToView(self._time_lapse_plot.getViewBox())
+            axis.setLogMode(False, False)
+            axis.enableAutoSIPrefix(True)
+            axis.setStyle(showValues=False)
+            axis.showLabel(False)
+        self._scaling_vb.setVisible(on)
+        self._scaling_vb.enableAutoRange(axis=pg.ViewBox.YAxis, enable=True)
+        self._qsettings().setValue(f"tlog/show_scaling/{self._tab_key}", on)
+        self._redraw()
+
+    def _sync_scaling_geometry(self, *_) -> None:
+        vb = self._time_lapse_plot.getViewBox()
+        self._scaling_vb.setGeometry(vb.sceneBoundingRect())
+        self._scaling_vb.linkedViewChanged(vb, self._scaling_vb.XAxis)
+
+    def _update_scaling_series(self, n, use_time, compress, lab_ds, lab_us,
+                               valid_ts, compressed_idx) -> None:
+        """log10(scaling / (exposure · gain)) per side at the same x as the T
+        points. Shown only where that side has a valid temperature: a failed
+        fit leaves the previous frame's scaling in the model. Labelled rows
+        and unknown exposures are left out too."""
+        series = ((self._sc_ds, self._ds, lab_ds, self._sc_ds_item),
+                  (self._sc_us, self._us, lab_us, self._sc_us_item))
+        for values, temps, labeled, item in series:
+            show = (self._cb_scaling.isChecked() and n and values.size == n
+                    and not (item is self._sc_us_item and self._mode == 'single'))
+            if not show:
+                item.setData([], [])
+                continue
+            ok = (np.isfinite(values) & (values > 0) & ~labeled
+                  & np.isfinite(temps) & (temps > 0))
+            if use_time:
+                ok &= valid_ts
+                x = self._timestamps[ok]
+            elif compress:
+                ok &= compressed_idx >= 0
+                x = compressed_idx[ok].astype(float)
+            else:
+                x = np.arange(n, dtype=float)[ok]
+            item.setData(x, np.log10(values[ok]))
 
     def enable_heatmap(self) -> SpectraHeatmap:
         """Add a spectra heatmap under the T plot, sharing its x axis.
@@ -346,6 +463,9 @@ class historyPlotWidget(QtWidgets.QWidget):
         # Same left-axis width on both plots so their columns line up.
         for plot in (self._time_lapse_plot, hm.plot):
             plot.getAxis('left').setWidth(60)
+            # Fixed too: the T plot's right axis grows when Scaling shows
+            # values, which would shift its columns off the heatmap's.
+            plot.getAxis('right').setWidth(60)
         hm.plot.setXLink(self._time_lapse_plot)
         self._cutoff_l.insertSpacing(self._cutoff_l.count() - 1, 12)
         self._cutoff_l.insertWidget(self._cutoff_l.count() - 1, hm.controls)
@@ -416,7 +536,7 @@ class historyPlotWidget(QtWidgets.QWidget):
         """Push new record lists. `per_file` is required (one record per file,
         legacy single-list callers still work); `per_frame` is optional and
         enables the Per-frame grouping. `labels` maps (file, frame) to manual
-        label keys. Repaints according to current controls."""
+        labels per side, {"ds": keys, "us": keys}. Repaints according to current controls."""
         self._labels_by_key = dict(labels or {})
         self._records_per_file = list(per_file)
         self._records_per_frame = list(per_frame) if per_frame is not None else list(per_file)
@@ -459,12 +579,36 @@ class historyPlotWidget(QtWidgets.QWidget):
                 [self._nan_safe(getattr(r, 'T_US', float('nan'))) for r in self._records],
                 dtype=float,
             )
+        # Scaling grows with exposure time and camera gain, both of which
+        # change during an experiment — only scaling / (exposure × gain) is
+        # comparable across records. Missing gain counts as 1.
+        exposure = np.array(
+            [self._nan_safe(getattr(r, 'exposure_time_sec', float('nan'))) for r in self._records],
+            dtype=float,
+        )
+        gain = np.array(
+            [self._nan_safe(getattr(r, 'gain', 1.0)) for r in self._records],
+            dtype=float,
+        )
+        gain = np.where(np.isfinite(gain) & (gain > 0), gain, 1.0)
+        norm = np.where(exposure > 0, exposure * gain, np.nan)
+        with np.errstate(all='ignore'):
+            self._sc_ds = np.array(
+                [self._nan_safe(getattr(r, 'scaling_DS', float('nan'))) for r in self._records],
+                dtype=float,
+            ) / norm
+            self._sc_us = np.array(
+                [self._nan_safe(getattr(r, 'scaling_US', float('nan'))) for r in self._records],
+                dtype=float,
+            ) / norm
         self._row_labels = [
-            tuple(self._labels_by_key.get(
-                (getattr(r, 'file', ''), int(getattr(r, 'frame', 0))), ()))
+            dict(self._labels_by_key.get(
+                (getattr(r, 'file', ''), int(getattr(r, 'frame', 0))), {}))
             for r in self._records
         ]
-        self._labeled = np.array([bool(v) for v in self._row_labels], dtype=bool)
+        self._labeled_ds = np.array([bool(v.get('ds')) for v in self._row_labels], dtype=bool)
+        self._labeled_us = np.array([bool(v.get('us')) for v in self._row_labels], dtype=bool)
+        self._labeled = self._labeled_ds | self._labeled_us
         # Debounced — see _redraw_timer in __init__. Burst of records from a
         # kinetics file collapses into one repaint instead of 32.
         self._redraw_timer.start()
@@ -539,18 +683,25 @@ class historyPlotWidget(QtWidgets.QWidget):
         else:
             finite_us = np.isfinite(us_full) & (us_full > 0) & (us_full >= y_lo) & (us_full <= y_hi)
 
-        # Manually labelled rows come off the T lines; they get their own
-        # grey crosses below so the user can still see and select them.
-        labeled = self._labeled if self._labeled.size == n else np.zeros(n, dtype=bool)
-        ds_raw_ok = finite_ds.copy() if n else finite_ds
-        finite_ds = finite_ds & ~labeled
-        finite_us = finite_us & ~labeled
+        # A side's label takes only that side's point off its T line (DS can
+        # be fine while US is junk); crosses below keep it visible and
+        # selectable.
+        if self._labeled.size == n:
+            lab_ds, lab_us, labeled = self._labeled_ds, self._labeled_us, self._labeled
+        else:
+            lab_ds = lab_us = labeled = np.zeros(n, dtype=bool)
+        finite_ds = finite_ds & ~lab_ds
+        finite_us = finite_us & ~lab_us
 
         any_finite = finite_ds | finite_us if n else np.array([], dtype=bool)
-        # Rows that get an x slot: valid fits plus labelled rows, so a
-        # labelled spectrum stays reachable (to inspect or un-label) in
-        # every view.
-        shown = any_finite | labeled if n else any_finite
+        # Rows that get an x slot. Compress shows valid points only, so a
+        # labelled side is compressed out (its other side may keep the row).
+        # Keep and Time also give labelled rows a slot, so they stay
+        # reachable to inspect or un-label.
+        if n and not compress:
+            shown = any_finite | labeled
+        else:
+            shown = any_finite
         valid_ts = np.isfinite(self._timestamps) if n else np.array([], dtype=bool)
         compressed_idx = None  # populated only in index+compress branch below
 
@@ -586,20 +737,26 @@ class historyPlotWidget(QtWidgets.QWidget):
 
         self._ds_item.setData(ds_x, ds_y)
         self._us_item.setData(us_x, us_y)
+        self._update_scaling_series(n, use_time, compress, lab_ds, lab_us,
+                                    valid_ts, compressed_idx)
 
-        # Labelled markers sit at the (rejected) DS temperature, or at 0 when
-        # the fit gave nothing usable.
-        lab_y_all = np.where(ds_raw_ok, ds_full, 0.0) if n else np.array([])
-        if use_time:
-            lab_mask = labeled & valid_ts
-            lab_x = self._timestamps[lab_mask]
-        elif compress:
-            lab_mask = labeled
-            lab_x = compressed_idx[lab_mask].astype(float)
-        else:
-            lab_mask = labeled
-            lab_x = np.where(lab_mask)[0].astype(float)
-        self._labeled_item.setData(lab_x, lab_y_all[lab_mask] if n else np.array([]))
+        # Labelled markers sit at 0 K: a labelled side's fit doesn't count,
+        # so it must not read as a temperature.
+        for lab, full, item in (
+                (lab_ds, ds_full, self._labeled_ds_item),
+                (lab_us, us_full, self._labeled_us_item)):
+            if not n or full.size != n:
+                item.setData([], [])
+                continue
+            if use_time:
+                lab_mask = lab & valid_ts
+                lab_x = self._timestamps[lab_mask]
+            elif compress:
+                # Compressed out — no marker.
+                lab_x = np.array([])
+            else:
+                lab_x = np.where(lab)[0].astype(float)
+            item.setData(lab_x, np.zeros(lab_x.size))
 
         # File-boundary dashed verticals — only meaningful in per-frame mode.
         self._update_file_boundaries(
@@ -623,6 +780,7 @@ class historyPlotWidget(QtWidgets.QWidget):
                   or not last_had_data):
             self._time_lapse_plot.getViewBox().enableAutoRange(
                 axis=pg.ViewBox.XYAxes, enable=True)
+            self._scaling_vb.enableAutoRange(axis=pg.ViewBox.YAxis, enable=True)
             self._view_reset_pending = False
         self._last_view_mode = (view_mode, n > 0)
 
@@ -794,15 +952,30 @@ class historyPlotWidget(QtWidgets.QWidget):
         rec = self._records[row]
         ds = getattr(rec, 'T_DS', float('nan'))
         us = getattr(rec, 'T_US', float('nan'))
+        # A labelled side's fit doesn't count — show it as missing.
+        if row < self._labeled_ds.size and self._labeled_ds[row]:
+            ds = float('nan')
+        if row < self._labeled_us.size and self._labeled_us[row]:
+            us = float('nan')
         parts = [f'<span style="color:{colors["downstream"]};">DS: {self._fmt(ds)}</span>']
         if self._mode != 'single':
             parts.append(f'<span style="color:{colors["upstream"]};">US: {self._fmt(us)}</span>')
         fname = getattr(rec, 'file', '') or ''
         frame = int(getattr(rec, 'frame', 0))
+        if self._cb_scaling.isChecked() and row < self._sc_ds.size:
+            sc = [f'<span style="color:{colors["downstream"]};">DS scale/(s·gain): '
+                  f'{self._fmt_sci(self._sc_ds[row])}</span>']
+            if self._mode != 'single':
+                sc.append(f'<span style="color:{colors["upstream"]};">US scale/(s·gain): '
+                          f'{self._fmt_sci(self._sc_us[row])}</span>')
+            parts.append('  '.join(sc))
         parts.append(f'<span style="color:#CCCCCC;">{fname} [f{frame}]</span>')
         if 0 <= row < len(self._row_labels) and self._row_labels[row]:
-            parts.append(f'<span style="color:{colors["labeled"]};">'
-                         f'labels: {", ".join(self._row_labels[row])}</span>')
+            lab = self._row_labels[row]
+            sides = [(s, n) for s, n in (('ds', 'DS'), ('us', 'US')) if lab.get(s)]
+            parts.append('  '.join(
+                f'<span style="color:{colors["downstream" if s == "ds" else "upstream"]};">'
+                f'{n} labels: {", ".join(lab[s])}</span>' for s, n in sides))
         self._cursor_text.setHtml('<br>'.join(parts))
 
     def _reposition_cursor_text(self, *_):
@@ -851,6 +1024,14 @@ class historyPlotWidget(QtWidgets.QWidget):
             return float(v)
         except (TypeError, ValueError):
             return float('nan')
+
+    @staticmethod
+    def _fmt_sci(v) -> str:
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            return '—'
+        return f'{fv:.3g}' if np.isfinite(fv) and fv > 0 else '—'
 
     @staticmethod
     def _fmt(v) -> str:
@@ -969,7 +1150,6 @@ class dataHistoryWidget(QtWidgets.QWidget):
         self.clear_data_log_file_btn.setIcon(clear_data_icon)
 
         self.temperatures_plot_widget = historyPlotWidget(scale_label="T (K)", tab_key="total")
-        self.temperatures_plot_widget.add_control_widget(self.label_window_btn)
         self.temperatures_plot_widget.add_control_widget(self.clear_data_log_file_btn)
 
         # Tabs: "Live" is the session's T log; each batch adds a closable
@@ -985,7 +1165,15 @@ class dataHistoryWidget(QtWidgets.QWidget):
         self.new_batch_btn.setToolTip(
             'Re-run every spectrum in the folder with one configuration\'s '
             'settings, in a new tab')
-        self.tabs.setCornerWidget(self.new_batch_btn, QtCore.Qt.Corner.TopRightCorner)
+        # Label… lives up here so it's available on every tab; labels apply
+        # to the spectrum loaded in the main window, whichever tab you're in.
+        corner = QtWidgets.QWidget()
+        corner_l = QtWidgets.QHBoxLayout(corner)
+        corner_l.setContentsMargins(0, 0, 4, 0)
+        corner_l.setSpacing(6)
+        corner_l.addWidget(self.label_window_btn)
+        corner_l.addWidget(self.new_batch_btn)
+        self.tabs.setCornerWidget(corner, QtCore.Qt.Corner.TopRightCorner)
         self._layout.addWidget(self.tabs)
 
         # ── Status strip: which log file, record count, writer state ──
